@@ -105,11 +105,11 @@ class Lead(Base):
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.now(timezone.utc), server_default="CURRENT_TIMESTAMP"
+        DateTime, nullable=False, default=datetime.now(timezone.utc), server_default=text("CURRENT_TIMESTAMP")
     )
 
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        DateTime,
         nullable=False,
         default=datetime.now(timezone.utc),
         onupdate=datetime.now(timezone.utc),
@@ -168,7 +168,7 @@ class LeadDownload(Base):
         DateTime,
         nullable=False,
         default=datetime.now(timezone.utc),
-        server_default="CURRENT_TIMESTAMP",
+        server_default=text("CURRENT_TIMESTAMP"),
         index=True,
     )
 
