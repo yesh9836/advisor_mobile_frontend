@@ -10,4 +10,5 @@ __all__ = [
     "engine",
     "SessionLocal",
     "get_db",
+    "get_wordpress_session",
 ]
