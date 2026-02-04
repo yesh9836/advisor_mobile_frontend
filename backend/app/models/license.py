@@ -71,14 +71,14 @@ class License(Base):
         server_default=text("'pending'"),
     )
 
-    verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # Rejection reason (if applicable)
     rejection_reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.now(timezone.utc), server_default="CURRENT_TIMESTAMP"
+        DateTime, nullable=False, default=datetime.now(timezone.utc), server_default=text("CURRENT_TIMESTAMP")
     )
 
     # Relationships
