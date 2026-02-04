@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import BigInteger, String, JSON, DateTime, ForeignKey
+from sqlalchemy import BigInteger, String, JSON, DateTime, ForeignKey, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -55,7 +55,7 @@ class AuditLog(Base):
     )
 
     # Additional context
-    metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    meta_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
 
     # Timestamp
@@ -63,7 +63,7 @@ class AuditLog(Base):
         DateTime,
         nullable=False,
         default=datetime.now(timezone.utc),
-        server_default="CURRENT_TIMESTAMP",
+        server_default=text("CURRENT_TIMESTAMP"),
         index=True,
     )
 
