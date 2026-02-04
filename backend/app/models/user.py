@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import BigInteger, String, Enum as SQLEnum, DateTime
+from sqlalchemy import BigInteger, String, Enum as SQLEnum, DateTime, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -57,7 +57,7 @@ class User(Base):
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.now(timezone.utc), server_default="CURRENT_TIMESTAMP"
+        DateTime, nullable=False, default=datetime.now(timezone.utc), server_default=text("CURRENT_TIMESTAMP")
     )
 
     # Relationships
