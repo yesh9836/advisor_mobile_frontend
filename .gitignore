@@ -1,0 +1,27 @@
+# Environment variables
+.env
+
+requirements.txt
+
+# Python
+myenv/
+__pycache__/
+
+docs/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Database
+*.db
+
+# Uploads
+uploads/
