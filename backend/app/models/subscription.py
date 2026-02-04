@@ -46,18 +46,18 @@ class SubscriptionPlan(Base):
     # Plan details
     name: Mapped[str] = mapped_column(String(120), nullable=False, unique=True, index=True)
     price_cents: Mapped[int] = mapped_column(Integer, nullable=False)
-    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD", server_default=text("USD"))
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD", server_default=text("'USD'"))
 
     # Limits
     state_limit: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    daily_download_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    daily_download_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
 
     # Features (JSON array)
     features: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.now(timezone.utc), server_default="CURRENT_TIMESTAMP"
+        DateTime, nullable=False, default=datetime.now(timezone.utc), server_default=text("CURRENT_TIMESTAMP")
     )
 
     # Relationships
@@ -129,16 +129,16 @@ class Subscription(Base):
         ),
         nullable=False,
         default="active",
-        server_default=text("active"),
+        server_default=text("'active'"),
     )
 
     # Billing period
-    current_period_start: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    current_period_end: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    current_period_start: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    current_period_end: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.now(timezone.utc), server_default="CURRENT_TIMESTAMP"
+        DateTime, nullable=False, default=datetime.now(timezone.utc), server_default=text("CURRENT_TIMESTAMP")
     )
 
     # Relationships
