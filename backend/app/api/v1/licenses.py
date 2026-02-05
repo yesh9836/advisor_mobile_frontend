@@ -1,0 +1,190 @@
+import logging
+from typing import List
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from sqlalchemy.orm import Session
+
+from app.api.deps import get_current_active_user, get_db, require_admin
+from app.models.user import User
+from app.schemas.license import (
+    LicenseApprove,
+    LicenseCreate,
+    LicenseReject,
+    LicenseResponse,
+    LicenseWithUser,
+)
+from app.services.license_service import LicenseService
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/licenses", tags=["licenses"])
+
+
+@router.post(
+    "/",
+    response_model=LicenseResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Submit a license for verification",
+)
+async def submit_license(
+    state: str = Form(..., description="Two-letter state code"),
+    license_number: str = Form(..., description="License number"),
+    license_type: str = Form(None, description="Type of license (optional)"),
+    document: UploadFile = File(..., description="License document (PDF or image)"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+) -> LicenseResponse:
+    """
+    Submit a new license for admin verification.
+    
+    The license document will be reviewed by an administrator.
+    
+    Requirements:
+    - State must be a valid 2-letter code
+    - License number is required
+    - Document must be PDF, JPG, JPEG, PNG, or GIF
+    - Maximum file size: 10 MB
+    """
+    # Create schema for validation
+    license_data = LicenseCreate(
+        state=state,
+        license_number=license_number,
+        license_type=license_type,
+    )
+
+    # Submit license
+    license = await LicenseService.submit_license(
+        db=db,
+        user_id=current_user.id,
+        data=license_data,
+        file=document,
+    )
+
+    return LicenseResponse.model_validate(license)
+
+
+@router.get(
+    "/",
+    response_model=List[LicenseResponse],
+    summary="Get current user's licenses",
+)
+def get_my_licenses(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+) -> List[LicenseResponse]:
+    """
+    Get all licenses for the current user.
+    
+    Returns licenses ordered by submission date (newest first).
+    """
+    licenses = LicenseService.get_user_licenses(db=db, user_id=current_user.id)
+    return [LicenseResponse.model_validate(license) for license in licenses]
+
+
+@router.get(
+    "/pending",
+    response_model=List[LicenseWithUser],
+    summary="Get all pending licenses (admin only)",
+    dependencies=[Depends(require_admin)],
+)
+def get_pending_licenses(
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> List[LicenseWithUser]:
+    """
+    Get all pending licenses awaiting admin review.
+    
+    Admin only. Returns licenses ordered by submission date (oldest first).
+    """
+    licenses = LicenseService.get_pending_licenses(db=db)
+    
+    # Convert to response schema with user details
+    response = []
+    for license in licenses:
+        license_dict = LicenseResponse.model_validate(license).model_dump()
+        license_dict["user_name"] = license.user.name
+        license_dict["user_email"] = license.user.email
+        response.append(LicenseWithUser(**license_dict))
+    
+    return response
+
+
+@router.post(
+    "/{license_id}/approve",
+    response_model=LicenseResponse,
+    summary="Approve a pending license (admin only)",
+    dependencies=[Depends(require_admin)],
+)
+def approve_license(
+    license_id: int,
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> LicenseResponse:
+    """
+    Approve a pending license.
+    
+    Admin only. Sets the license status to 'verified' and records
+    the approving admin and timestamp.
+    """
+    license = LicenseService.approve_license(
+        db=db,
+        license_id=license_id,
+        admin_id=current_admin.id,
+    )
+
+    return LicenseResponse.model_validate(license)
+
+
+@router.post(
+    "/{license_id}/reject",
+    response_model=LicenseResponse,
+    summary="Reject a pending license (admin only)",
+    dependencies=[Depends(require_admin)],
+)
+def reject_license(
+    license_id: int,
+    data: LicenseReject,
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> LicenseResponse:
+    """
+    Reject a pending license.
+    
+    Admin only. Sets the license status to 'rejected' and records
+    the rejection reason.
+    """
+    license = LicenseService.reject_license(
+        db=db,
+        license_id=license_id,
+        admin_id=current_admin.id,
+        reason=data.rejection_reason,
+    )
+
+    return LicenseResponse.model_validate(license)
+
+
+@router.get(
+    "/{license_id}",
+    response_model=LicenseResponse,
+    summary="Get license by ID",
+)
+def get_license(
+    license_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+) -> LicenseResponse:
+    """
+    Get a specific license by ID.
+    
+    Users can only view their own licenses unless they are admin.
+    """
+    license = LicenseService.get_license_by_id(db=db, license_id=license_id)
+    
+    if not license:
+        raise HTTPException(status_code=404, detail="License not found")
+    
+    # Check permissions: user can only view their own licenses, admins can view all
+    if license.user_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized to view this license")
+    
+    return LicenseResponse.model_validate(license)
