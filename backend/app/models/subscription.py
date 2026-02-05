@@ -48,6 +48,8 @@ class SubscriptionPlan(Base):
     price_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD", server_default=text("'USD'"))
 
+    stripe_price_id: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+
     # Limits
     state_limit: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     daily_download_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
