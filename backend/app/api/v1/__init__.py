@@ -4,11 +4,12 @@ API v1 router aggregation.
 
 from fastapi import APIRouter
 
-from app.api.v1 import auth
+from app.api.v1 import auth, licenses
 
 api_router = APIRouter()
 
 api_router.include_router(auth.router)
+api_router.include_router(licenses.router)
 
 # Future routers will be included here:
 # api_router.include_router(licenses.router)
