@@ -1,12 +1,10 @@
 import logging
 from typing import Any, Dict
 
-import stripe
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy.orm import Session
 import asyncio
+import stripe
+from fastapi import APIRouter, HTTPException, Request, status
 
-from app.api.deps import get_db
 from app.core.config import settings
 from app.services.subscription_service import SubscriptionService
 
@@ -22,7 +20,6 @@ router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 )
 async def stripe_webhook(
     request: Request,
-    db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature")
@@ -46,9 +43,8 @@ async def stripe_webhook(
 
     logger.info(f"Stripe webhook verified: type={event.get('type')} id={event.get('id')}")
     await asyncio.to_thread(
-        SubscriptionService.handle_webhook_event,
-        db=db,
-        event=event
+        SubscriptionService.handle_webhook_event_threadsafe,
+        event=event,
     )
 
     return {"status": "ok"}
