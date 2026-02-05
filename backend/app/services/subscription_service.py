@@ -12,6 +12,7 @@ from app.models.license import License
 from app.models.subscription import Subscription, SubscriptionPlan
 from app.models.user import User
 from app.services.payment_service import PaymentService
+from app.db.session import SessionLocal
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,15 @@ def _to_datetime(timestamp: Optional[int]) -> Optional[datetime]:
 
 class SubscriptionService:
     """Service class for subscription management and Stripe webhooks."""
+
+    @staticmethod
+    def handle_webhook_event_threadsafe(event: Dict[str, Any]) -> None:
+        """Create an isolated DB session for background-thread webhook work."""
+        db = SessionLocal()
+        try:
+            SubscriptionService.handle_webhook_event(db=db, event=event)
+        finally:
+            db.close()
 
     @staticmethod
     def get_available_plans(db: Session) -> List[SubscriptionPlan]:
