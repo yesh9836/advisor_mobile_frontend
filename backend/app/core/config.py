@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
 
     # Password hashing
-    PWD_SCHEME: str = "bcrypt"  # or "argon2"
+    PWD_SCHEME: str = "argon2"  # or "changed: "bcrypt" -> "argon2"
     PWD_DEPRECATED: str = "auto"
 
     # CORS
