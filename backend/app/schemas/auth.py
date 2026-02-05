@@ -1,0 +1,61 @@
+from typing import Literal, Optional
+
+from pydantic import BaseModel, EmailStr, Field
+
+
+class UserRegister(BaseModel):
+    """
+    Schema for user registration.
+    """
+    email: EmailStr
+    password: str = Field(..., min_length=8, description="Password must be at least 8 characters")
+    name: str = Field(..., min_length=1, max_length=150)
+    phone: Optional[str] = Field(None, max_length=50)
+    
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "email": "advisor@example.com",
+                    "password": "securepassword123",
+                    "name": "John Doe",
+                    "phone": "+1234567890",
+                    "role": "advisor"
+                }
+            ]
+        }
+    }
+
+
+class UserLogin(BaseModel):
+    """
+    Schema for user login.
+    """
+    email: EmailStr
+    password: str
+    
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "email": "advisor@example.com",
+                    "password": "securepassword123"
+                }
+            ]
+        }
+    }
+
+
+class Token(BaseModel):
+    """
+    Schema for JWT token response.
+    """
+    access_token: str
+    token_type: str = "bearer"
+
+
+class TokenData(BaseModel):
+    """
+    Schema for decoded token data.
+    """
+    email: Optional[str] = None
