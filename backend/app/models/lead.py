@@ -1,7 +1,17 @@
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import BigInteger, String, Text, JSON, DateTime, ForeignKey, text
+from sqlalchemy import (
+    BigInteger,
+    DateTime,
+    Enum as SQLEnum,
+    ForeignKey,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -105,7 +115,10 @@ class Lead(Base):
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), server_default=text("CURRENT_TIMESTAMP")
+        DateTime, 
+        nullable=False, 
+        default=lambda: datetime.now(timezone.utc), 
+        server_default=text("CURRENT_TIMESTAMP"),
     )
 
     updated_at: Mapped[datetime] = mapped_column(
@@ -122,6 +135,13 @@ class Lead(Base):
         back_populates="lead",
         cascade="all, delete-orphan",
     )
+
+    outcomes: Mapped[list["LeadOutcome"]] = relationship(
+        "LeadOutcome",
+        back_populates="lead",
+        cascade="all, delete-orphan",
+    )
+
 
     def __repr__(self) -> str:
         return f"<Lead(id={self.id}, state='{self.state_code}', name='{self.first_name} {self.last_name}')>"
@@ -181,3 +201,65 @@ class LeadDownload(Base):
 
     def __repr__(self) -> str:
         return f"<LeadDownload(id={self.id}, user_id={self.user_id}, lead_id={self.lead_id}, batch='{self.csv_batch_id}')>"
+
+class LeadOutcome(Base):
+    """
+    Advisor-specific lead outcome tracking (status + notes).
+    One row per (user_id, lead_id).
+    """
+
+    __tablename__ = "lead_outcomes"
+    __table_args__ = (
+        UniqueConstraint("user_id", "lead_id", name="uq_lead_outcomes_user_lead"),
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    user_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("users.id", onupdate="CASCADE", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    lead_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("leads.id", onupdate="CASCADE", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        SQLEnum("new", "contacted", "appointment_set", name="lead_outcome_status_enum"),
+        nullable=False,
+        default="new",
+        server_default=text("'new'"),
+        index=True,
+    )
+
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"),
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="lead_outcomes")
+    lead: Mapped["Lead"] = relationship("Lead", back_populates="outcomes")
+
+    def __repr__(self) -> str:
+        return f"<LeadOutcome(id={self.id}, user_id={self.user_id}, lead_id={self.lead_id}, status='{self.status}')>"
