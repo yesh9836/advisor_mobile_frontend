@@ -42,7 +42,7 @@ async def submit_license(
     Requirements:
     - State must be a valid 2-letter code
     - License number is required
-    - Document must be PDF, JPG, JPEG, PNG, or GIF
+    - Document must be PDF, JPG, JPEG, or PNG
     - Maximum file size: 10 MB
     """
     # Create schema for validation
