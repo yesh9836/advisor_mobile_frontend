@@ -11,6 +11,7 @@ from app.schemas.subscription import (
     CheckoutSessionResponse,
     SubscriptionPlanResponse,
     SubscriptionResponse,
+    BillingSummaryResponse
 )
 from app.services.subscription_service import SubscriptionService
 
@@ -67,6 +68,19 @@ def get_current_subscription(
         raise HTTPException(status_code=404, detail="No subscription found")
 
     return SubscriptionResponse.model_validate(subscription)
+
+
+@router.get(
+    "/billing/summary",
+    response_model=BillingSummaryResponse,
+    summary="Get advisor billing history and payment method",
+)
+def get_billing_summary(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+) -> BillingSummaryResponse:
+    data = SubscriptionService.get_billing_summary(db=db, user=current_user)
+    return BillingSummaryResponse(**data)
 
 
 @router.post(
