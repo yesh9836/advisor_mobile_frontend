@@ -1,17 +1,18 @@
 import logging
-from datetime import datetime, timezone
-from typing import Dict, List, Optional, Generator
+from datetime import datetime, timezone, timedelta
+from typing import Dict, List, Optional
 from uuid import uuid4
 
 from fastapi import HTTPException
 from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
-from app.models.lead import Lead, LeadDownload
+from app.models.lead import Lead, LeadDownload, LeadOutcome
 from app.models.license import License
 from app.models.subscription import Subscription
 from app.models.user import User
-from app.schemas.lead import LeadCreate
+from app.schemas.lead import LeadCreate, LeadOutcomeUpdateRequest
+from app.services.audit_service import AuditService
 from app.utils.csv_generator import generate_leads_csv_stream
 
 logger = logging.getLogger(__name__)
@@ -55,22 +56,14 @@ class LeadService:
             raise HTTPException(status_code=403, detail="Subscription expired")
 
         return subscription
-
+    
     @staticmethod
-    def get_available_leads_for_user(
-        db: Session,
-        user: User,
-        page: int = 1,
-        size: int = 20
-    ) -> Dict[str, object]:
-        subscription = LeadService._require_active_subscription(db, user)
-        plan = subscription.plan
-
+    def _get_user_allowed_states(db: Session, user_id: int, state_limit: Optional[int]) -> List[str]:
         verified_states = (
             db.query(License.state)
             .filter(
                 and_(
-                    License.user_id == user.id,
+                    License.user_id == user_id,
                     License.verification_status == "verified",
                 )
             )
@@ -78,13 +71,93 @@ class LeadService:
             .all()
         )
         states = [row[0].upper() for row in verified_states]
+        if state_limit is not None:
+            states = states[:state_limit]
+        return states
 
+    @staticmethod
+    def _attach_outcomes_to_leads(db: Session, user_id: int, leads: List[Lead]) -> None:
+        if not leads:
+            return
+
+        lead_ids = [lead.id for lead in leads]
+        outcomes = (
+            db.query(LeadOutcome)
+            .filter(LeadOutcome.user_id == user_id, LeadOutcome.lead_id.in_(lead_ids))
+            .all()
+        )
+        outcomes_by_lead_id = {item.lead_id: item for item in outcomes}
+
+        for lead in leads:
+            outcome = outcomes_by_lead_id.get(lead.id)
+            setattr(lead, "outcome_status", outcome.status if outcome else None)
+            setattr(lead, "outcome_notes", outcome.notes if outcome else None)
+            setattr(lead, "outcome_updated_at", outcome.updated_at if outcome else None)
+
+    @staticmethod
+    def _attach_downloads_to_leads(db: Session, user_id: int, leads: List[Lead]) -> None:
+        if not leads:
+            return
+
+        lead_ids = [lead.id for lead in leads]
+        downloads = (
+            db.query(LeadDownload)
+            .filter(LeadDownload.user_id == user_id, LeadDownload.lead_id.in_(lead_ids))
+            .order_by(LeadDownload.downloaded_at.desc())
+            .all()
+        )
+
+        latest_by_lead_id: Dict[int, LeadDownload] = {}
+        for download in downloads:
+            if download.lead_id not in latest_by_lead_id:
+                latest_by_lead_id[download.lead_id] = download
+
+        for lead in leads:
+            download = latest_by_lead_id.get(lead.id)
+            setattr(lead, "is_downloaded", download is not None)
+            setattr(lead, "downloaded_at", download.downloaded_at if download else None)
+    
+
+    @staticmethod
+    def _get_exportable_leads_for_user(
+        db: Session,
+        user: User,
+        size: int = DEFAULT_DOWNLOAD_SIZE,
+    ) -> List[Lead]:
+        subscription = LeadService._require_active_subscription(db, user)
+        plan = subscription.plan
+
+        states = LeadService._get_user_allowed_states(db, user.id, plan.state_limit)
         if not states:
-            return {"items": [], "total": 0, "page": page, "size": size}
+            return []
 
-        if plan.state_limit is not None:
-            states = states[: plan.state_limit]
+        downloaded_subquery = (
+            select(LeadDownload.lead_id)
+            .where(LeadDownload.user_id == user.id)
+        )
 
+        return (
+            db.query(Lead)
+            .filter(Lead.state_code.in_(states))
+            .filter(~Lead.id.in_(downloaded_subquery))
+            .order_by(Lead.created_at.desc())
+            .limit(size)
+            .all()
+        )
+
+
+    @staticmethod
+    def get_available_leads_for_user(
+        db: Session,
+        user: User,
+        page: int = 1,
+        size: int = 20,
+        delivery_status: str = "all",
+    ) -> Dict[str, object]:
+        subscription = LeadService._require_active_subscription(db, user)
+        plan = subscription.plan
+
+        states = LeadService._get_user_allowed_states(db, user.id, plan.state_limit)
         if not states:
             return {"items": [], "total": 0, "page": page, "size": size}
 
@@ -93,11 +166,12 @@ class LeadService:
             .where(LeadDownload.user_id == user.id)
         )
 
-        query = (
-            db.query(Lead)
-            .filter(Lead.state_code.in_(states))
-            .filter(~Lead.id.in_(downloaded_subquery))
-        )
+        query = db.query(Lead).filter(Lead.state_code.in_(states))
+
+        if delivery_status == "available":
+            query = query.filter(~Lead.id.in_(downloaded_subquery))
+        elif delivery_status == "delivered":
+            query = query.filter(Lead.id.in_(downloaded_subquery))
 
         total = query.count()
         offset = max(0, (page - 1) * size)
@@ -108,6 +182,9 @@ class LeadService:
             .limit(size)
             .all()
         )
+
+        LeadService._attach_outcomes_to_leads(db, user.id, items)
+        LeadService._attach_downloads_to_leads(db, user.id, items)
 
         return {"items": items, "total": total, "page": page, "size": size}
 
@@ -136,7 +213,7 @@ class LeadService:
         today_count = (
             db.query(func.count(LeadDownload.id))
             .filter(LeadDownload.user_id == user.id)
-            .filter(func.date(LeadDownload.downloaded_at) >= today_start)
+            .filter(LeadDownload.downloaded_at >= today_start)
             .scalar()
         ) or 0
 
@@ -152,20 +229,14 @@ class LeadService:
             raise HTTPException(status_code=403, detail=check["reason"])
 
         remaining = int(check["remaining"])
-        available = LeadService.get_available_leads_for_user(
-            db=db,
-            user=user,
-            page=1,
-            size=DEFAULT_DOWNLOAD_SIZE,
-        )
-        leads: List[Lead] = available["items"]
-
-        requested_count = len(leads)
         prepend_msg = ""
 
-        if remaining >= 0 and requested_count > remaining:
-            leads = leads[:remaining]
-            prepend_msg = f"# Daily limit reached. Returned {len(leads)} of {requested_count} leads."
+        export_size = DEFAULT_DOWNLOAD_SIZE if remaining < 0 else min(DEFAULT_DOWNLOAD_SIZE, remaining)
+        leads = LeadService._get_exportable_leads_for_user(
+            db=db,
+            user=user,
+            size=export_size,
+        )
 
         if not leads:
             # Return empty CSV with headers
@@ -279,3 +350,123 @@ class LeadService:
             db.rollback()
             logger.error(f"Failed to import leads: {e}")
             raise HTTPException(status_code=500, detail="Failed to import leads")
+
+    @staticmethod
+    def upsert_lead_outcome(
+        db: Session,
+        user: User,
+        lead_id: int,
+        payload: LeadOutcomeUpdateRequest,
+    ) -> LeadOutcome:
+        subscription = LeadService._require_active_subscription(db, user)
+        states = LeadService._get_user_allowed_states(db, user.id, subscription.plan.state_limit)
+
+        if not states:
+            raise HTTPException(status_code=404, detail="Lead not found")
+
+        lead = (
+            db.query(Lead)
+            .filter(Lead.id == lead_id, Lead.state_code.in_(states))
+            .first()
+        )
+        if not lead:
+            raise HTTPException(status_code=404, detail="Lead not found")
+
+        outcome = (
+            db.query(LeadOutcome)
+            .filter(LeadOutcome.user_id == user.id, LeadOutcome.lead_id == lead_id)
+            .first()
+        )
+
+        previous_status = outcome.status if outcome else None
+        previous_notes = outcome.notes if outcome else None
+
+        if outcome is None:
+            outcome = LeadOutcome(
+                user_id=user.id,
+                lead_id=lead_id,
+                status=payload.status,
+                notes=payload.notes,
+            )
+            db.add(outcome)
+        else:
+            outcome.status = payload.status
+            outcome.notes = payload.notes
+
+        try:
+            db.commit()
+            db.refresh(outcome)
+        except Exception as exc:
+            db.rollback()
+            logger.error("Failed to save lead outcome: %s", exc)
+            raise HTTPException(status_code=500, detail="Failed to save lead outcome")
+
+        AuditService.log_event(
+            actor_user_id=user.id,
+            action="lead_outcome_updated",
+            entity_type="LeadOutcome",
+            entity_id=outcome.id,
+            meta_data={
+                "lead_id": lead_id,
+                "previous_status": previous_status,
+                "new_status": outcome.status,
+                "notes_changed": previous_notes != outcome.notes,
+                "notes_length": len(outcome.notes or ""),
+            },
+        )
+
+        return outcome
+
+    @staticmethod
+    def _calculate_cost_per_appointment(plan_price_cents: int, appointments_set: int) -> float:
+        if appointments_set <= 0:
+            return 0.0
+        return round((plan_price_cents / 100.0) / appointments_set, 2)
+
+    @staticmethod
+    def get_dashboard_summary(db: Session, user: User) -> Dict[str, object]:
+        subscription = LeadService._require_active_subscription(db, user)
+        plan = subscription.plan
+
+        now = datetime.now(timezone.utc)
+        seven_days_ago = now - timedelta(days=7)
+
+        states = LeadService._get_user_allowed_states(db, user.id, plan.state_limit)
+
+        leads_delivered_7_days = 0
+        if states:
+            leads_delivered_7_days = (
+                db.query(func.count(func.distinct(LeadDownload.lead_id)))
+                .filter(LeadDownload.user_id == user.id)
+                .filter(LeadDownload.downloaded_at >= seven_days_ago)
+                .scalar()
+            ) or 0
+
+        appointments_set_7_days = (
+            db.query(func.count(LeadOutcome.id))
+            .filter(
+                LeadOutcome.user_id == user.id,
+                LeadOutcome.status == "appointment_set",
+                LeadOutcome.updated_at >= seven_days_ago,
+            )
+            .scalar()
+        ) or 0
+
+        cost_per_appointment = LeadService._calculate_cost_per_appointment(
+            plan_price_cents=plan.price_cents,
+            appointments_set=appointments_set_7_days,
+        )
+
+        return {
+            "leads_delivered_7_days": int(leads_delivered_7_days),
+            "appointments_set_7_days": int(appointments_set_7_days),
+            "cost_per_appointment": cost_per_appointment,
+            "currency": (plan.currency or "USD").upper(),
+            "settings": {
+                "email_alerts_enabled": True,
+                "sms_alerts_enabled": False,
+                "target_states": states,
+                "min_assets": None,
+                "daily_download_limit": plan.daily_download_limit,
+            },
+        }
