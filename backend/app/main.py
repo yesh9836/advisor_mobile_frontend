@@ -10,6 +10,7 @@ import uvicorn
 
 from app.api.v1 import api_router
 from app.core.config import settings
+from app.core.rate_limit import RateLimitMiddleware
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,10 +30,11 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
+    allow_methods=settings.CORS_ALLOW_METHODS,
+    allow_headers=settings.CORS_ALLOW_HEADERS,
 )
+app.add_middleware(RateLimitMiddleware)
 
 app.include_router(api_router, prefix="/api/v1")
 
