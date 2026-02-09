@@ -6,7 +6,7 @@ import stripe
 from fastapi import APIRouter, HTTPException, Request, status
 
 from app.core.config import settings
-from app.services.subscription_service import SubscriptionService
+from app.services.subscription_service import StripeWebhookProcessingError, SubscriptionService
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +42,26 @@ async def stripe_webhook(
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     logger.info(f"Stripe webhook verified: type={event.get('type')} id={event.get('id')}")
-    await asyncio.to_thread(
-        SubscriptionService.handle_webhook_event_threadsafe,
-        event=event,
-    )
+    try:
+        await asyncio.to_thread(
+            SubscriptionService.handle_webhook_event_threadsafe,
+            event=event,
+        )
+    except StripeWebhookProcessingError as exc:
+        logger.error(
+            "Stripe webhook processing failed: type=%s id=%s error=%s",
+            event.get("type"),
+            event.get("id"),
+            exc,
+        )
+        raise HTTPException(status_code=500, detail="Webhook processing failed")
+    except Exception as exc:
+        logger.exception(
+            "Unexpected Stripe webhook processing failure: type=%s id=%s error=%s",
+            event.get("type"),
+            event.get("id"),
+            exc,
+        )
+        raise HTTPException(status_code=500, detail="Webhook processing failed")
 
     return {"status": "ok"}
