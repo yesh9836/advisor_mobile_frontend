@@ -11,13 +11,18 @@ from sqlalchemy import and_
 
 from app.models.license import License
 from app.models.user import User
+from app.core.config import settings
 from app.schemas.license import LicenseCreate
 
 logger = logging.getLogger(__name__)
 
-ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".gif"}
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 CHUNK_SIZE = 1024 * 1024  # 1 MB chunks
+MAGIC_SIGNATURES = {
+    ".pdf": (b"%PDF-",),
+    ".jpg": (b"\xff\xd8\xff",),
+    ".jpeg": (b"\xff\xd8\xff",),
+    ".png": (b"\x89PNG\r\n\x1a\n",),
+}
 
 class LicenseService:
     """Service for managing license verification workflow."""
@@ -36,13 +41,37 @@ class LicenseService:
         if not file.filename:
             raise HTTPException(status_code=400, detail="No filename provided")
 
-        # Check file extension
-        file_ext = Path(file.filename).suffix.lower()
-        if file_ext not in ALLOWED_EXTENSIONS:
+        raw_filename = file.filename.strip()
+        if not raw_filename:
+            raise HTTPException(status_code=400, detail="Filename cannot be blank")
+
+        # Reject path-like filenames to prevent traversal-style payloads.
+        if Path(raw_filename).name != raw_filename:
+            raise HTTPException(status_code=400, detail="Invalid filename")
+
+        file_ext = Path(raw_filename).suffix.lower()
+        allowed_extensions = {ext.lower() for ext in settings.ALLOWED_EXTENSIONS}
+        if file_ext not in allowed_extensions:
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid file type. Allowed types: {', '.join(ALLOWED_EXTENSIONS)}",
+                detail=f"Invalid file type. Allowed types: {', '.join(sorted(allowed_extensions))}",
             )
+
+        content_type = (file.content_type or "").lower().strip()
+        allowed_mime_types = {mime.lower() for mime in settings.ALLOWED_UPLOAD_MIME_TYPES}
+        if content_type and content_type not in allowed_mime_types:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid content type. Allowed types: {', '.join(sorted(allowed_mime_types))}",
+            )
+
+    @staticmethod
+    def _validate_magic_bytes(file_ext: str, header: bytes) -> None:
+        signatures = MAGIC_SIGNATURES.get(file_ext)
+        if not signatures:
+            return
+        if not any(header.startswith(signature) for signature in signatures):
+            raise HTTPException(status_code=400, detail="Uploaded file content does not match file type")
 
     @staticmethod
     async def _save_document(user_id: int, file: UploadFile) -> str:
@@ -60,31 +89,39 @@ class LicenseService:
             HTTPException: If file save fails
         """
         try:
-            # Create directory structure: uploads/licenses/{user_id}/
-            upload_dir = Path("uploads") / "licenses" / str(user_id)
+            upload_dir = Path(settings.UPLOAD_DIR) / "licenses" / str(user_id)
             upload_dir.mkdir(parents=True, exist_ok=True)
 
             # Generate unique filename with timestamp
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             
-            safe_filename = f"{timestamp}_{Path(file.filename).name}" 
+            safe_filename = f"{timestamp}_{Path(file.filename).name}"
             file_path = upload_dir / safe_filename
 
             size = 0
+            file_ext = Path(file.filename).suffix.lower()
             # Use aiofiles for non-blocking disk I/O
             async with aiofiles.open(file_path, "wb") as out_file:
                 while content := await file.read(CHUNK_SIZE):
+                    if size == 0:
+                        LicenseService._validate_magic_bytes(file_ext, content[:16])
+
                     size += len(content)
-                    if size > MAX_FILE_SIZE:
+                    if size > settings.MAX_UPLOAD_SIZE_MB:
                         # Clean up the partial file
                         await out_file.close()
                         if file_path.exists():
                             os.remove(file_path)
                         raise HTTPException(
                             status_code=400, 
-                            detail=f"File too large. Limit: {MAX_FILE_SIZE/1024/1024}MB"
+                            detail=f"File too large. Limit: {settings.MAX_UPLOAD_SIZE_MB/1024/1024}MB"
                         )
                     await out_file.write(content)
+
+            if size == 0:
+                if file_path.exists():
+                    os.remove(file_path)
+                raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
             return str(file_path)
 
@@ -120,7 +157,6 @@ class LicenseService:
         Raises:
             HTTPException: If validation fails or duplicate exists
         """
-        # Validate file
         LicenseService._validate_file(file)
 
         # Check for duplicate pending license for same user + state
