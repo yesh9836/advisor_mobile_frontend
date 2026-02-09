@@ -9,7 +9,7 @@ from .base import Base
 if TYPE_CHECKING:
     from .license import License
     from .subscription import Subscription
-    from .lead import LeadDownload
+    from .lead import LeadDownload, LeadOutcome
     from .audit_log import AuditLog
 
 class User(Base):
@@ -52,12 +52,18 @@ class User(Base):
 
     # Stripe integration
     stripe_customer_id: Mapped[Optional[str]] = mapped_column(
-        String(100), nullable=True, unique=True, index=True
+        String(100), 
+        nullable=True, 
+        unique=True, 
+        index=True
     )
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), server_default=text("CURRENT_TIMESTAMP")
+        DateTime, 
+        nullable=False, 
+        default=lambda: datetime.now(timezone.utc), 
+        server_default=text("CURRENT_TIMESTAMP")
     )
 
     # Relationships
@@ -82,6 +88,12 @@ class User(Base):
 
     lead_downloads: Mapped[List["LeadDownload"]] = relationship(
         "LeadDownload",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+    lead_outcomes: Mapped[List["LeadOutcome"]] = relationship(
+        "LeadOutcome",
         back_populates="user",
         cascade="all, delete-orphan",
     )
