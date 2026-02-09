@@ -1,7 +1,9 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
+
+LeadOutcomeStatus = Literal["new", "contacted", "appointment_set"]
 
 
 class LeadBase(BaseModel):
@@ -59,6 +61,13 @@ class LeadUpdate(LeadBase):
 class LeadResponse(LeadBase):
     id: int
     created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    outcome_status: Optional[LeadOutcomeStatus] = None
+    outcome_notes: Optional[str] = None
+    outcome_updated_at: Optional[datetime] = None
+    is_downloaded: bool = False
+    downloaded_at: Optional[datetime] = None
 
     model_config = {
         "from_attributes": True,
@@ -70,3 +79,43 @@ class LeadListResponse(BaseModel):
     total: int
     page: int
     size: int
+
+class LeadOutcomeUpdateRequest(BaseModel):
+    status: LeadOutcomeStatus
+    notes: Optional[str] = Field(None, max_length=2000)
+
+    @field_validator("notes")
+    @classmethod
+    def normalize_notes(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        clean = value.strip()
+        return clean if clean else None
+
+
+class LeadOutcomeResponse(BaseModel):
+    id: int
+    user_id: int
+    lead_id: int
+    status: LeadOutcomeStatus
+    notes: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class DashboardSettingsSnapshot(BaseModel):
+    email_alerts_enabled: bool
+    sms_alerts_enabled: bool
+    target_states: List[str]
+    min_assets: Optional[str] = None
+    daily_download_limit: Optional[int] = None
+
+
+class LeadDashboardSummaryResponse(BaseModel):
+    leads_delivered_7_days: int
+    appointments_set_7_days: int
+    cost_per_appointment: float
+    currency: str
+    settings: DashboardSettingsSnapshot
