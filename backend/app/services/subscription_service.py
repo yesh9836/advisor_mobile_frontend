@@ -17,6 +17,10 @@ from app.db.session import SessionLocal
 logger = logging.getLogger(__name__)
 
 
+class StripeWebhookProcessingError(Exception):
+    """Raised when webhook processing fails and Stripe should retry delivery."""
+
+
 def _to_datetime(timestamp: Optional[int]) -> Optional[datetime]:
     """Convert Stripe UNIX timestamp to UTC datetime."""
     if timestamp is None:
@@ -86,6 +90,13 @@ class SubscriptionService:
                 detail="You already have an active subscription",
             )
 
+        frontend_base_url = settings.FRONTEND_URL.rstrip("/")
+        success_url = (
+            f"{frontend_base_url}/subscription"
+            f"?checkout=success&session_id={{CHECKOUT_SESSION_ID}}"
+        )
+        cancel_url = f"{frontend_base_url}/subscription?checkout=cancel"
+
         try:
             session = stripe.checkout.Session.create(
                 customer=customer_id,
@@ -98,8 +109,8 @@ class SubscriptionService:
                     },
                     "cancel_at_period_end": True
                 },
-                success_url=f"{settings.FRONTEND_URL}/advisor/subscription/success?session_id={{CHECKOUT_SESSION_ID}}",
-                cancel_url=f"{settings.FRONTEND_URL}/advisor/subscription/cancel",
+                success_url=success_url,
+                cancel_url=cancel_url,
             )
 
             logger.info(
@@ -114,6 +125,73 @@ class SubscriptionService:
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="Stripe checkout session creation failed",
             )
+        
+    @staticmethod
+    def get_billing_summary(db: Session, user: User) -> Dict[str, Any]:
+        if not settings.STRIPE_SECRET_KEY or not user.stripe_customer_id:
+            return {
+                "payment_method": None,
+                "invoices": [],
+            }
+
+        PaymentService._init_stripe()
+
+        payment_method: Optional[Dict[str, Any]] = None
+        invoices: List[Dict[str, Any]] = []
+
+        try:
+            customer = stripe.Customer.retrieve(
+                user.stripe_customer_id,
+                expand=["invoice_settings.default_payment_method"],
+            )
+
+            default_pm = (customer.get("invoice_settings") or {}).get("default_payment_method")
+            pm_obj: Optional[Dict[str, Any]] = None
+
+            if isinstance(default_pm, str) and default_pm:
+                pm_obj = stripe.PaymentMethod.retrieve(default_pm)
+            elif isinstance(default_pm, dict):
+                pm_obj = default_pm
+
+            if pm_obj and pm_obj.get("type") == "card":
+                card = pm_obj.get("card", {}) or {}
+                payment_method = {
+                    "brand": (card.get("brand") or "card").lower(),
+                    "last4": card.get("last4") or "0000",
+                    "exp_month": int(card.get("exp_month") or 1),
+                    "exp_year": int(card.get("exp_year") or datetime.now(timezone.utc).year),
+                    "funding": card.get("funding"),
+                    "country": card.get("country"),
+                    "is_placeholder": False,
+                }
+
+            invoice_result = stripe.Invoice.list(
+                customer=user.stripe_customer_id,
+                limit=10,
+            )
+
+            for inv in invoice_result.get("data", []):
+                invoices.append(
+                    {
+                        "stripe_invoice_id": inv.get("id", ""),
+                        "amount_paid_cents": int(inv.get("amount_paid") or 0),
+                        "currency": str(inv.get("currency") or "usd").upper(),
+                        "status": str(inv.get("status") or "unknown"),
+                        "created_at": _to_datetime(inv.get("created")) or datetime.now(timezone.utc),
+                        "hosted_invoice_url": inv.get("hosted_invoice_url"),
+                        "invoice_pdf": inv.get("invoice_pdf"),
+                        "description": inv.get("description"),
+                    }
+                )
+
+        except stripe.error.StripeError as exc:
+            logger.error("Failed to fetch billing summary from Stripe for user_id=%s: %s", user.id, exc)
+
+        return {
+            "payment_method": payment_method,
+            "invoices": invoices,
+        }
+
 
     @staticmethod
     def handle_webhook_event(db: Session, event: Dict[str, Any]) -> None:
@@ -132,8 +210,9 @@ class SubscriptionService:
             session = data_object
             stripe_subscription_id = session.get("subscription")
             if not stripe_subscription_id:
-                logger.warning("checkout.session.completed missing subscription ID")
-                return
+                message = "checkout.session.completed missing subscription ID"
+                logger.error(message)
+                raise StripeWebhookProcessingError(message)
 
             try:
                 stripe_subscription = stripe.Subscription.retrieve(
@@ -141,16 +220,24 @@ class SubscriptionService:
                     expand=["items.data.price", "customer"],
                 )
             except stripe.error.StripeError as e:
-                logger.error(f"Failed to retrieve Stripe subscription: {e}")
-                return
+                message = (
+                    f"Failed to retrieve Stripe subscription "
+                    f"for stripe_subscription_id={stripe_subscription_id}: {e}"
+                )
+                logger.error(message)
+                raise StripeWebhookProcessingError(message) from e
 
             metadata = stripe_subscription.get("metadata", {}) or {}
             user_id = metadata.get("user_id") or session.get("metadata", {}).get("user_id") or session.get("client_reference_id")
             plan_id = metadata.get("plan_id") or session.get("metadata", {}).get("plan_id")
 
             if not user_id or not plan_id:
-                logger.error("Missing user_id or plan_id metadata on subscription")
-                return
+                message = (
+                    "Missing user_id or plan_id metadata on subscription "
+                    f"stripe_subscription_id={stripe_subscription_id}"
+                )
+                logger.error(message)
+                raise StripeWebhookProcessingError(message)
 
             # Idempotency check
             existing = (
@@ -164,8 +251,9 @@ class SubscriptionService:
 
             plan = db.query(SubscriptionPlan).filter(SubscriptionPlan.id == int(plan_id)).first()
             if not plan:
-                logger.error(f"Plan not found for plan_id={plan_id}")
-                return
+                message = f"Plan not found for plan_id={plan_id}"
+                logger.error(message)
+                raise StripeWebhookProcessingError(message)
 
             try:
                 subscription = Subscription(
