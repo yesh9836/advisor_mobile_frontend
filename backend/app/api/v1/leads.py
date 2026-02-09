@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timezone
-from typing import Dict
+from typing import Dict, Literal
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_active_user, get_db, require_admin
 from app.models.user import User
-from app.schemas.lead import LeadCreate, LeadListResponse, LeadResponse
+from app.schemas.lead import LeadCreate, LeadDashboardSummaryResponse, LeadListResponse, LeadOutcomeResponse, LeadOutcomeUpdateRequest, LeadResponse 
 from app.services.lead_service import LeadService
 from app.utils.csv_generator import parse_leads_csv
 
@@ -20,11 +20,12 @@ router = APIRouter(prefix="/leads", tags=["leads"])
 @router.get(
     "/",
     response_model=LeadListResponse,
-    summary="Get available leads for current user",
+    summary="Get leads for current user",
 )
 def list_available_leads(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
+    delivery_status: Literal["all", "available", "delivered"] = Query("all"),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ) -> LeadListResponse:
@@ -33,6 +34,7 @@ def list_available_leads(
         user=current_user,
         page=page,
         size=size,
+        delivery_status=delivery_status,
     )
     items = [LeadResponse.model_validate(lead) for lead in data["items"]]
     return LeadListResponse(
@@ -63,6 +65,38 @@ def download_leads_csv(
             "Cache-Control": "no-cache",
         },
     )
+
+@router.get(
+    "/dashboard/summary",
+    response_model=LeadDashboardSummaryResponse,
+    summary="Advisor dashboard lead/outcome/settings summary",
+)
+def get_dashboard_summary(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+) -> LeadDashboardSummaryResponse:
+    data = LeadService.get_dashboard_summary(db=db, user=current_user)
+    return LeadDashboardSummaryResponse(**data)
+
+
+@router.put(
+    "/{lead_id}/outcome",
+    response_model=LeadOutcomeResponse,
+    summary="Save advisor outcome for a lead",
+)
+def save_lead_outcome(
+    lead_id: int,
+    payload: LeadOutcomeUpdateRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+) -> LeadOutcomeResponse:
+    outcome = LeadService.upsert_lead_outcome(
+        db=db,
+        user=current_user,
+        lead_id=lead_id,
+        payload=payload,
+    )
+    return LeadOutcomeResponse.model_validate(outcome)
 
 
 @router.post(
