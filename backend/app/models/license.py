@@ -25,6 +25,8 @@ class License(Base):
         verification_status: pending/verified/rejected
         verified_at: When license was verified
         verified_by: Which admin user approved it
+        reviewed_at: When an admin last reviewed (approved/rejected) the license
+        reviewed_by: Which admin user last reviewed the license
         created_at: Auto-set timestamp
     """
 
@@ -56,6 +58,13 @@ class License(Base):
         index=True,
     )
 
+    reviewed_by: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("users.id", onupdate="CASCADE", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # License details
     state: Mapped[str] = mapped_column(String(2), nullable=False)
     license_number: Mapped[str] = mapped_column(String(80), nullable=False)
@@ -76,6 +85,9 @@ class License(Base):
 
     # Rejection reason (if applicable)
     rejection_reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
+    # Latest admin review metadata
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
