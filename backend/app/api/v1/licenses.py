@@ -1,7 +1,7 @@
 import logging
-from typing import List, Optional
+from typing import List, Literal, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -119,6 +119,8 @@ def get_pending_licenses(
     dependencies=[Depends(require_admin)],
 )
 def get_processed_licenses(
+    advisor_id: Optional[int] = None,
+    advisor_query: Optional[str] = None,
     current_admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> List[AdminLicenseDecisionRow]:
@@ -127,21 +129,28 @@ def get_processed_licenses(
 
     Admin only. Returns licenses ordered by latest decision timestamp (newest first).
     """
-    licenses = LicenseService.get_processed_licenses(db=db)
+    rows = LicenseService.get_processed_licenses(
+        db=db,
+        advisor_id=advisor_id,
+        advisor_query=advisor_query,
+    )
 
     response = []
-    for license in licenses:
+    for row in rows:
+        license = row["license"]
         response.append(
             AdminLicenseDecisionRow(
                 license_id=license.id,
                 user_id=license.user_id,
-                user_name=license.user.name,
-                user_email=license.user.email,
+                user_name=row["user_name"],
+                user_email=row["user_email"],
                 state=license.state,
                 license_number=license.license_number,
                 license_type=license.license_type,
                 decision_status=license.verification_status,
                 decision_at=license.reviewed_at,
+                submission_type=row["submission_type"],
+                review_cycle=row["review_cycle"],
                 rejection_reason=license.rejection_reason,
                 created_at=license.created_at,
             )
@@ -173,6 +182,14 @@ def approve_license(
         admin_id=current_admin.id,
     )
 
+    AuditService.log_event(
+        actor_user_id=current_admin.id,
+        action="license_approved",
+        entity_type="License",
+        entity_id=license.id,
+        meta_data={"state": license.state, "status": license.verification_status},
+    )
+
     return LicenseResponse.model_validate(license)
 
 
@@ -199,6 +216,18 @@ def reject_license(
         license_id=license_id,
         admin_id=current_admin.id,
         reason=data.rejection_reason,
+    )
+
+    AuditService.log_event(
+        actor_user_id=current_admin.id,
+        action="license_rejected",
+        entity_type="License",
+        entity_id=license.id,
+        meta_data={
+            "state": license.state,
+            "status": license.verification_status,
+            "reason": data.rejection_reason,
+        },
     )
 
     return LicenseResponse.model_validate(license)
@@ -276,6 +305,10 @@ def get_license(
 )
 def download_license_document(
     license_id: int,
+    access_mode: Literal["download", "preview"] = Query(
+        "download",
+        description="How the file is being accessed for audit semantics and disposition headers.",
+    ),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ) -> FileResponse:
@@ -295,21 +328,36 @@ def download_license_document(
 
     file_path, media_type = LicenseService.resolve_document_for_download(license.document_path)
     filename = f"license_{license.id}{file_path.suffix.lower()}"
+    action = (
+        "license_document_viewed"
+        if access_mode == "preview"
+        else "license_document_downloaded"
+    )
 
     AuditService.log_event(
         actor_user_id=current_user.id,
-        action="license_document_downloaded",
+        action=action,
         entity_type="License",
         entity_id=license.id,
-        meta_data={"viewer_role": current_user.role},
+        meta_data={"viewer_role": current_user.role, "access_mode": access_mode},
     )
+
+    headers = {
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+    }
+
+    if access_mode == "preview":
+        headers["Content-Disposition"] = f'inline; filename="{filename}"'
+        return FileResponse(
+            path=file_path,
+            media_type=media_type,
+            headers=headers,
+        )
 
     return FileResponse(
         path=file_path,
         media_type=media_type,
         filename=filename,
-        headers={
-            "Cache-Control": "no-store",
-            "X-Content-Type-Options": "nosniff",
-        },
+        headers=headers,
     )
