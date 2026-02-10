@@ -7,7 +7,7 @@ from typing import List, Optional
 
 from fastapi import HTTPException, UploadFile
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from sqlalchemy import and_, func
 
 from app.models.license import License
 from app.models.license_resubmission import LicenseResubmission
@@ -480,19 +480,69 @@ class LicenseService:
         )
 
     @staticmethod
-    def get_processed_licenses(db: Session) -> List[License]:
+    def get_processed_licenses(
+        db: Session,
+        advisor_id: Optional[int] = None,
+        advisor_query: Optional[str] = None,
+    ) -> List[dict]:
         """
         Get all currently processed licenses (admin view).
 
         Processed means the latest status is approved or rejected.
         """
-        return (
-            db.query(License)
+        resubmission_counts = (
+            db.query(
+                LicenseResubmission.license_id.label("license_id"),
+                func.count(LicenseResubmission.id).label("resubmission_count"),
+            )
+            .group_by(LicenseResubmission.license_id)
+            .subquery()
+        )
+
+        query = (
+            db.query(
+                License,
+                User.name.label("user_name"),
+                User.email.label("user_email"),
+                func.coalesce(resubmission_counts.c.resubmission_count, 0).label(
+                    "resubmission_count"
+                ),
+            )
             .join(User, License.user_id == User.id)
+            .outerjoin(
+                resubmission_counts,
+                resubmission_counts.c.license_id == License.id,
+            )
             .filter(License.verification_status.in_(["verified", "rejected"]))
-            .order_by(License.reviewed_at.desc(), License.created_at.desc())
+        )
+
+        if advisor_id is not None:
+            query = query.filter(License.user_id == advisor_id)
+
+        normalized_query = advisor_query.strip() if advisor_query else ""
+        if normalized_query:
+            term = f"%{normalized_query}%"
+            query = query.filter((User.name.ilike(term)) | (User.email.ilike(term)))
+
+        rows = (
+            query.order_by(License.reviewed_at.desc(), License.created_at.desc())
             .all()
         )
+
+        processed_rows: List[dict] = []
+        for license, user_name, user_email, resubmission_count in rows:
+            count = int(resubmission_count or 0)
+            processed_rows.append(
+                {
+                    "license": license,
+                    "user_name": user_name,
+                    "user_email": user_email,
+                    "submission_type": "resubmission" if count > 0 else "first_time",
+                    "review_cycle": count + 1,
+                }
+            )
+
+        return processed_rows
 
     @staticmethod
     def get_license_by_id(db: Session, license_id: int) -> Optional[License]:
