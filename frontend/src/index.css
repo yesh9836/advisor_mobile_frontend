@@ -1,0 +1,42 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Nunito+Sans:wght@400;500;600;700;800&display=swap");
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Nunito Sans", "Segoe UI", sans-serif;
+  --font-display: "Manrope", "Nunito Sans", sans-serif;
+
+  --color-brand-50: #eef3ff;
+  --color-brand-100: #dbe6ff;
+  --color-brand-200: #b8ccff;
+  --color-brand-300: #8da8f7;
+  --color-brand-400: #6586e8;
+  --color-brand-500: #4569d1;
+  --color-brand-600: #294bab;
+  --color-brand-700: #1c357d;
+  --color-brand-800: #13295f;
+  --color-brand-900: #0b1c42;
+
+  --shadow-panel: 0 10px 30px rgba(15, 23, 42, 0.08);
+}
+
+:root {
+  font-family: "Nunito Sans", "Segoe UI", sans-serif;
+  color: #0f172a;
+  background-color: #f5f7fb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background: #f5f7fb;
+  color: #0f172a;
+}
