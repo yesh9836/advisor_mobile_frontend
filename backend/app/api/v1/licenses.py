@@ -1,7 +1,8 @@
 import logging
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_active_user, get_db, require_admin
@@ -14,6 +15,7 @@ from app.schemas.license import (
     LicenseWithUser,
 )
 from app.services.license_service import LicenseService
+from app.services.audit_service import AuditService
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +165,45 @@ def reject_license(
     return LicenseResponse.model_validate(license)
 
 
+@router.post(
+    "/{license_id}/resubmit",
+    response_model=LicenseResponse,
+    summary="Resubmit a rejected license (advisor only)",
+)
+async def resubmit_license(
+    license_id: int,
+    document: UploadFile = File(..., description="Updated license document (PDF or image)"),
+    license_type: Optional[str] = Form(None, description="Updated license type (optional)"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+) -> LicenseResponse:
+    """
+    Resubmit a rejected license for another admin review cycle.
+
+    Advisors can only resubmit their own rejected licenses.
+    """
+    if current_user.role != "advisor":
+        raise HTTPException(status_code=403, detail="Only advisors can resubmit licenses")
+
+    license = await LicenseService.resubmit_rejected_license(
+        db=db,
+        user_id=current_user.id,
+        license_id=license_id,
+        file=document,
+        license_type=license_type,
+    )
+
+    AuditService.log_event(
+        actor_user_id=current_user.id,
+        action="license_resubmitted",
+        entity_type="License",
+        entity_id=license.id,
+        meta_data={"state": license.state},
+    )
+
+    return LicenseResponse.model_validate(license)
+
+
 @router.get(
     "/{license_id}",
     response_model=LicenseResponse,
@@ -188,3 +229,48 @@ def get_license(
         raise HTTPException(status_code=403, detail="Not authorized to view this license")
     
     return LicenseResponse.model_validate(license)
+
+
+@router.get(
+    "/{license_id}/document",
+    summary="Download license document",
+)
+def download_license_document(
+    license_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    """
+    Download the uploaded document for a license.
+
+    Access rules:
+    - Admin users can download any license document
+    - Advisors can download only their own license documents
+    """
+    license = LicenseService.get_license_by_id(db=db, license_id=license_id)
+    if not license:
+        raise HTTPException(status_code=404, detail="License not found")
+
+    if license.user_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized to download this document")
+
+    file_path, media_type = LicenseService.resolve_document_for_download(license.document_path)
+    filename = f"license_{license.id}{file_path.suffix.lower()}"
+
+    AuditService.log_event(
+        actor_user_id=current_user.id,
+        action="license_document_downloaded",
+        entity_type="License",
+        entity_id=license.id,
+        meta_data={"viewer_role": current_user.role},
+    )
+
+    return FileResponse(
+        path=file_path,
+        media_type=media_type,
+        filename=filename,
+        headers={
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
