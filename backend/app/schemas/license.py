@@ -83,3 +83,19 @@ class LicenseWithUser(LicenseResponse):
     model_config = {
         "from_attributes": True,
     }
+
+
+class AdminLicenseDecisionRow(BaseModel):
+    """Schema for admin processed-license decision table rows."""
+
+    license_id: int
+    user_id: int
+    user_name: str
+    user_email: str
+    state: str
+    license_number: str
+    license_type: Optional[str]
+    decision_status: Literal["verified", "rejected"]
+    decision_at: Optional[datetime]
+    rejection_reason: Optional[str]
+    created_at: datetime
