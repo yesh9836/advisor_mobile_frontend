@@ -1,11 +1,12 @@
 import axios from "axios";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   approveLicense,
   downloadLicenseDocument,
   getPendingLicenses,
   getProcessedLicenses,
+  previewLicenseDocument,
   rejectLicense,
 } from "@/api/admin";
 import Button from "@/components/common/Button";
@@ -21,7 +22,22 @@ interface ApiErrorPayload {
   detail?: string | Array<{ msg?: string }>;
 }
 
-type ActionType = "approve" | "reject" | "download";
+type ActionType = "approve" | "reject" | "download" | "preview";
+
+interface PreviewState {
+  isOpen: boolean;
+  loading: boolean;
+  licenseId: number | null;
+  userName: string;
+  objectUrl: string | null;
+  contentType: string;
+  error: string | null;
+}
+
+interface AdvisorOption {
+  userId: number;
+  label: string;
+}
 
 const getErrorMessage = (error: unknown, fallback: string): string => {
   if (axios.isAxiosError<ApiErrorPayload>(error)) {
@@ -88,6 +104,8 @@ const toProcessedRow = (
     license_type: decision.license_type,
     decision_status: decisionStatus,
     decision_at: decisionAt,
+    submission_type: "first_time",
+    review_cycle: 1,
     rejection_reason: decision.rejection_reason,
     created_at: decision.created_at,
   };
@@ -113,64 +131,122 @@ const LicenseApproval = () => {
     licenseId: number;
     type: ActionType;
   } | null>(null);
+  const [selectedAdvisorId, setSelectedAdvisorId] = useState<string>("all");
+  const [advisorQueryInput, setAdvisorQueryInput] = useState("");
+  const [advisorQuery, setAdvisorQuery] = useState("");
+  const [preview, setPreview] = useState<PreviewState>({
+    isOpen: false,
+    loading: false,
+    licenseId: null,
+    userName: "",
+    objectUrl: null,
+    contentType: "",
+    error: null,
+  });
 
-  const refreshProcessedLicenses = useCallback(async () => {
-    try {
-      const processed = await getProcessedLicenses();
-      setProcessedLicenses(processed);
-    } catch (refreshError) {
-      setError(
-        getErrorMessage(refreshError, "Unable to refresh processed licenses."),
-      );
-    }
-  }, []);
-
-  const loadAdminTables = useCallback(async () => {
+  const loadPendingLicenses = useCallback(async () => {
     setLoadingPending(true);
-    setLoadingProcessed(true);
-    setError(null);
-
-    const [pendingResult, processedResult] = await Promise.allSettled([
-      getPendingLicenses(),
-      getProcessedLicenses(),
-    ]);
-
-    const loadErrors: string[] = [];
-
-    if (pendingResult.status === "fulfilled") {
-      setPendingLicenses(pendingResult.value);
-    } else {
+    try {
+      const pending = await getPendingLicenses();
+      setPendingLicenses(pending);
+    } catch (pendingError) {
       setPendingLicenses([]);
-      loadErrors.push(
-        getErrorMessage(pendingResult.reason, "Unable to load pending licenses."),
-      );
+      setError(getErrorMessage(pendingError, "Unable to load pending licenses."));
+    } finally {
+      setLoadingPending(false);
     }
-
-    if (processedResult.status === "fulfilled") {
-      setProcessedLicenses(processedResult.value);
-    } else {
-      setProcessedLicenses([]);
-      loadErrors.push(
-        getErrorMessage(
-          processedResult.reason,
-          "Unable to load processed licenses.",
-        ),
-      );
-    }
-
-    if (loadErrors.length > 0) {
-      setError(loadErrors.join(" "));
-    }
-
-    setLoadingPending(false);
-    setLoadingProcessed(false);
   }, []);
+
+  const loadProcessedLicenses = useCallback(
+    async (advisorId: string, queryText: string) => {
+      setLoadingProcessed(true);
+      try {
+        const processed = await getProcessedLicenses({
+          advisorId: advisorId === "all" ? undefined : Number(advisorId),
+          advisorQuery: queryText.trim() || undefined,
+        });
+        setProcessedLicenses(processed);
+      } catch (processedError) {
+        setProcessedLicenses([]);
+        setError(
+          getErrorMessage(processedError, "Unable to load processed licenses."),
+        );
+      } finally {
+        setLoadingProcessed(false);
+      }
+    },
+    [],
+  );
+
+  const refreshAll = useCallback(async () => {
+    setError(null);
+    await Promise.all([
+      loadPendingLicenses(),
+      loadProcessedLicenses(selectedAdvisorId, advisorQuery),
+    ]);
+  }, [advisorQuery, loadPendingLicenses, loadProcessedLicenses, selectedAdvisorId]);
 
   useEffect(() => {
-    void loadAdminTables();
-  }, [loadAdminTables]);
+    void refreshAll();
+  }, [refreshAll]);
+
+  useEffect(() => {
+    return () => {
+      if (preview.objectUrl) {
+        window.URL.revokeObjectURL(preview.objectUrl);
+      }
+    };
+  }, [preview.objectUrl]);
+
+  const advisorOptions = useMemo(() => {
+    const byId = new Map<number, AdvisorOption>();
+
+    pendingLicenses.forEach((license) => {
+      byId.set(license.user_id, {
+        userId: license.user_id,
+        label: `${license.user_name} (${license.user_email})`,
+      });
+    });
+
+    processedLicenses.forEach((row) => {
+      if (!byId.has(row.user_id)) {
+        byId.set(row.user_id, {
+          userId: row.user_id,
+          label: `${row.user_name} (${row.user_email})`,
+        });
+      }
+    });
+
+    return Array.from(byId.values()).sort((a, b) =>
+      a.label.localeCompare(b.label),
+    );
+  }, [pendingLicenses, processedLicenses]);
 
   const isBusy = inflightAction !== null;
+
+  const matchesProcessedFilters = useCallback(
+    (row: AdminLicenseDecisionRow): boolean => {
+      if (
+        selectedAdvisorId !== "all" &&
+        row.user_id !== Number(selectedAdvisorId)
+      ) {
+        return false;
+      }
+      if (!advisorQuery.trim()) {
+        return true;
+      }
+      const term = advisorQuery.trim().toLowerCase();
+      return (
+        row.user_name.toLowerCase().includes(term) ||
+        row.user_email.toLowerCase().includes(term)
+      );
+    },
+    [advisorQuery, selectedAdvisorId],
+  );
+
+  const refreshProcessedLicenses = useCallback(async () => {
+    await loadProcessedLicenses(selectedAdvisorId, advisorQuery);
+  }, [advisorQuery, loadProcessedLicenses, selectedAdvisorId]);
 
   const handleApprove = async (license: LicenseWithUser) => {
     setError(null);
@@ -179,13 +255,16 @@ const LicenseApproval = () => {
 
     try {
       const approved = await approveLicense(license.id);
+      const optimisticRow = toProcessedRow(license, approved);
       setPendingLicenses((previous) =>
         previous.filter((item) => item.id !== license.id),
       );
-      setProcessedLicenses((previous) => [
-        toProcessedRow(license, approved),
-        ...previous.filter((item) => item.license_id !== license.id),
-      ]);
+      if (matchesProcessedFilters(optimisticRow)) {
+        setProcessedLicenses((previous) => [
+          optimisticRow,
+          ...previous.filter((item) => item.license_id !== license.id),
+        ]);
+      }
       setNotice(`License approved for ${license.user_name}.`);
       if (openRejectId === license.id) {
         setOpenRejectId(null);
@@ -241,18 +320,80 @@ const LicenseApproval = () => {
 
     try {
       const rejected = await rejectLicense(license.id, reason);
+      const optimisticRow = toProcessedRow(license, rejected);
       setPendingLicenses((previous) =>
         previous.filter((item) => item.id !== license.id),
       );
-      setProcessedLicenses((previous) => [
-        toProcessedRow(license, rejected),
-        ...previous.filter((item) => item.license_id !== license.id),
-      ]);
+      if (matchesProcessedFilters(optimisticRow)) {
+        setProcessedLicenses((previous) => [
+          optimisticRow,
+          ...previous.filter((item) => item.license_id !== license.id),
+        ]);
+      }
       setOpenRejectId(null);
       setNotice(`License rejected for ${license.user_name}.`);
       void refreshProcessedLicenses();
     } catch (rejectError) {
       setError(getErrorMessage(rejectError, "Unable to reject license."));
+    } finally {
+      setInflightAction(null);
+    }
+  };
+
+  const handleClosePreview = () => {
+    if (preview.objectUrl) {
+      window.URL.revokeObjectURL(preview.objectUrl);
+    }
+    setPreview({
+      isOpen: false,
+      loading: false,
+      licenseId: null,
+      userName: "",
+      objectUrl: null,
+      contentType: "",
+      error: null,
+    });
+  };
+
+  const handlePreviewDocument = async (licenseId: number, userName: string) => {
+    setError(null);
+    setNotice(null);
+    setInflightAction({ licenseId, type: "preview" });
+    setPreview({
+      isOpen: true,
+      loading: true,
+      licenseId,
+      userName,
+      objectUrl: null,
+      contentType: "",
+      error: null,
+    });
+
+    try {
+      const { blob, contentType } = await previewLicenseDocument(licenseId);
+      const objectUrl = window.URL.createObjectURL(blob);
+      setPreview({
+        isOpen: true,
+        loading: false,
+        licenseId,
+        userName,
+        objectUrl,
+        contentType: contentType || blob.type || "",
+        error: null,
+      });
+    } catch (previewError) {
+      setPreview({
+        isOpen: true,
+        loading: false,
+        licenseId,
+        userName,
+        objectUrl: null,
+        contentType: "",
+        error: getErrorMessage(
+          previewError,
+          "Unable to load document preview. You can still download the document.",
+        ),
+      });
     } finally {
       setInflightAction(null);
     }
@@ -281,6 +422,26 @@ const LicenseApproval = () => {
     } finally {
       setInflightAction(null);
     }
+  };
+
+  const handleApplyFilters = async () => {
+    setError(null);
+    setAdvisorQuery(advisorQueryInput.trim());
+    await loadProcessedLicenses(selectedAdvisorId, advisorQueryInput);
+  };
+
+  const handleAdvisorChange = async (value: string) => {
+    setSelectedAdvisorId(value);
+    setError(null);
+    await loadProcessedLicenses(value, advisorQuery);
+  };
+
+  const handleClearFilters = async () => {
+    setSelectedAdvisorId("all");
+    setAdvisorQueryInput("");
+    setAdvisorQuery("");
+    setError(null);
+    await loadProcessedLicenses("all", "");
   };
 
   const pendingColumns: TableColumn<LicenseWithUser>[] = [
@@ -320,7 +481,7 @@ const LicenseApproval = () => {
     {
       key: "actions",
       header: "Actions",
-      className: "min-w-[280px]",
+      className: "min-w-[340px]",
       cell: (license) => {
         const isOpen = openRejectId === license.id;
         const actionMatchesRow = inflightAction?.licenseId === license.id;
@@ -329,6 +490,17 @@ const LicenseApproval = () => {
         return (
           <div className="space-y-2">
             <div className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                className="px-3 py-1.5"
+                loading={actionMatchesRow && inflightAction?.type === "preview"}
+                disabled={isBusy}
+                onClick={() => {
+                  void handlePreviewDocument(license.id, license.user_name);
+                }}
+              >
+                View Doc
+              </Button>
               <Button
                 variant="secondary"
                 className="px-3 py-1.5"
@@ -436,6 +608,24 @@ const LicenseApproval = () => {
       ),
     },
     {
+      key: "submission",
+      header: "Submission Type",
+      cell: (decision) => (
+        <span className="text-sm text-[#4c628a]">
+          {decision.submission_type === "resubmission"
+            ? "Resubmission"
+            : "First-time"}
+        </span>
+      ),
+    },
+    {
+      key: "cycle",
+      header: "Review Cycle",
+      cell: (decision) => (
+        <span className="text-sm text-[#4c628a]">{decision.review_cycle}</span>
+      ),
+    },
+    {
       key: "status",
       header: "Decision",
       cell: (decision) => (
@@ -473,24 +663,41 @@ const LicenseApproval = () => {
     {
       key: "actions",
       header: "Actions",
+      className: "min-w-[190px]",
       cell: (decision) => {
         const actionMatchesRow = inflightAction?.licenseId === decision.license_id;
         return (
-          <Button
-            variant="secondary"
-            className="px-3 py-1.5"
-            loading={actionMatchesRow && inflightAction?.type === "download"}
-            disabled={isBusy}
-            onClick={() => {
-              void handleDownloadDocument(decision.license_id, decision.user_name);
-            }}
-          >
-            Download Doc
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              className="px-3 py-1.5"
+              loading={actionMatchesRow && inflightAction?.type === "preview"}
+              disabled={isBusy}
+              onClick={() => {
+                void handlePreviewDocument(decision.license_id, decision.user_name);
+              }}
+            >
+              View Doc
+            </Button>
+            <Button
+              variant="secondary"
+              className="px-3 py-1.5"
+              loading={actionMatchesRow && inflightAction?.type === "download"}
+              disabled={isBusy}
+              onClick={() => {
+                void handleDownloadDocument(decision.license_id, decision.user_name);
+              }}
+            >
+              Download Doc
+            </Button>
+          </div>
         );
       },
     },
   ];
+
+  const isImagePreview = preview.contentType.startsWith("image/");
+  const isPdfPreview = preview.contentType.includes("application/pdf");
 
   return (
     <div className="space-y-6">
@@ -521,7 +728,7 @@ const LicenseApproval = () => {
             className="px-3 py-1.5"
             disabled={loadingPending || loadingProcessed || isBusy}
             onClick={() => {
-              void loadAdminTables();
+              void refreshAll();
             }}
           >
             Refresh
@@ -541,6 +748,67 @@ const LicenseApproval = () => {
         title="Processed License Decisions"
         subtitle="Current approved and rejected licenses with latest decision details."
       >
+        <div className="mb-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto_auto]">
+          <label className="flex flex-col gap-1 text-sm text-[#4c628a]">
+            <span>Advisor</span>
+            <select
+              value={selectedAdvisorId}
+              aria-label="Filter by advisor"
+              className="rounded-xl border border-[#d9e4f8] px-3 py-2 text-sm text-[#0a1633] focus:border-[#8ea4d8] focus:outline-none"
+              onChange={(event) => {
+                void handleAdvisorChange(event.target.value);
+              }}
+            >
+              <option value="all">All advisors</option>
+              {advisorOptions.map((option) => (
+                <option key={option.userId} value={option.userId}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-sm text-[#4c628a]">
+            <span>Search name or email</span>
+            <input
+              value={advisorQueryInput}
+              aria-label="Search advisor"
+              className="rounded-xl border border-[#d9e4f8] px-3 py-2 text-sm text-[#0a1633] focus:border-[#8ea4d8] focus:outline-none"
+              onChange={(event) => setAdvisorQueryInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void handleApplyFilters();
+                }
+              }}
+              placeholder="Type advisor name or email"
+            />
+          </label>
+          <div className="flex items-end">
+            <Button
+              variant="secondary"
+              className="w-full px-3 py-2"
+              disabled={loadingProcessed || isBusy}
+              onClick={() => {
+                void handleApplyFilters();
+              }}
+            >
+              Apply Filters
+            </Button>
+          </div>
+          <div className="flex items-end">
+            <Button
+              variant="secondary"
+              className="w-full px-3 py-2"
+              disabled={loadingProcessed || isBusy}
+              onClick={() => {
+                void handleClearFilters();
+              }}
+            >
+              Clear
+            </Button>
+          </div>
+        </div>
+
         <Table
           columns={processedColumns}
           data={processedLicenses}
@@ -549,6 +817,107 @@ const LicenseApproval = () => {
           emptyMessage="No processed licenses to display."
         />
       </Card>
+
+      {preview.isOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#0a1633]/55 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="License document preview"
+        >
+          <div className="w-full max-w-4xl rounded-2xl bg-white p-4 shadow-2xl">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-[#0a1633]">
+                  License Preview
+                </h3>
+                <p className="text-sm text-[#4c628a]">{preview.userName}</p>
+              </div>
+              <Button
+                variant="secondary"
+                className="px-3 py-1.5"
+                onClick={handleClosePreview}
+              >
+                Close
+              </Button>
+            </div>
+
+            <div className="h-[65vh] overflow-auto rounded-xl border border-[#d9e4f8] bg-[#f8fbff] p-3">
+              {preview.loading && (
+                <p className="text-sm text-[#4c628a]">Loading preview...</p>
+              )}
+
+              {!preview.loading && preview.error && (
+                <div className="space-y-3">
+                  <p className="text-sm text-[#8a1d1d]">{preview.error}</p>
+                  {preview.licenseId !== null && (
+                    <Button
+                      variant="secondary"
+                      className="px-3 py-1.5"
+                      onClick={() => {
+                        const targetLicenseId = preview.licenseId;
+                        if (targetLicenseId !== null) {
+                          void handleDownloadDocument(targetLicenseId, preview.userName);
+                        }
+                      }}
+                    >
+                      Download Doc
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              {!preview.loading &&
+                !preview.error &&
+                preview.objectUrl &&
+                isImagePreview && (
+                  <img
+                    src={preview.objectUrl}
+                    alt="License document preview"
+                    className="mx-auto max-h-[60vh] rounded-lg"
+                  />
+                )}
+
+              {!preview.loading &&
+                !preview.error &&
+                preview.objectUrl &&
+                isPdfPreview && (
+                  <iframe
+                    src={preview.objectUrl}
+                    title="License PDF preview"
+                    className="h-[60vh] w-full rounded-lg border border-[#d9e4f8]"
+                  />
+                )}
+
+              {!preview.loading &&
+                !preview.error &&
+                preview.objectUrl &&
+                !isImagePreview &&
+                !isPdfPreview && (
+                  <div className="space-y-3">
+                    <p className="text-sm text-[#4c628a]">
+                      Inline preview is not available for this file type.
+                    </p>
+                    {preview.licenseId !== null && (
+                      <Button
+                        variant="secondary"
+                        className="px-3 py-1.5"
+                        onClick={() => {
+                          const targetLicenseId = preview.licenseId;
+                          if (targetLicenseId !== null) {
+                            void handleDownloadDocument(targetLicenseId, preview.userName);
+                          }
+                        }}
+                      >
+                        Download Doc
+                      </Button>
+                    )}
+                  </div>
+                )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
