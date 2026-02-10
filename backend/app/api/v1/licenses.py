@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_active_user, get_db, require_admin
 from app.models.user import User
 from app.schemas.license import (
+    AdminLicenseDecisionRow,
     LicenseApprove,
     LicenseCreate,
     LicenseReject,
@@ -108,6 +109,44 @@ def get_pending_licenses(
         license_dict["user_email"] = license.user.email
         response.append(LicenseWithUser(**license_dict))
     
+    return response
+
+
+@router.get(
+    "/processed",
+    response_model=List[AdminLicenseDecisionRow],
+    summary="Get currently processed licenses (admin only)",
+    dependencies=[Depends(require_admin)],
+)
+def get_processed_licenses(
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> List[AdminLicenseDecisionRow]:
+    """
+    Get licenses currently in approved/rejected states for admin visibility.
+
+    Admin only. Returns licenses ordered by latest decision timestamp (newest first).
+    """
+    licenses = LicenseService.get_processed_licenses(db=db)
+
+    response = []
+    for license in licenses:
+        response.append(
+            AdminLicenseDecisionRow(
+                license_id=license.id,
+                user_id=license.user_id,
+                user_name=license.user.name,
+                user_email=license.user.email,
+                state=license.state,
+                license_number=license.license_number,
+                license_type=license.license_type,
+                decision_status=license.verification_status,
+                decision_at=license.reviewed_at,
+                rejection_reason=license.rejection_reason,
+                created_at=license.created_at,
+            )
+        )
+
     return response
 
 
