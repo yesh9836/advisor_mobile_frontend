@@ -1,5 +1,6 @@
 export type LicenseVerificationStatus = "pending" | "verified" | "rejected";
 export type AdminDecisionStatus = "verified" | "rejected";
+export type AdminSubmissionType = "first_time" | "resubmission";
 
 export interface License {
   id: number;
@@ -36,6 +37,8 @@ export interface AdminLicenseDecisionRow {
   license_type: string | null;
   decision_status: AdminDecisionStatus;
   decision_at: string | null;
+  submission_type: AdminSubmissionType;
+  review_cycle: number;
   rejection_reason: string | null;
   created_at: string;
 }
