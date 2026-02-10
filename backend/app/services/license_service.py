@@ -309,6 +309,8 @@ class LicenseService:
             license.rejection_reason = None
             license.verified_at = None
             license.verified_by = None
+            license.reviewed_at = None
+            license.reviewed_by = None
 
             if license_type is not None:
                 normalized_type = license_type.strip()
@@ -373,6 +375,8 @@ class LicenseService:
             license.verified_at = datetime.now(timezone.utc)
             license.verified_by = admin_id
             license.rejection_reason = None  # Clear any previous rejection reason
+            license.reviewed_at = license.verified_at
+            license.reviewed_by = admin_id
 
             db.commit()
             db.refresh(license)
@@ -423,6 +427,8 @@ class LicenseService:
             license.rejection_reason = reason
             license.verified_at = None
             license.verified_by = None
+            license.reviewed_at = datetime.now(timezone.utc)
+            license.reviewed_by = admin_id
 
             db.commit()
             db.refresh(license)
@@ -470,6 +476,21 @@ class LicenseService:
             .join(User, License.user_id == User.id)
             .filter(License.verification_status == "pending")
             .order_by(License.created_at.asc())
+            .all()
+        )
+
+    @staticmethod
+    def get_processed_licenses(db: Session) -> List[License]:
+        """
+        Get all currently processed licenses (admin view).
+
+        Processed means the latest status is approved or rejected.
+        """
+        return (
+            db.query(License)
+            .join(User, License.user_id == User.id)
+            .filter(License.verification_status.in_(["verified", "rejected"]))
+            .order_by(License.reviewed_at.desc(), License.created_at.desc())
             .all()
         )
 
