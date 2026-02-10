@@ -14,6 +14,11 @@ interface LicenseDocumentDownload {
   filename: string;
 }
 
+interface LicenseDocumentPreview {
+  blob: Blob;
+  contentType: string;
+}
+
 const parseFilename = (
   contentDisposition: string | undefined,
   fallback: string,
@@ -40,10 +45,20 @@ export const getPendingLicenses = async (): Promise<LicenseWithUser[]> => {
   return response.data;
 };
 
-export const getProcessedLicenses = async (): Promise<AdminLicenseDecisionRow[]> => {
-  const response = await apiClient.get<AdminLicenseDecisionRow[]>(
-    "/licenses/processed",
-  );
+interface GetProcessedLicensesParams {
+  advisorId?: number;
+  advisorQuery?: string;
+}
+
+export const getProcessedLicenses = async (
+  params: GetProcessedLicensesParams = {},
+): Promise<AdminLicenseDecisionRow[]> => {
+  const response = await apiClient.get<AdminLicenseDecisionRow[]>("/licenses/processed", {
+    params: {
+      advisor_id: params.advisorId,
+      advisor_query: params.advisorQuery,
+    },
+  });
   return response.data;
 };
 
@@ -83,5 +98,19 @@ export const downloadLicenseDocument = async (
   return {
     blob: response.data,
     filename,
+  };
+};
+
+export const previewLicenseDocument = async (
+  licenseId: number,
+): Promise<LicenseDocumentPreview> => {
+  const response = await apiClient.get<Blob>(`/licenses/${licenseId}/document`, {
+    params: { access_mode: "preview" },
+    responseType: "blob",
+  });
+
+  return {
+    blob: response.data,
+    contentType: (response.headers["content-type"] || "").toLowerCase(),
   };
 };
