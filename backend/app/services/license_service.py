@@ -1,7 +1,7 @@
 import os
 import logging
 import aiofiles
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional
 
@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
 from app.models.license import License
+from app.models.license_resubmission import LicenseResubmission
 from app.models.user import User
 from app.core.config import settings
 from app.schemas.license import LicenseCreate
@@ -22,6 +23,12 @@ MAGIC_SIGNATURES = {
     ".jpg": (b"\xff\xd8\xff",),
     ".jpeg": (b"\xff\xd8\xff",),
     ".png": (b"\x89PNG\r\n\x1a\n",),
+}
+EXTENSION_TO_MIME = {
+    ".pdf": "application/pdf",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
 }
 
 class LicenseService:
@@ -100,6 +107,7 @@ class LicenseService:
 
             size = 0
             file_ext = Path(file.filename).suffix.lower()
+            max_upload_size_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
             # Use aiofiles for non-blocking disk I/O
             async with aiofiles.open(file_path, "wb") as out_file:
                 while content := await file.read(CHUNK_SIZE):
@@ -107,14 +115,14 @@ class LicenseService:
                         LicenseService._validate_magic_bytes(file_ext, content[:16])
 
                     size += len(content)
-                    if size > settings.MAX_UPLOAD_SIZE_MB:
+                    if size > max_upload_size_bytes:
                         # Clean up the partial file
                         await out_file.close()
                         if file_path.exists():
                             os.remove(file_path)
                         raise HTTPException(
                             status_code=400, 
-                            detail=f"File too large. Limit: {settings.MAX_UPLOAD_SIZE_MB/1024/1024}MB"
+                            detail=f"File too large. Limit: {settings.MAX_UPLOAD_SIZE_MB}MB"
                         )
                     await out_file.write(content)
 
@@ -227,6 +235,111 @@ class LicenseService:
             
             logger.error(f"Failed to create license: {e}")
             raise HTTPException(status_code=500, detail="Failed to create license")
+
+    @staticmethod
+    async def resubmit_rejected_license(
+        db: Session,
+        user_id: int,
+        license_id: int,
+        file: UploadFile,
+        license_type: Optional[str] = None,
+    ) -> License:
+        """
+        Resubmit a rejected license by replacing its document and returning it to pending.
+        """
+        license = db.query(License).filter(License.id == license_id).first()
+
+        if not license:
+            raise HTTPException(status_code=404, detail="License not found")
+
+        if license.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Not authorized to resubmit this license")
+
+        if license.verification_status != "rejected":
+            raise HTTPException(status_code=400, detail="Only rejected licenses can be resubmitted")
+
+        pending_for_state = (
+            db.query(License)
+            .filter(
+                and_(
+                    License.user_id == user_id,
+                    License.state == license.state,
+                    License.verification_status == "pending",
+                    License.id != license.id,
+                )
+            )
+            .first()
+        )
+        if pending_for_state:
+            raise HTTPException(
+                status_code=400,
+                detail=f"You already have a pending license for state {license.state}",
+            )
+
+        window_start = datetime.now(timezone.utc) - timedelta(
+            days=settings.LICENSE_RESUBMISSION_WINDOW_DAYS
+        )
+        resubmission_count = (
+            db.query(LicenseResubmission)
+            .filter(
+                and_(
+                    LicenseResubmission.license_id == license.id,
+                    LicenseResubmission.attempted_at >= window_start,
+                )
+            )
+            .count()
+        )
+
+        if resubmission_count >= settings.LICENSE_RESUBMISSION_MAX_ATTEMPTS:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    "Resubmission limit reached for this license. "
+                    "Please contact support or wait for the retry window to reset."
+                ),
+            )
+
+        LicenseService._validate_file(file)
+        document_path = await LicenseService._save_document(user_id, file)
+        previous_document_path = license.document_path
+
+        try:
+            license.document_path = document_path
+            license.verification_status = "pending"
+            license.rejection_reason = None
+            license.verified_at = None
+            license.verified_by = None
+
+            if license_type is not None:
+                normalized_type = license_type.strip()
+                license.license_type = normalized_type or None
+
+            db.add(
+                LicenseResubmission(
+                    license_id=license.id,
+                    user_id=user_id,
+                )
+            )
+            db.commit()
+            db.refresh(license)
+
+            if previous_document_path and previous_document_path != document_path:
+                LicenseService._delete_document_if_safe(previous_document_path)
+
+            logger.info(f"License resubmitted: license_id={license_id}, user_id={user_id}")
+            return license
+        except HTTPException:
+            db.rollback()
+            raise
+        except Exception as e:
+            db.rollback()
+            try:
+                if document_path and os.path.exists(document_path):
+                    os.remove(document_path)
+            except Exception as cleanup_error:
+                logger.error(f"Failed to cleanup resubmitted document after error: {cleanup_error}")
+            logger.error(f"Failed to resubmit license: {e}")
+            raise HTTPException(status_code=500, detail="Failed to resubmit license")
 
     @staticmethod
     def approve_license(db: Session, license_id: int, admin_id: int) -> License:
@@ -373,3 +486,64 @@ class LicenseService:
             License object or None if not found
         """
         return db.query(License).filter(License.id == license_id).first()
+
+    @staticmethod
+    def resolve_document_for_download(document_path: Optional[str]) -> tuple[Path, str]:
+        """
+        Resolve and validate a stored license document path for secure downloads.
+
+        Args:
+            document_path: Stored file path from license record
+
+        Returns:
+            Tuple of resolved file path and media type
+
+        Raises:
+            HTTPException: If the path is invalid, outside upload dir, missing, or unsupported
+        """
+        if not document_path:
+            raise HTTPException(status_code=404, detail="Document not available")
+
+        upload_root = Path(settings.UPLOAD_DIR).resolve()
+        candidate = Path(document_path)
+        if not candidate.is_absolute():
+            candidate = (Path.cwd() / candidate).resolve()
+        else:
+            candidate = candidate.resolve()
+
+        try:
+            candidate.relative_to(upload_root)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid document path") from exc
+
+        if not candidate.exists() or not candidate.is_file():
+            raise HTTPException(status_code=404, detail="Document file not found")
+
+        file_ext = candidate.suffix.lower()
+        allowed_extensions = {ext.lower() for ext in settings.ALLOWED_EXTENSIONS}
+        if file_ext not in allowed_extensions:
+            raise HTTPException(status_code=400, detail="Document type is not allowed")
+
+        media_type = EXTENSION_TO_MIME.get(file_ext)
+        if not media_type:
+            raise HTTPException(status_code=400, detail="Unsupported document type")
+
+        return candidate, media_type
+
+    @staticmethod
+    def _delete_document_if_safe(document_path: Optional[str]) -> None:
+        if not document_path:
+            return
+
+        try:
+            resolved_path, _ = LicenseService.resolve_document_for_download(document_path)
+        except HTTPException as exc:
+            # Missing files are already effectively deleted.
+            if exc.status_code != 404:
+                logger.error(f"Skipped unsafe document cleanup for path: {document_path}")
+            return
+
+        try:
+            os.remove(resolved_path)
+        except Exception as cleanup_error:
+            logger.error(f"Failed to cleanup document: {cleanup_error}")
