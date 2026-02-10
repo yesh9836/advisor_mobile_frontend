@@ -97,5 +97,7 @@ class AdminLicenseDecisionRow(BaseModel):
     license_type: Optional[str]
     decision_status: Literal["verified", "rejected"]
     decision_at: Optional[datetime]
+    submission_type: Literal["first_time", "resubmission"]
+    review_cycle: int
     rejection_reason: Optional[str]
     created_at: datetime
