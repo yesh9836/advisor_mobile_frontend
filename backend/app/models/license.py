@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base
 
 if TYPE_CHECKING:
+    from .license_resubmission import LicenseResubmission
     from .user import User
 
 
@@ -92,6 +93,12 @@ class License(Base):
         "User",
         back_populates="verified_licenses",
         foreign_keys=[verified_by],
+    )
+
+    resubmissions: Mapped[list["LicenseResubmission"]] = relationship(
+        "LicenseResubmission",
+        back_populates="license",
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:
