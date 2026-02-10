@@ -9,7 +9,7 @@ import { useAuth } from "@/context/AuthContext";
 const registerSchema = z
   .object({
     name: z.string().min(2, "Name must be at least 2 characters"),
-    email: z.string().email("Enter a valid email"),
+    email: z.email("Enter a valid email"),
     phone: z
       .string()
       .trim()
