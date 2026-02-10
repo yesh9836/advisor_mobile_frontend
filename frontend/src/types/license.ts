@@ -14,6 +14,11 @@ export interface License {
   created_at: string;
 }
 
+export interface LicenseWithUser extends License {
+  user_name: string;
+  user_email: string;
+}
+
 export interface LicenseCreate {
   state: string;
   license_number: string;
