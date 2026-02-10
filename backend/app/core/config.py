@@ -1,4 +1,5 @@
 import json
+from ipaddress import ip_network
 from typing import Optional
 from urllib.parse import quote_plus
 from urllib.parse import urlparse
@@ -66,7 +67,7 @@ class Settings(BaseSettings):
 
     # File uploads
     UPLOAD_DIR: str = "uploads"
-    MAX_UPLOAD_SIZE_MB: int = 10 * 1024 * 1024  # 10MB
+    MAX_UPLOAD_SIZE_MB: int = 10  # MB
     MAX_CSV_UPLOAD_SIZE: int = 5 * 1024 * 1024  # 5MB
     ALLOWED_EXTENSIONS: list[str] = [".pdf", ".jpg", ".jpeg", ".png"]
     ALLOWED_UPLOAD_MIME_TYPES: list[str] = [
@@ -75,6 +76,8 @@ class Settings(BaseSettings):
         "image/jpg",
         "image/png",
     ]
+    LICENSE_RESUBMISSION_MAX_ATTEMPTS: int = 3
+    LICENSE_RESUBMISSION_WINDOW_DAYS: int = 90
     ALLOWED_CSV_MIME_TYPES: list[str] = [
         "text/csv",
         "application/csv",
@@ -110,6 +113,10 @@ class Settings(BaseSettings):
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_PER_MINUTE: int = 60
     RATE_LIMIT_WINDOW_SECONDS: int = 60
+    # Proxy header trust is disabled by default; enable only behind known proxies.
+    RATE_LIMIT_TRUST_PROXY_HEADERS: bool = False
+    # Comma-separated or JSON array of IP/CIDR values.
+    RATE_LIMIT_TRUSTED_PROXIES: list[str] = []
 
     @property
     def is_production(self) -> bool:
@@ -118,6 +125,18 @@ class Settings(BaseSettings):
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def parse_cors_origins(cls, value):
+        if isinstance(value, str):
+            parsed = value.strip()
+            if not parsed:
+                return []
+            if parsed.startswith("["):
+                return json.loads(parsed)
+            return [item.strip() for item in parsed.split(",") if item.strip()]
+        return value
+
+    @field_validator("RATE_LIMIT_TRUSTED_PROXIES", mode="before")
+    @classmethod
+    def parse_trusted_proxies(cls, value):
         if isinstance(value, str):
             parsed = value.strip()
             if not parsed:
@@ -141,12 +160,28 @@ class Settings(BaseSettings):
                 normalized.append(ext)
         return normalized
 
-    @field_validator("RATE_LIMIT_PER_MINUTE", "RATE_LIMIT_WINDOW_SECONDS", mode="after")
+    @field_validator(
+        "RATE_LIMIT_PER_MINUTE",
+        "RATE_LIMIT_WINDOW_SECONDS",
+        "LICENSE_RESUBMISSION_MAX_ATTEMPTS",
+        "LICENSE_RESUBMISSION_WINDOW_DAYS",
+        mode="after",
+    )
     @classmethod
     def validate_rate_limit_bounds(cls, value: int) -> int:
         if value <= 0:
-            raise ValueError("Rate limiting values must be greater than 0")
+            raise ValueError("Configuration values must be greater than 0")
         return value
+
+    @field_validator("RATE_LIMIT_TRUSTED_PROXIES", mode="after")
+    @classmethod
+    def validate_trusted_proxies(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for proxy in value:
+            network = str(ip_network(proxy.strip(), strict=False))
+            if network not in normalized:
+                normalized.append(network)
+        return normalized
 
     @model_validator(mode="after")
     def validate_security_posture(self):
@@ -187,6 +222,9 @@ class Settings(BaseSettings):
 
         if "*" in self.CORS_ALLOW_METHODS or "*" in self.CORS_ALLOW_HEADERS or "*" in self.CORS_ORIGINS:
             raise ValueError("Wildcard CORS values are not allowed in production")
+
+        if self.RATE_LIMIT_TRUST_PROXY_HEADERS and not self.RATE_LIMIT_TRUSTED_PROXIES:
+            raise ValueError("RATE_LIMIT_TRUSTED_PROXIES is required when proxy header trust is enabled")
 
         return self
 
