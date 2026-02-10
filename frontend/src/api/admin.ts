@@ -1,5 +1,9 @@
 import apiClient from "@/api/client";
-import type { License, LicenseWithUser } from "@/types/license";
+import type {
+  AdminLicenseDecisionRow,
+  License,
+  LicenseWithUser,
+} from "@/types/license";
 
 interface LicenseRejectPayload {
   rejection_reason: string;
@@ -33,6 +37,13 @@ const parseFilename = (
 
 export const getPendingLicenses = async (): Promise<LicenseWithUser[]> => {
   const response = await apiClient.get<LicenseWithUser[]>("/licenses/pending");
+  return response.data;
+};
+
+export const getProcessedLicenses = async (): Promise<AdminLicenseDecisionRow[]> => {
+  const response = await apiClient.get<AdminLicenseDecisionRow[]>(
+    "/licenses/processed",
+  );
   return response.data;
 };
 
