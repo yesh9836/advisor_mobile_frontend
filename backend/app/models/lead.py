@@ -161,6 +161,9 @@ class LeadDownload(Base):
     """
 
     __tablename__ = "lead_downloads"
+    __table_args__ = (
+        UniqueConstraint("user_id", "lead_id", name="uq_lead_downloads_user_lead"),
+    )
 
     # Primary key
     id: Mapped[int] = mapped_column(
