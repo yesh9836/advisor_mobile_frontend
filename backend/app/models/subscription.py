@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 
 from sqlalchemy import (
@@ -7,11 +7,12 @@ from sqlalchemy import (
     Integer,
     JSON,
     Enum as SQLEnum,
-    DateTime,
     ForeignKey,
     text
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.timezone import UTCDateTime, utcnow
 
 from .base import Base
 
@@ -59,7 +60,7 @@ class SubscriptionPlan(Base):
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), server_default=text("CURRENT_TIMESTAMP")
+        UTCDateTime(), nullable=False, default=utcnow, server_default=text("CURRENT_TIMESTAMP")
     )
 
     # Relationships
@@ -135,12 +136,12 @@ class Subscription(Base):
     )
 
     # Billing period
-    current_period_start: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    current_period_end: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    current_period_start: Mapped[Optional[datetime]] = mapped_column(UTCDateTime(), nullable=True)
+    current_period_end: Mapped[Optional[datetime]] = mapped_column(UTCDateTime(), nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), server_default=text("CURRENT_TIMESTAMP")
+        UTCDateTime(), nullable=False, default=utcnow, server_default=text("CURRENT_TIMESTAMP")
     )
 
     # Relationships

@@ -1,8 +1,9 @@
-from datetime import datetime, timezone
+from datetime import datetime
 
-from sqlalchemy import DateTime, text
-from sqlalchemy.dialects.mysql import TIMESTAMP
+from sqlalchemy import text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, declared_attr
+
+from app.db.timezone import UTCDateTime, utcnow
 
 class Base(DeclarativeBase):
     pass
@@ -13,18 +14,18 @@ class TimestampMixin:
     @declared_attr
     def created_at(cls) -> Mapped[datetime]:
         return mapped_column(
-            DateTime,
+            UTCDateTime(),
             nullable=False,
-            default=lambda: datetime.now(timezone.utc),
+            default=utcnow,
             server_default=text("CURRENT_TIMESTAMP"),
         )
 
     @declared_attr
     def updated_at(cls) -> Mapped[datetime]:
         return mapped_column(
-            DateTime,
+            UTCDateTime(),
             nullable=False,
-            default=lambda: datetime.now(timezone.utc),
-            onupdate=lambda: datetime.now(timezone.utc),
+            default=utcnow,
+            onupdate=utcnow,
             server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"),
         )

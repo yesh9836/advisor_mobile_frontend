@@ -1,9 +1,8 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import (
     BigInteger,
-    DateTime,
     Enum as SQLEnum,
     ForeignKey,
     JSON,
@@ -13,6 +12,8 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.timezone import UTCDateTime, utcnow
 
 from .base import Base
 
@@ -115,17 +116,17 @@ class Lead(Base):
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, 
+        UTCDateTime(),
         nullable=False, 
-        default=lambda: datetime.now(timezone.utc), 
+        default=utcnow,
         server_default=text("CURRENT_TIMESTAMP"),
     )
 
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        UTCDateTime(),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=utcnow,
+        onupdate=utcnow,
         server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"),
     )
 
@@ -185,9 +186,9 @@ class LeadDownload(Base):
 
     # Download tracking
     downloaded_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        UTCDateTime(),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=utcnow,
         server_default=text("CURRENT_TIMESTAMP"),
         index=True,
     )
@@ -244,17 +245,17 @@ class LeadOutcome(Base):
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        UTCDateTime(),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=utcnow,
         server_default=text("CURRENT_TIMESTAMP"),
     )
 
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        UTCDateTime(),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=utcnow,
+        onupdate=utcnow,
         server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"),
     )
 

@@ -1,8 +1,10 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import BigInteger, String, Enum as SQLEnum, DateTime, ForeignKey, UniqueConstraint, text
+from sqlalchemy import BigInteger, String, Enum as SQLEnum, ForeignKey, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.timezone import UTCDateTime, utcnow
 
 from .base import Base
 
@@ -81,17 +83,17 @@ class License(Base):
         server_default=text("'pending'"),
     )
 
-    verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    verified_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime(), nullable=True)
 
     # Rejection reason (if applicable)
     rejection_reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
     # Latest admin review metadata
-    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime(), nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), server_default=text("CURRENT_TIMESTAMP")
+        UTCDateTime(), nullable=False, default=utcnow, server_default=text("CURRENT_TIMESTAMP")
     )
 
     # Relationships

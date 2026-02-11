@@ -1,8 +1,10 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import BigInteger, String, JSON, DateTime, ForeignKey, text
+from sqlalchemy import BigInteger, String, JSON, ForeignKey, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.timezone import UTCDateTime, utcnow
 
 from .base import Base
 
@@ -60,9 +62,9 @@ class AuditLog(Base):
 
     # Timestamp
     created_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        UTCDateTime(),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=utcnow,
         server_default=text("CURRENT_TIMESTAMP"),
         index=True,
     )
