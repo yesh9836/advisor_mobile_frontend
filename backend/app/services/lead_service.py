@@ -49,9 +49,6 @@ class LeadService:
         if not subscription or subscription.status != "active":
             raise HTTPException(status_code=403, detail="Active subscription required")
         
-        if subscription.current_period_end and subscription.current_period_end.tzinfo is None:
-            subscription.current_period_end = subscription.current_period_end.replace(tzinfo=timezone.utc)
-
         if not subscription.current_period_end or subscription.current_period_end <= now:
             raise HTTPException(status_code=403, detail="Subscription expired")
 
@@ -196,9 +193,6 @@ class LeadService:
         if not subscription or subscription.status != "active":
             return {"can_download": False, "reason": "No active subscription", "remaining": 0}
         
-        if subscription.current_period_end and subscription.current_period_end.tzinfo is None:
-            subscription.current_period_end = subscription.current_period_end.replace(tzinfo=timezone.utc)
-
         if not subscription.current_period_end or subscription.current_period_end <= now:
             return {"can_download": False, "reason": "Subscription expired", "remaining": 0}
 
@@ -434,23 +428,28 @@ class LeadService:
         states = LeadService._get_user_allowed_states(db, user.id, plan.state_limit)
 
         leads_delivered_7_days = 0
+        appointments_set_7_days = 0
         if states:
             leads_delivered_7_days = (
                 db.query(func.count(func.distinct(LeadDownload.lead_id)))
+                .join(Lead, Lead.id == LeadDownload.lead_id)
                 .filter(LeadDownload.user_id == user.id)
+                .filter(Lead.state_code.in_(states))
                 .filter(LeadDownload.downloaded_at >= seven_days_ago)
                 .scalar()
             ) or 0
 
-        appointments_set_7_days = (
-            db.query(func.count(LeadOutcome.id))
-            .filter(
-                LeadOutcome.user_id == user.id,
-                LeadOutcome.status == "appointment_set",
-                LeadOutcome.updated_at >= seven_days_ago,
-            )
-            .scalar()
-        ) or 0
+            appointments_set_7_days = (
+                db.query(func.count(LeadOutcome.id))
+                .join(Lead, Lead.id == LeadOutcome.lead_id)
+                .filter(
+                    LeadOutcome.user_id == user.id,
+                    Lead.state_code.in_(states),
+                    LeadOutcome.status == "appointment_set",
+                    LeadOutcome.updated_at >= seven_days_ago,
+                )
+                .scalar()
+            ) or 0
 
         cost_per_appointment = LeadService._calculate_cost_per_appointment(
             plan_price_cents=plan.price_cents,
