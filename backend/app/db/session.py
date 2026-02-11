@@ -1,9 +1,24 @@
 from typing import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, Session
 
 from app.core.config import settings
+
+
+def _configure_mysql_utc_session(target_engine) -> None:
+    if target_engine.url.get_backend_name() != "mysql":
+        return
+
+    @event.listens_for(target_engine, "connect")
+    def _set_time_zone(dbapi_connection, connection_record) -> None:
+        del connection_record
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("SET time_zone = '+00:00'")
+        finally:
+            cursor.close()
+
 
 # Create database engine
 engine = create_engine(
@@ -13,6 +28,7 @@ engine = create_engine(
     pool_pre_ping=True,  # Verify connections before using
     echo=settings.DB_ECHO,  # Log SQL queries (set to True for debugging)
 )
+_configure_mysql_utc_session(engine)
 
 # Create session factory
 SessionLocal = sessionmaker(
@@ -43,11 +59,13 @@ def get_wordpress_engine():
     if not wp_url:
         return None
         
-    return create_engine(
+    wp_engine = create_engine(
         wp_url,
         pool_pre_ping=True,
         echo=settings.DB_ECHO
     )
+    _configure_mysql_utc_session(wp_engine)
+    return wp_engine
 
 def get_wordpress_session() -> Generator[Session, None, None]:
     """
