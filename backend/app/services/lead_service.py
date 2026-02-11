@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 from sqlalchemy import and_, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.lead import Lead, LeadDownload, LeadOutcome
@@ -128,11 +129,24 @@ class LeadService:
         if not states:
             return []
 
-        downloaded_subquery = (
-            select(LeadDownload.lead_id)
-            .where(LeadDownload.user_id == user.id)
+        return LeadService._get_exportable_leads_for_states(
+            db=db,
+            user_id=user.id,
+            states=states,
+            size=size,
         )
 
+    @staticmethod
+    def _get_exportable_leads_for_states(
+        db: Session,
+        user_id: int,
+        states: List[str],
+        size: int,
+    ) -> List[Lead]:
+        downloaded_subquery = (
+            select(LeadDownload.lead_id)
+            .where(LeadDownload.user_id == user_id)
+        )
         return (
             db.query(Lead)
             .filter(Lead.state_code.in_(states))
@@ -141,6 +155,100 @@ class LeadService:
             .limit(size)
             .all()
         )
+
+    @staticmethod
+    def _is_unlimited_daily_limit(daily_limit: Optional[int]) -> bool:
+        return daily_limit is None or daily_limit >= 999999
+
+    @staticmethod
+    def _get_today_download_count(db: Session, user_id: int, today_start: datetime) -> int:
+        return (
+            db.query(func.count(LeadDownload.id))
+            .filter(LeadDownload.user_id == user_id)
+            .filter(LeadDownload.downloaded_at >= today_start)
+            .scalar()
+        ) or 0
+
+    @staticmethod
+    def _lock_user_download_row(db: Session, user_id: int) -> None:
+        lock_query = select(User.id).where(User.id == user_id)
+        bind = db.get_bind()
+        dialect_name = bind.dialect.name if bind is not None else ""
+
+        if dialect_name == "mysql":
+            lock_query = lock_query.with_for_update()
+
+        locked_user_id = db.execute(lock_query).scalar_one_or_none()
+        if locked_user_id is None:
+            raise HTTPException(status_code=404, detail="User not found")
+
+    @staticmethod
+    def _record_download_batch(
+        db: Session,
+        user_id: int,
+        leads: List[Lead],
+    ) -> None:
+        if not leads:
+            return
+
+        batch_id = uuid4().hex
+        for lead in leads:
+            db.add(
+                LeadDownload(
+                    user_id=user_id,
+                    lead_id=lead.id,
+                    csv_batch_id=batch_id,
+                )
+            )
+        # Flush inside the transaction so uniqueness errors are handled
+        # before commit and can trigger a safe retry path.
+        db.flush()
+
+    @staticmethod
+    def _allocate_download_batch_atomically(db: Session, user: User) -> List[Lead]:
+        LeadService._lock_user_download_row(db, user.id)
+
+        subscription = LeadService._require_active_subscription(db, user)
+        plan = subscription.plan
+
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        today_count = LeadService._get_today_download_count(db, user.id, today_start)
+
+        daily_limit = plan.daily_download_limit
+        if LeadService._is_unlimited_daily_limit(daily_limit):
+            export_size = DEFAULT_DOWNLOAD_SIZE
+        else:
+            if daily_limit is None:
+                raise HTTPException(status_code=500, detail="Invalid plan daily limit")
+            remaining = daily_limit - today_count
+            if remaining <= 0:
+                raise HTTPException(status_code=403, detail="Daily limit reached")
+            export_size = min(DEFAULT_DOWNLOAD_SIZE, remaining)
+
+        states = LeadService._get_user_allowed_states(db, user.id, plan.state_limit)
+        if not states:
+            return []
+
+        leads = LeadService._get_exportable_leads_for_states(
+            db=db,
+            user_id=user.id,
+            states=states,
+            size=export_size,
+        )
+        LeadService._record_download_batch(db=db, user_id=user.id, leads=leads)
+        return leads
+
+    @staticmethod
+    def _is_duplicate_download_integrity_error(exc: IntegrityError) -> bool:
+        error_text = str(getattr(exc, "orig", exc)).lower()
+        if "lead_downloads" not in error_text and "uq_lead_downloads_user_lead" not in error_text:
+            return False
+        duplicate_markers = (
+            "uq_lead_downloads_user_lead",
+            "duplicate entry",
+            "unique constraint",
+        )
+        return any(marker in error_text for marker in duplicate_markers)
 
 
     @staticmethod
@@ -199,17 +307,11 @@ class LeadService:
         plan = subscription.plan
         daily_limit = plan.daily_download_limit
 
-        if daily_limit is None or daily_limit >= 999999:
+        if LeadService._is_unlimited_daily_limit(daily_limit):
             return {"can_download": True, "remaining": -1}
 
         today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-
-        today_count = (
-            db.query(func.count(LeadDownload.id))
-            .filter(LeadDownload.user_id == user.id)
-            .filter(LeadDownload.downloaded_at >= today_start)
-            .scalar()
-        ) or 0
+        today_count = LeadService._get_today_download_count(db, user.id, today_start)
 
         if today_count >= daily_limit:
             return {"can_download": False, "reason": "Daily limit reached", "remaining": 0}
@@ -218,42 +320,35 @@ class LeadService:
 
     @staticmethod
     def download_leads_csv(db: Session, user: User) -> str:
-        check = LeadService.can_user_download_leads(db, user)
-        if not check["can_download"]:
-            raise HTTPException(status_code=403, detail=check["reason"])
-
-        remaining = int(check["remaining"])
         prepend_msg = ""
+        max_attempts = 2
 
-        export_size = DEFAULT_DOWNLOAD_SIZE if remaining < 0 else min(DEFAULT_DOWNLOAD_SIZE, remaining)
-        leads = LeadService._get_exportable_leads_for_user(
-            db=db,
-            user=user,
-            size=export_size,
-        )
-
-        if not leads:
-            # Return empty CSV with headers
-            return generate_leads_csv_stream([], prepend_message=prepend_msg)
-
-        # Record downloads in DB (Atomic Batch)
-        batch_id = uuid4().hex
-        try:
-            for lead in leads:
-                db.add(
-                    LeadDownload(
-                        user_id=user.id,
-                        lead_id=lead.id,
-                        csv_batch_id=batch_id,
+        for attempt in range(1, max_attempts + 1):
+            try:
+                leads = LeadService._allocate_download_batch_atomically(db=db, user=user)
+                db.commit()
+                return generate_leads_csv_stream(leads, prepend_message=prepend_msg)
+            except HTTPException:
+                db.rollback()
+                raise
+            except IntegrityError as exc:
+                db.rollback()
+                if LeadService._is_duplicate_download_integrity_error(exc) and attempt < max_attempts:
+                    logger.warning(
+                        "Retrying lead download allocation after unique conflict for user_id=%s (attempt %s/%s)",
+                        user.id,
+                        attempt,
+                        max_attempts,
                     )
-                )
-            db.commit()
-        except Exception as e:
-            db.rollback()
-            logger.error(f"Failed to record lead downloads: {e}")
-            raise HTTPException(status_code=500, detail="Failed to record lead downloads")
+                    continue
+                logger.error("Failed to record lead downloads due integrity error for user_id=%s: %s", user.id, exc)
+                raise HTTPException(status_code=500, detail="Failed to record lead downloads")
+            except Exception as exc:
+                db.rollback()
+                logger.error("Failed to record lead downloads for user_id=%s: %s", user.id, exc)
+                raise HTTPException(status_code=500, detail="Failed to record lead downloads")
 
-        return generate_leads_csv_stream(leads, prepend_message=prepend_msg)
+        raise HTTPException(status_code=500, detail="Failed to record lead downloads")
 
     @staticmethod
     def create_lead(db: Session, data: LeadCreate) -> Lead:
