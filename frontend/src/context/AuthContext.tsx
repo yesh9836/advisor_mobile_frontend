@@ -15,7 +15,7 @@ import {
   logout as logoutUser,
   register as registerUser,
 } from "@/api/auth";
-import { ACCESS_TOKEN_KEY, AUTH_LOGOUT_EVENT } from "@/api/client";
+import { AUTH_LOGOUT_EVENT } from "@/api/client";
 import type { LoginCredentials, RegisterData, User } from "@/types/auth";
 import type { ApiError } from "@/types/common";
 
@@ -26,7 +26,7 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   login: (credentials: LoginCredentials) => Promise<void>;
   register: (data: RegisterData) => Promise<User>;
-  logout: () => void;
+  logout: () => Promise<void>;
   clearError: () => void;
 }
 
@@ -66,13 +66,11 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
     setError(null);
 
     try {
-      const token = await loginUser(credentials);
-      localStorage.setItem(ACCESS_TOKEN_KEY, token.access_token);
-
+      await loginUser(credentials);
       const currentUser = await getCurrentUser();
       setUser(currentUser);
     } catch (err) {
-      logoutUser();
+      setUser(null);
       const message = parseErrorMessage(err);
       setError(message);
       throw new Error(message);
@@ -96,8 +94,8 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
     }
   }, []);
 
-  const logout = useCallback(() => {
-    logoutUser();
+  const logout = useCallback(async () => {
+    await logoutUser();
     setUser(null);
     setError(null);
   }, []);
@@ -106,22 +104,12 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
     let isMounted = true;
 
     const bootstrapAuth = async () => {
-      const token = localStorage.getItem(ACCESS_TOKEN_KEY);
-
-      if (!token) {
-        if (isMounted) {
-          setLoading(false);
-        }
-        return;
-      }
-
       try {
         const currentUser = await getCurrentUser();
         if (isMounted) {
           setUser(currentUser);
         }
       } catch {
-        logoutUser();
         if (isMounted) {
           setUser(null);
         }
