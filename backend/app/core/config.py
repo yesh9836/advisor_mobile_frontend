@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     # Security - JWT
     SECRET_KEY: str = "change-this-to-a-secure-random-key-in-production"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 10
     REFRESH_TOKEN_EXPIRE_DAYS: int = 14
 
     # Auth cookies
@@ -187,6 +187,7 @@ class Settings(BaseSettings):
         "RATE_LIMIT_WINDOW_SECONDS",
         "LICENSE_RESUBMISSION_MAX_ATTEMPTS",
         "LICENSE_RESUBMISSION_WINDOW_DAYS",
+        "ACCESS_TOKEN_EXPIRE_MINUTES",
         "REFRESH_TOKEN_EXPIRE_DAYS",
         mode="after",
     )
