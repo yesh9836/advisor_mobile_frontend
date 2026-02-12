@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import BigInteger, String, Enum as SQLEnum, text
+from sqlalchemy import BigInteger, Boolean, ForeignKey, String, Enum as SQLEnum, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.timezone import UTCDateTime, utcnow
@@ -59,6 +59,26 @@ class User(Base):
         nullable=True, 
         unique=True, 
         index=True
+    )
+
+    # Account lifecycle
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("1"),
+        index=True,
+    )
+    deactivated_at: Mapped[Optional[datetime]] = mapped_column(
+        UTCDateTime(),
+        nullable=True,
+        index=True,
+    )
+    deactivated_by: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("users.id", onupdate="CASCADE", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     # Timestamps
