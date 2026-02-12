@@ -88,7 +88,6 @@ def get_my_licenses(
     "/pending",
     response_model=List[LicenseWithUser],
     summary="Get all pending licenses (admin only)",
-    dependencies=[Depends(require_admin)],
 )
 def get_pending_licenses(
     current_admin: User = Depends(require_admin),
@@ -116,7 +115,6 @@ def get_pending_licenses(
     "/processed",
     response_model=List[AdminLicenseDecisionRow],
     summary="Get currently processed licenses (admin only)",
-    dependencies=[Depends(require_admin)],
 )
 def get_processed_licenses(
     advisor_id: Optional[int] = None,
@@ -163,7 +161,6 @@ def get_processed_licenses(
     "/{license_id}/approve",
     response_model=LicenseResponse,
     summary="Approve a pending license (admin only)",
-    dependencies=[Depends(require_admin)],
 )
 def approve_license(
     license_id: int,
@@ -197,7 +194,6 @@ def approve_license(
     "/{license_id}/reject",
     response_model=LicenseResponse,
     summary="Reject a pending license (admin only)",
-    dependencies=[Depends(require_admin)],
 )
 def reject_license(
     license_id: int,
