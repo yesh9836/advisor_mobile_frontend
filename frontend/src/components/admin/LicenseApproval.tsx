@@ -1,4 +1,3 @@
-import axios from "axios";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
@@ -17,10 +16,7 @@ import type {
   License,
   LicenseWithUser,
 } from "@/types/license";
-
-interface ApiErrorPayload {
-  detail?: string | Array<{ msg?: string }>;
-}
+import { getApiErrorMessage } from "@/utils/api-error";
 
 type ActionType = "approve" | "reject" | "download" | "preview";
 
@@ -38,25 +34,6 @@ interface AdvisorOption {
   userId: number;
   label: string;
 }
-
-const getErrorMessage = (error: unknown, fallback: string): string => {
-  if (axios.isAxiosError<ApiErrorPayload>(error)) {
-    const detail = error.response?.data?.detail;
-    if (typeof detail === "string") {
-      return detail;
-    }
-    if (Array.isArray(detail) && detail.length > 0) {
-      return detail.map((item) => item.msg ?? "Validation error").join(", ");
-    }
-    return error.message || fallback;
-  }
-
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return fallback;
-};
 
 const formatDateTime = (value: string | null): string => {
   if (!value) {
@@ -151,7 +128,9 @@ const LicenseApproval = () => {
       setPendingLicenses(pending);
     } catch (pendingError) {
       setPendingLicenses([]);
-      setError(getErrorMessage(pendingError, "Unable to load pending licenses."));
+      setError(
+        getApiErrorMessage(pendingError, "Unable to load pending licenses."),
+      );
     } finally {
       setLoadingPending(false);
     }
@@ -169,7 +148,7 @@ const LicenseApproval = () => {
       } catch (processedError) {
         setProcessedLicenses([]);
         setError(
-          getErrorMessage(processedError, "Unable to load processed licenses."),
+          getApiErrorMessage(processedError, "Unable to load processed licenses."),
         );
       } finally {
         setLoadingProcessed(false);
@@ -271,7 +250,7 @@ const LicenseApproval = () => {
       }
       void refreshProcessedLicenses();
     } catch (approveError) {
-      setError(getErrorMessage(approveError, "Unable to approve license."));
+      setError(getApiErrorMessage(approveError, "Unable to approve license."));
     } finally {
       setInflightAction(null);
     }
@@ -334,7 +313,7 @@ const LicenseApproval = () => {
       setNotice(`License rejected for ${license.user_name}.`);
       void refreshProcessedLicenses();
     } catch (rejectError) {
-      setError(getErrorMessage(rejectError, "Unable to reject license."));
+      setError(getApiErrorMessage(rejectError, "Unable to reject license."));
     } finally {
       setInflightAction(null);
     }
@@ -389,7 +368,7 @@ const LicenseApproval = () => {
         userName,
         objectUrl: null,
         contentType: "",
-        error: getErrorMessage(
+        error: getApiErrorMessage(
           previewError,
           "Unable to load document preview. You can still download the document.",
         ),
@@ -417,7 +396,7 @@ const LicenseApproval = () => {
       setNotice(`License document downloaded for ${userName}.`);
     } catch (downloadError) {
       setError(
-        getErrorMessage(downloadError, "Unable to download license document."),
+        getApiErrorMessage(downloadError, "Unable to download license document."),
       );
     } finally {
       setInflightAction(null);
