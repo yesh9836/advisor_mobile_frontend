@@ -8,7 +8,7 @@ export interface License {
   state: string;
   license_number: string;
   license_type: string | null;
-  document_path: string | null;
+  has_document: boolean;
   verification_status: LicenseVerificationStatus;
   verified_at: string | null;
   verified_by: number | null;
