@@ -75,6 +75,10 @@ class License(Base):
     # Document storage
     document_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
+    @property
+    def has_document(self) -> bool:
+        return bool(self.document_path)
+
     # Verification workflow
     verification_status: Mapped[str] = mapped_column(
         SQLEnum("pending", "verified", "rejected", name="license_verification_status_enum"),
