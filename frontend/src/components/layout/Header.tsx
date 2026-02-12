@@ -72,7 +72,9 @@ const Header = ({ onMenuClick }: HeaderProps) => {
           <button type="button" className="icon-btn" aria-label="Settings">
             <GearIcon />
           </button>
-          <span className="view-pill">Advisor View</span>
+          <span className="view-pill">
+            {user?.role === "admin" ? "Admin View" : "Advisor View"}
+          </span>
         </div>
 
         <div className="user-meta">
