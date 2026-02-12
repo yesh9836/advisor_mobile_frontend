@@ -4,6 +4,7 @@ import aiofiles
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional
+from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile
 from sqlalchemy.orm import Session
@@ -18,6 +19,8 @@ from app.schemas.license import LicenseCreate
 logger = logging.getLogger(__name__)
 
 CHUNK_SIZE = 1024 * 1024  # 1 MB chunks
+UPLOAD_FILENAME_ENTROPY_LENGTH = 12
+UPLOAD_FILENAME_MAX_ATTEMPTS = 5
 MAGIC_SIGNATURES = {
     ".pdf": (b"%PDF-",),
     ".jpg": (b"\xff\xd8\xff",),
@@ -99,39 +102,50 @@ class LicenseService:
             upload_dir = Path(settings.UPLOAD_DIR) / "licenses" / str(user_id)
             upload_dir.mkdir(parents=True, exist_ok=True)
 
-            # Generate unique filename with timestamp
+            # Keep sortable timestamps but add entropy to avoid same-second collisions.
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-            
-            safe_filename = f"{timestamp}_{Path(file.filename).name}"
-            file_path = upload_dir / safe_filename
-
-            size = 0
+            original_filename = Path(file.filename).name
             file_ext = Path(file.filename).suffix.lower()
             max_upload_size_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
-            # Use aiofiles for non-blocking disk I/O
-            async with aiofiles.open(file_path, "wb") as out_file:
-                while content := await file.read(CHUNK_SIZE):
-                    if size == 0:
-                        LicenseService._validate_magic_bytes(file_ext, content[:16])
+            for _ in range(UPLOAD_FILENAME_MAX_ATTEMPTS):
+                unique_suffix = uuid4().hex[:UPLOAD_FILENAME_ENTROPY_LENGTH]
+                safe_filename = f"{timestamp}_{unique_suffix}_{original_filename}"
+                file_path = upload_dir / safe_filename
+                size = 0
 
-                    size += len(content)
-                    if size > max_upload_size_bytes:
-                        # Clean up the partial file
-                        await out_file.close()
-                        if file_path.exists():
-                            os.remove(file_path)
-                        raise HTTPException(
-                            status_code=400, 
-                            detail=f"File too large. Limit: {settings.MAX_UPLOAD_SIZE_MB}MB"
-                        )
-                    await out_file.write(content)
+                try:
+                    # Use "xb" to guarantee create-only writes (no silent overwrite).
+                    async with aiofiles.open(file_path, "xb") as out_file:
+                        while content := await file.read(CHUNK_SIZE):
+                            if size == 0:
+                                LicenseService._validate_magic_bytes(file_ext, content[:16])
 
-            if size == 0:
-                if file_path.exists():
-                    os.remove(file_path)
-                raise HTTPException(status_code=400, detail="Uploaded file is empty")
+                            size += len(content)
+                            if size > max_upload_size_bytes:
+                                # Clean up the partial file
+                                await out_file.close()
+                                if file_path.exists():
+                                    os.remove(file_path)
+                                raise HTTPException(
+                                    status_code=400,
+                                    detail=f"File too large. Limit: {settings.MAX_UPLOAD_SIZE_MB}MB"
+                                )
+                            await out_file.write(content)
+                except FileExistsError:
+                    continue
+                except HTTPException:
+                    if file_path.exists():
+                        os.remove(file_path)
+                    raise
 
-            return str(file_path)
+                if size == 0:
+                    if file_path.exists():
+                        os.remove(file_path)
+                    raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+                return str(file_path)
+
+            raise HTTPException(status_code=500, detail="Failed to generate unique upload filename")
 
         except HTTPException:
             raise
