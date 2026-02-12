@@ -1,4 +1,3 @@
-import axios from "axios";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -8,12 +7,9 @@ import type {
   LeadDashboardSummary,
   LeadOutcomeStatus,
 } from "@/types/lead";
+import { getApiErrorMessage } from "@/utils/api-error";
 
 type LeadStage = "New" | "Contacted" | "Appointment Set";
-
-interface ApiErrorPayload {
-  detail?: string | Array<{ msg?: string }>;
-}
 
 interface RecentLeadItem {
   id: number;
@@ -32,25 +28,6 @@ const toDisplayStage = (
   if (status === "contacted") return "Contacted";
   if (status === "appointment_set") return "Appointment Set";
   return "New";
-};
-
-const getErrorMessage = (error: unknown, fallback: string): string => {
-  if (axios.isAxiosError<ApiErrorPayload>(error)) {
-    const detail = error.response?.data?.detail;
-    if (typeof detail === "string") {
-      return detail;
-    }
-    if (Array.isArray(detail) && detail.length > 0) {
-      return detail.map((issue) => issue.msg ?? "Validation error").join(", ");
-    }
-    return error.message || fallback;
-  }
-
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return fallback;
 };
 
 const toInitials = (
@@ -144,7 +121,7 @@ const DashboardPage = () => {
       } catch (loadError) {
         setSummary(null);
         setRecentLeads([]);
-        setError(getErrorMessage(loadError, "Unable to load dashboard data."));
+        setError(getApiErrorMessage(loadError, "Unable to load dashboard data."));
       } finally {
         setLoading(false);
       }

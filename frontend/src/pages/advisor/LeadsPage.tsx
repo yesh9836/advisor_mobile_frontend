@@ -1,17 +1,13 @@
-import axios from "axios";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { downloadLeads, getLeads, saveLeadOutcome } from "@/api/leads";
 import type { Lead, LeadFilters, LeadOutcomeStatus } from "@/types/lead";
+import { getApiErrorMessage } from "@/utils/api-error";
 
 type LeadStage = "New" | "Contacted" | "Appointment Set";
 type StageFilter = "All" | LeadStage;
 type DeliveryFilter = "All" | "Available" | "Delivered";
-
-interface ApiErrorPayload {
-  detail?: string | Array<{ msg?: string }>;
-}
 
 interface InboxLead {
   id: number;
@@ -61,25 +57,6 @@ const toDisplayStage = (
   if (status === "contacted") return "Contacted";
   if (status === "appointment_set") return "Appointment Set";
   return "New";
-};
-
-const getErrorMessage = (error: unknown, fallback: string): string => {
-  if (axios.isAxiosError<ApiErrorPayload>(error)) {
-    const detail = error.response?.data?.detail;
-    if (typeof detail === "string") {
-      return detail;
-    }
-    if (Array.isArray(detail) && detail.length > 0) {
-      return detail.map((issue) => issue.msg ?? "Validation error").join(", ");
-    }
-    return error.message || fallback;
-  }
-
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return fallback;
 };
 
 const toInitials = (
@@ -206,7 +183,7 @@ const LeadsPage = () => {
         setLeads([]);
         setTotalLeads(0);
         setSelectedLeadId(null);
-        setError(getErrorMessage(loadError, "Unable to load lead inbox."));
+        setError(getApiErrorMessage(loadError, "Unable to load lead inbox."));
       } finally {
         if (cancelled) return;
         setLoading(false);
@@ -250,7 +227,7 @@ const LeadsPage = () => {
       document.body.removeChild(anchor);
       window.URL.revokeObjectURL(url);
     } catch (downloadError) {
-      setError(getErrorMessage(downloadError, "Unable to export CSV."));
+      setError(getApiErrorMessage(downloadError, "Unable to export CSV."));
     } finally {
       setDownloading(false);
     }
@@ -285,7 +262,7 @@ const LeadsPage = () => {
       window.setTimeout(() => setSaveMessage(null), 2200);
       setReloadTick((previous) => previous + 1);
     } catch (saveError) {
-      setError(getErrorMessage(saveError, "Unable to save lead outcome."));
+      setError(getApiErrorMessage(saveError, "Unable to save lead outcome."));
     } finally {
       setSaving(false);
     }

@@ -7,29 +7,7 @@ import LicenseForm from "@/components/license/LicenseForm";
 import LicenseList from "@/components/license/LicenseList";
 import { useAuth } from "@/context/AuthContext";
 import type { Subscription } from "@/types/subscription";
-
-interface ApiErrorPayload {
-  detail?: string | Array<{ msg?: string }>;
-}
-
-const getErrorMessage = (error: unknown, fallback: string): string => {
-  if (axios.isAxiosError<ApiErrorPayload>(error)) {
-    const detail = error.response?.data?.detail;
-    if (typeof detail === "string") {
-      return detail;
-    }
-    if (Array.isArray(detail) && detail.length > 0) {
-      return detail.map((item) => item.msg ?? "Validation error").join(", ");
-    }
-    return error.message || fallback;
-  }
-
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return fallback;
-};
+import { getApiErrorMessage } from "@/utils/api-error";
 
 const formatDate = (value: string | null | undefined): string => {
   if (!value) {
@@ -70,7 +48,7 @@ const ProfilePage = () => {
         setSubscription(null);
       } else {
         setSubscriptionError(
-          getErrorMessage(error, "Unable to load subscription status."),
+          getApiErrorMessage(error, "Unable to load subscription status."),
         );
       }
     } finally {
