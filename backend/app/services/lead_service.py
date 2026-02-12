@@ -1,10 +1,10 @@
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 from uuid import uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -257,7 +257,8 @@ class LeadService:
         user: User,
         page: int = 1,
         size: int = 20,
-        delivery_status: str = "all",
+        delivery_status: Literal["all", "available", "delivered"] = "all",
+        outcome_status: Literal["all", "new", "contacted", "appointment_set"] = "all",
     ) -> Dict[str, object]:
         subscription = LeadService._require_active_subscription(db, user)
         plan = subscription.plan
@@ -272,6 +273,24 @@ class LeadService:
         )
 
         query = db.query(Lead).filter(Lead.state_code.in_(states))
+
+        if outcome_status != "all":
+            query = query.outerjoin(
+                LeadOutcome,
+                and_(
+                    LeadOutcome.lead_id == Lead.id,
+                    LeadOutcome.user_id == user.id,
+                ),
+            )
+            if outcome_status == "new":
+                query = query.filter(
+                    or_(
+                        LeadOutcome.id.is_(None),
+                        LeadOutcome.status == "new",
+                    )
+                )
+            else:
+                query = query.filter(LeadOutcome.status == outcome_status)
 
         if delivery_status == "available":
             query = query.filter(~Lead.id.in_(downloaded_subquery))
