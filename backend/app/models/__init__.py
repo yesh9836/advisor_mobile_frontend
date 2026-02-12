@@ -5,6 +5,7 @@ from .license import License
 from .license_resubmission import LicenseResubmission
 from .lead import Lead, LeadDownload, LeadOutcome
 from .audit_log import AuditLog
+from .auth_session import RefreshTokenSession
 
 __all__ = [
     "Base",
@@ -18,4 +19,5 @@ __all__ = [
     "LeadDownload",
     "LeadOutcome",
     "AuditLog",
+    "RefreshTokenSession",
 ]

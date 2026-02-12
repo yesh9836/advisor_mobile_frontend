@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from .subscription import Subscription
     from .lead import LeadDownload, LeadOutcome
     from .audit_log import AuditLog
+    from .auth_session import RefreshTokenSession
 
 class User(Base):
     """
@@ -103,6 +104,12 @@ class User(Base):
     audit_logs: Mapped[List["AuditLog"]] = relationship(
         "AuditLog",
         back_populates="actor_user",
+    )
+
+    refresh_sessions: Mapped[List["RefreshTokenSession"]] = relationship(
+        "RefreshTokenSession",
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:
