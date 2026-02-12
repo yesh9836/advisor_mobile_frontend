@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import BigInteger, ForeignKey, String, text
+from sqlalchemy import BigInteger, ForeignKey, Index, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.timezone import UTCDateTime, utcnow
@@ -18,6 +18,15 @@ class RefreshTokenSession(Base):
     """
 
     __tablename__ = "refresh_token_sessions"
+    __table_args__ = (
+        Index(
+            "ix_refresh_token_sessions_user_family_active",
+            "user_id",
+            "family_id",
+            "revoked_at",
+            "expires_at",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(
         BigInteger,
