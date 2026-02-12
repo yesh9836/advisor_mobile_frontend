@@ -43,12 +43,16 @@ export const getLeads = async (
 };
 
 export const downloadLeads = async (): Promise<Blob> => {
-  const response = await apiClient.get<Blob>("/leads/download", {
-    responseType: "blob",
-    headers: {
-      Accept: "text/csv",
+  const response = await apiClient.post<Blob>(
+    "/leads/download",
+    undefined,
+    {
+      responseType: "blob",
+      headers: {
+        Accept: "text/csv",
+      },
     },
-  });
+  );
 
   return response.data;
 };
