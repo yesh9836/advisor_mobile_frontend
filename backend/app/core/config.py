@@ -1,11 +1,14 @@
 import json
 from ipaddress import ip_network
+from pathlib import Path
 from typing import Optional
 from urllib.parse import quote_plus
 from urllib.parse import urlparse
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
@@ -16,7 +19,7 @@ class Settings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(_BACKEND_ROOT / ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -46,6 +49,19 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-this-to-a-secure-random-key-in-production"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 14
+
+    # Auth cookies
+    AUTH_ACCESS_COOKIE_NAME: str = "access_token"
+    AUTH_REFRESH_COOKIE_NAME: str = "refresh_token"
+    AUTH_CSRF_COOKIE_NAME: str = "csrf_token"
+    AUTH_COOKIE_DOMAIN: Optional[str] = None
+    AUTH_COOKIE_SECURE: bool = False
+    AUTH_COOKIE_SAMESITE: str = "lax"  # "lax" | "strict" | "none"
+    AUTH_ACCESS_COOKIE_PATH: str = "/api/v1"
+    AUTH_REFRESH_COOKIE_PATH: str = "/api/v1/auth"
+    AUTH_CSRF_COOKIE_PATH: str = "/"
+    AUTH_CSRF_HEADER_NAME: str = "X-CSRF-Token"
 
     # Password hashing
     PWD_SCHEME: str = "argon2"  # or "changed: "bcrypt" -> "argon2"
@@ -55,7 +71,13 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5173"]
     CORS_ALLOW_CREDENTIALS: bool = True
     CORS_ALLOW_METHODS: list[str] = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
-    CORS_ALLOW_HEADERS: list[str] = ["Authorization", "Content-Type", "Accept", "Origin"]
+    CORS_ALLOW_HEADERS: list[str] = [
+        "Authorization",
+        "Content-Type",
+        "Accept",
+        "Origin",
+        "X-CSRF-Token",
+    ]
 
     FRONTEND_URL: str = "http://localhost:3000"
 
@@ -165,6 +187,7 @@ class Settings(BaseSettings):
         "RATE_LIMIT_WINDOW_SECONDS",
         "LICENSE_RESUBMISSION_MAX_ATTEMPTS",
         "LICENSE_RESUBMISSION_WINDOW_DAYS",
+        "REFRESH_TOKEN_EXPIRE_DAYS",
         mode="after",
     )
     @classmethod
@@ -172,6 +195,14 @@ class Settings(BaseSettings):
         if value <= 0:
             raise ValueError("Configuration values must be greater than 0")
         return value
+
+    @field_validator("AUTH_COOKIE_SAMESITE", mode="after")
+    @classmethod
+    def validate_auth_cookie_samesite(cls, value: str) -> str:
+        normalized = value.lower()
+        if normalized not in {"lax", "strict", "none"}:
+            raise ValueError("AUTH_COOKIE_SAMESITE must be one of: lax, strict, none")
+        return normalized
 
     @field_validator("RATE_LIMIT_TRUSTED_PROXIES", mode="after")
     @classmethod
@@ -222,6 +253,12 @@ class Settings(BaseSettings):
 
         if "*" in self.CORS_ALLOW_METHODS or "*" in self.CORS_ALLOW_HEADERS or "*" in self.CORS_ORIGINS:
             raise ValueError("Wildcard CORS values are not allowed in production")
+
+        if not self.AUTH_COOKIE_SECURE:
+            raise ValueError("AUTH_COOKIE_SECURE must be enabled in production")
+
+        if self.AUTH_COOKIE_SAMESITE == "none" and not self.AUTH_COOKIE_SECURE:
+            raise ValueError("AUTH_COOKIE_SAMESITE=none requires AUTH_COOKIE_SECURE=true")
 
         if self.RATE_LIMIT_TRUST_PROXY_HEADERS and not self.RATE_LIMIT_TRUSTED_PROXIES:
             raise ValueError("RATE_LIMIT_TRUSTED_PROXIES is required when proxy header trust is enabled")
