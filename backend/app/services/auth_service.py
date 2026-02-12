@@ -4,17 +4,33 @@ Authentication service containing business logic for user registration and authe
 
 import logging
 from datetime import timedelta
-from typing import Optional
+from typing import NamedTuple, Optional
+from uuid import uuid4
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.security import get_password_hash, verify_password, create_access_token
+from app.core.security import (
+    create_access_token,
+    create_csrf_token,
+    create_refresh_token,
+    get_password_hash,
+    hash_refresh_token,
+    verify_password,
+)
+from app.db.timezone import utcnow
+from app.models.auth_session import RefreshTokenSession
 from app.models.user import User
-from app.schemas.auth import UserRegister, UserLogin, Token
+from app.schemas.auth import UserRegister, UserLogin
 
 logger = logging.getLogger(__name__)
+
+
+class IssuedAuthTokens(NamedTuple):
+    access_token: str
+    refresh_token: str
+    csrf_token: str
 
 
 class AuthService:
@@ -107,39 +123,210 @@ class AuthService:
         except Exception as e:
             logger.error(f"Authentication error: {e}")
             return None
-    
+
     @staticmethod
-    def login_user(db: Session, credentials: UserLogin) -> Token:
+    def _authenticate_credentials(db: Session, credentials: UserLogin) -> User:
+        user = db.query(User).filter(User.email == credentials.email).first()
+        if not user or not verify_password(credentials.password, user.password_hash):
+            logger.warning(f"Login failed: Invalid credentials for {credentials.email}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect email or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return user
+
+    @staticmethod
+    def _build_access_token(user: User) -> str:
+        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        return create_access_token(
+            data={"sub": user.email},
+            expires_delta=access_token_expires,
+        )
+
+    @staticmethod
+    def _issue_refresh_session(
+        db: Session,
+        *,
+        user: User,
+        family_id: str,
+        user_agent: str | None,
+        ip_address: str | None,
+    ) -> str:
+        refresh_token = create_refresh_token()
+        session = RefreshTokenSession(
+            user_id=user.id,
+            family_id=family_id,
+            token_hash=hash_refresh_token(refresh_token),
+            expires_at=utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+            user_agent=(user_agent or "")[:255] or None,
+            ip_address=(ip_address or "")[:45] or None,
+        )
+        db.add(session)
+        return refresh_token
+
+    @staticmethod
+    def _revoke_family(db: Session, *, user_id: int, family_id: str, reason: str) -> None:
+        now = utcnow()
+        sessions = (
+            db.query(RefreshTokenSession)
+            .filter(
+                RefreshTokenSession.user_id == user_id,
+                RefreshTokenSession.family_id == family_id,
+            )
+            .all()
+        )
+        for session in sessions:
+            if session.revoked_at is None:
+                session.revoked_at = now
+                session.revoked_reason = reason
+
+    @staticmethod
+    def login_and_issue_tokens(
+        db: Session,
+        credentials: UserLogin,
+        *,
+        user_agent: str | None = None,
+        ip_address: str | None = None,
+    ) -> IssuedAuthTokens:
         """
-        Authenticate user and generate JWT token.
+        Authenticate user and issue access/refresh/CSRF tokens.
         """
         try:
-            # 1. Verify User
-            user = db.query(User).filter(User.email == credentials.email).first()
-            
-            if not user or not verify_password(credentials.password, user.password_hash):
-                logger.warning(f"Login failed: Invalid credentials for {credentials.email}")
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Incorrect email or password",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-
-            # 2. Generate Token
-            access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-            access_token = create_access_token(
-                data={"sub": user.email},
-                expires_delta=access_token_expires
+            user = AuthService._authenticate_credentials(db, credentials)
+            family_id = str(uuid4())
+            access_token = AuthService._build_access_token(user)
+            refresh_token = AuthService._issue_refresh_session(
+                db,
+                user=user,
+                family_id=family_id,
+                user_agent=user_agent,
+                ip_address=ip_address,
             )
-            
+            csrf_token = create_csrf_token()
+            db.commit()
             logger.info(f"Login successful for email: {credentials.email}")
-            return Token(access_token=access_token, token_type="bearer")
-
+            return IssuedAuthTokens(
+                access_token=access_token,
+                refresh_token=refresh_token,
+                csrf_token=csrf_token,
+            )
         except HTTPException:
+            db.rollback()
             raise
         except Exception as e:
+            db.rollback()
             logger.error(f"Login error for {credentials.email}: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Internal server error during login"
+                detail="Internal server error during login",
             )
+
+    @staticmethod
+    def refresh_tokens(
+        db: Session,
+        *,
+        refresh_token: str,
+        user_agent: str | None = None,
+        ip_address: str | None = None,
+    ) -> IssuedAuthTokens:
+        token_hash = hash_refresh_token(refresh_token)
+        now = utcnow()
+        try:
+            session = (
+                db.query(RefreshTokenSession)
+                .filter(RefreshTokenSession.token_hash == token_hash)
+                .first()
+            )
+            if not session:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid refresh token",
+                )
+
+            user = db.query(User).filter(User.id == session.user_id).first()
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid refresh token",
+                )
+
+            if session.revoked_at is not None:
+                AuthService._revoke_family(
+                    db,
+                    user_id=session.user_id,
+                    family_id=session.family_id,
+                    reason="reused_token_detected",
+                )
+                db.commit()
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Refresh token reuse detected",
+                )
+
+            if session.expires_at <= now:
+                session.revoked_at = now
+                session.revoked_reason = "expired"
+                db.commit()
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Refresh token expired",
+                )
+
+            session.last_used_at = now
+            session.revoked_at = now
+            session.revoked_reason = "rotated"
+
+            access_token = AuthService._build_access_token(user)
+            next_refresh_token = AuthService._issue_refresh_session(
+                db,
+                user=user,
+                family_id=session.family_id,
+                user_agent=user_agent,
+                ip_address=ip_address,
+            )
+            csrf_token = create_csrf_token()
+            db.commit()
+            return IssuedAuthTokens(
+                access_token=access_token,
+                refresh_token=next_refresh_token,
+                csrf_token=csrf_token,
+            )
+        except HTTPException:
+            db.rollback()
+            raise
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Refresh token error: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Internal server error during token refresh",
+            )
+
+    @staticmethod
+    def logout_user(db: Session, *, refresh_token: str | None) -> None:
+        if not refresh_token:
+            return
+
+        token_hash = hash_refresh_token(refresh_token)
+        now = utcnow()
+        try:
+            session = (
+                db.query(RefreshTokenSession)
+                .filter(RefreshTokenSession.token_hash == token_hash)
+                .first()
+            )
+            if not session:
+                return
+
+            AuthService._revoke_family(
+                db,
+                user_id=session.user_id,
+                family_id=session.family_id,
+                reason="logout",
+            )
+            session.last_used_at = now
+            db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception("Logout revocation failed")
