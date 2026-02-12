@@ -31,6 +31,24 @@ class PaginatedUsers(BaseModel):
     size: int
 
 
+class AdminOrderItem(BaseModel):
+    id: int
+    order_reference: str
+    advisor_name: str
+    advisor_email: str
+    package_name: Optional[str] = None
+    quantity: Optional[int] = None
+    status: str
+    created_at: datetime
+
+
+class PaginatedOrders(BaseModel):
+    items: List[AdminOrderItem]
+    total: int
+    page: int
+    size: int
+
+
 class UserLicenseItem(BaseModel):
     id: int
     state: str
