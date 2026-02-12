@@ -51,3 +51,10 @@ class TokenData(BaseModel):
     Schema for decoded token data.
     """
     email: Optional[str] = None
+    user_id: Optional[int] = Field(default=None, alias="uid")
+    family_id: Optional[str] = Field(default=None, alias="fid")
+    token_type: Optional[str] = Field(default=None, alias="typ")
+
+    model_config = {
+        "populate_by_name": True,
+    }
