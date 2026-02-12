@@ -62,7 +62,7 @@ class LicenseResponse(BaseModel):
     state: str
     license_number: str
     license_type: Optional[str]
-    document_path: Optional[str]
+    has_document: bool
     verification_status: Literal["pending", "verified", "rejected"]
     verified_at: Optional[datetime]
     verified_by: Optional[int]
