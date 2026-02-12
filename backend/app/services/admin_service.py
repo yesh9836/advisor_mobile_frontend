@@ -12,11 +12,13 @@ from app.models.license import License
 from app.models.subscription import Subscription, SubscriptionPlan
 from app.models.user import User
 from app.schemas.admin import (
+    AdminOrderItem,
     AuditLogFilters,
     AuditLogItem,
     DashboardStats,
     ImportStats,
     PaginatedAuditLogs,
+    PaginatedOrders,
     PaginatedUsers,
     UserDetails,
     UserDownloadHistoryItem,
@@ -171,6 +173,48 @@ class AdminService:
         ]
 
         return PaginatedUsers(items=items, total=total, page=page, size=size)
+
+    @staticmethod
+    def get_orders(
+        db: Session,
+        page: int,
+        size: int,
+        status: Optional[str] = None,
+    ) -> PaginatedOrders:
+        query = (
+            db.query(Subscription, User, SubscriptionPlan)
+            .join(User, User.id == Subscription.user_id)
+            .outerjoin(SubscriptionPlan, SubscriptionPlan.id == Subscription.plan_id)
+        )
+
+        if status:
+            query = query.filter(Subscription.status == status)
+
+        total = query.with_entities(func.count(Subscription.id)).scalar() or 0
+
+        offset = max(0, (page - 1) * size)
+        rows = (
+            query.order_by(Subscription.created_at.desc(), Subscription.id.desc())
+            .offset(offset)
+            .limit(size)
+            .all()
+        )
+
+        items = [
+            AdminOrderItem(
+                id=subscription.id,
+                order_reference=subscription.stripe_subscription_id,
+                advisor_name=user.name,
+                advisor_email=user.email,
+                package_name=plan.name if plan else None,
+                quantity=plan.daily_download_limit if plan else None,
+                status=subscription.status,
+                created_at=subscription.created_at,
+            )
+            for subscription, user, plan in rows
+        ]
+
+        return PaginatedOrders(items=items, total=total, page=page, size=size)
 
     @staticmethod
     def get_user_details(db: Session, user_id: int) -> UserDetails:
