@@ -61,6 +61,7 @@ export interface Lead {
 
 export interface LeadFilters {
   delivery_status?: "all" | "available" | "delivered";
+  outcome_status?: "all" | "new" | "contacted" | "appointment_set";
   state_code?: string;
   zip_code?: string;
   retirement_timeline?: string;
