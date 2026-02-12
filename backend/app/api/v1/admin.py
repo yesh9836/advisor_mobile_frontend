@@ -1,5 +1,5 @@
 import logging
-from typing import Annotated, Dict
+from typing import Annotated, Dict, Optional
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -12,6 +12,7 @@ from app.schemas.admin import (
     DashboardStats,
     ImportStats,
     PaginatedAuditLogs,
+    PaginatedOrders,
     PaginatedUsers,
     UserDetails,
     UserListFilters,
@@ -50,6 +51,31 @@ def get_users(
 ) -> PaginatedUsers:
     _ = current_admin
     return AdminService.get_users(db=db, page=page, size=size, filters=filters)
+
+
+@router.get(
+    "/orders",
+    response_model=PaginatedOrders,
+    summary="List recent admin order records",
+)
+def get_orders(
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    status: Optional[str] = Query(default=None),
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> PaginatedOrders:
+    _ = current_admin
+    normalized_status = status.strip() if status else None
+    if normalized_status == "":
+        normalized_status = None
+
+    return AdminService.get_orders(
+        db=db,
+        page=page,
+        size=size,
+        status=normalized_status,
+    )
 
 
 @router.get(
