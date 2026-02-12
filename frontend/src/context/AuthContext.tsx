@@ -1,4 +1,3 @@
-import axios from "axios";
 import {
   createContext,
   useCallback,
@@ -17,7 +16,7 @@ import {
 } from "@/api/auth";
 import { AUTH_LOGOUT_EVENT } from "@/api/client";
 import type { LoginCredentials, RegisterData, User } from "@/types/auth";
-import type { ApiError } from "@/types/common";
+import { getApiErrorMessage } from "@/utils/api-error";
 
 interface AuthContextValue {
   user: User | null;
@@ -31,28 +30,6 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
-
-const parseErrorMessage = (error: unknown): string => {
-  if (axios.isAxiosError<ApiError>(error)) {
-    const detail = error.response?.data?.detail;
-
-    if (typeof detail === "string") {
-      return detail;
-    }
-
-    if (Array.isArray(detail) && detail.length > 0) {
-      return detail.map((issue) => issue.msg).join(", ");
-    }
-
-    return error.message || "Request failed";
-  }
-
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return "Unexpected error";
-};
 
 export const AuthProvider = ({ children }: PropsWithChildren) => {
   const [user, setUser] = useState<User | null>(null);
@@ -71,7 +48,7 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
       setUser(currentUser);
     } catch (err) {
       setUser(null);
-      const message = parseErrorMessage(err);
+      const message = getApiErrorMessage(err, "Request failed");
       setError(message);
       throw new Error(message);
     } finally {
@@ -86,7 +63,7 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
     try {
       return await registerUser(data);
     } catch (err) {
-      const message = parseErrorMessage(err);
+      const message = getApiErrorMessage(err, "Request failed");
       setError(message);
       throw new Error(message);
     } finally {
