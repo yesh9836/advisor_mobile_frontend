@@ -47,7 +47,7 @@ def list_available_leads(
     )
 
 
-@router.get(
+@router.post(
     "/download",
     summary="Download leads as CSV",
     response_class=StreamingResponse
