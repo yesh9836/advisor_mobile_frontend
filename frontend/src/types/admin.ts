@@ -27,6 +27,24 @@ export interface PaginatedUsers {
   size: number;
 }
 
+export interface AdminOrderListItem {
+  id: number;
+  order_reference: string;
+  advisor_name: string;
+  advisor_email: string;
+  package_name: string | null;
+  quantity: number | null;
+  status: string;
+  created_at: string;
+}
+
+export interface PaginatedOrders {
+  items: AdminOrderListItem[];
+  total: number;
+  page: number;
+  size: number;
+}
+
 export interface UserLicenseItem {
   id: number;
   state: string;
