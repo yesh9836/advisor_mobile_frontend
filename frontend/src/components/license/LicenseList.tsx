@@ -1,38 +1,15 @@
-import axios from "axios";
 import { useCallback, useEffect, useState } from "react";
 
 import { getMyLicenses, resubmitLicense } from "@/api/licenses";
 import Button from "@/components/common/Button";
 import type { License } from "@/types/license";
+import { getApiErrorMessage } from "@/utils/api-error";
 
 interface LicenseListProps {
   refreshKey?: number;
 }
 
-interface ApiErrorPayload {
-  detail?: string | Array<{ msg?: string }>;
-}
-
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-
-const getErrorMessage = (error: unknown, fallback: string): string => {
-  if (axios.isAxiosError<ApiErrorPayload>(error)) {
-    const detail = error.response?.data?.detail;
-    if (typeof detail === "string") {
-      return detail;
-    }
-    if (Array.isArray(detail) && detail.length > 0) {
-      return detail.map((item) => item.msg ?? "Validation error").join(", ");
-    }
-    return error.message || fallback;
-  }
-
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return fallback;
-};
 
 const validateFile = (file: File): string | null => {
   const isPdf = file.type === "application/pdf";
@@ -101,7 +78,7 @@ const LicenseList = ({ refreshKey = 0 }: LicenseListProps) => {
       const data = await getMyLicenses();
       setLicenses(data);
     } catch (error) {
-      setError(getErrorMessage(error, "Unable to load licenses."));
+      setError(getApiErrorMessage(error, "Unable to load licenses."));
     } finally {
       setLoading(false);
     }
@@ -189,7 +166,10 @@ const LicenseList = ({ refreshKey = 0 }: LicenseListProps) => {
     } catch (resubmitError) {
       setResubmitErrors((previous) => ({
         ...previous,
-        [license.id]: getErrorMessage(resubmitError, "Unable to resubmit license."),
+        [license.id]: getApiErrorMessage(
+          resubmitError,
+          "Unable to resubmit license.",
+        ),
       }));
     } finally {
       setResubmittingLicenseId(null);

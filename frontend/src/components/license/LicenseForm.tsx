@@ -1,9 +1,9 @@
-import axios from "axios";
 import { useRef, useState, type FormEvent } from "react";
 
 import { submitLicense } from "@/api/licenses";
 import Button from "@/components/common/Button";
 import type { License } from "@/types/license";
+import { getApiErrorMessage } from "@/utils/api-error";
 
 interface LicenseFormProps {
   onSubmitted?: (license: License) => void;
@@ -63,29 +63,6 @@ const US_STATES: Array<{ code: string; label: string }> = [
 ];
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-
-interface ApiErrorPayload {
-  detail?: string | Array<{ msg?: string }>;
-}
-
-const getErrorMessage = (error: unknown, fallback: string): string => {
-  if (axios.isAxiosError<ApiErrorPayload>(error)) {
-    const detail = error.response?.data?.detail;
-    if (typeof detail === "string") {
-      return detail;
-    }
-    if (Array.isArray(detail) && detail.length > 0) {
-      return detail.map((item) => item.msg ?? "Validation error").join(", ");
-    }
-    return error.message || fallback;
-  }
-
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return fallback;
-};
 
 const LicenseForm = ({ onSubmitted }: LicenseFormProps) => {
   const [stateCode, setStateCode] = useState("");
@@ -172,7 +149,7 @@ const LicenseForm = ({ onSubmitted }: LicenseFormProps) => {
       onSubmitted?.(created);
     } catch (error) {
       setErrorMessage(
-        getErrorMessage(error, "Unable to submit license. Please try again."),
+        getApiErrorMessage(error, "Unable to submit license. Please try again."),
       );
     } finally {
       setSubmitting(false);
