@@ -7,10 +7,13 @@ from typing import Annotated, Generator
 
 from fastapi import Depends, HTTPException, Request, status
 from jose import JWTError
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import decode_access_token
+from app.db.timezone import utcnow
+from app.models.auth_session import RefreshTokenSession
 from app.db.session import SessionLocal
 from app.models.user import User
 from app.schemas.auth import TokenData
@@ -77,23 +80,41 @@ def get_current_user(
         
         # Decode JWT token
         payload = decode_access_token(token)
-        email: str = payload.get("sub")
-        
-        if email is None:
-            logger.warning("Token payload missing 'sub' field")
+        token_data = TokenData.model_validate(payload)
+        if token_data.token_type != "access":
+            logger.warning("Token payload has unsupported token type")
             raise credentials_exception
-        
-        token_data = TokenData(email=email)
-        
-    except JWTError as e:
+        if token_data.user_id is None or not token_data.family_id:
+            logger.warning("Token payload missing uid/fid claims")
+            raise credentials_exception
+
+    except (JWTError, ValidationError) as e:
         logger.warning(f"JWT validation failed: {e}")
         raise credentials_exception
     
     # Get user from database
-    user = db.query(User).filter(User.email == token_data.email).first()
+    user = db.query(User).filter(User.id == token_data.user_id).first()
     
     if user is None:
-        logger.warning(f"User not found for email: {token_data.email}")
+        logger.warning(f"User not found for id: {token_data.user_id}")
+        raise credentials_exception
+
+    active_family = (
+        db.query(RefreshTokenSession.id)
+        .filter(
+            RefreshTokenSession.user_id == token_data.user_id,
+            RefreshTokenSession.family_id == token_data.family_id,
+            RefreshTokenSession.revoked_at.is_(None),
+            RefreshTokenSession.expires_at > utcnow(),
+        )
+        .first()
+    )
+    if active_family is None:
+        logger.warning(
+            "Token family is revoked or expired for user_id=%s family_id=%s",
+            token_data.user_id,
+            token_data.family_id,
+        )
         raise credentials_exception
     
     return user
