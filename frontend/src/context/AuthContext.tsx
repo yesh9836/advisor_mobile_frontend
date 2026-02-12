@@ -17,6 +17,7 @@ import {
 import { AUTH_LOGOUT_EVENT } from "@/api/client";
 import type { LoginCredentials, RegisterData, User } from "@/types/auth";
 import { getApiErrorMessage } from "@/utils/api-error";
+import { AUTH_ERROR_MESSAGES } from "@/utils/constants";
 
 interface AuthContextValue {
   user: User | null;
@@ -48,7 +49,7 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
       setUser(currentUser);
     } catch (err) {
       setUser(null);
-      const message = getApiErrorMessage(err, "Request failed");
+      const message = getApiErrorMessage(err, AUTH_ERROR_MESSAGES.login);
       setError(message);
       throw new Error(message);
     } finally {
@@ -63,7 +64,7 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
     try {
       return await registerUser(data);
     } catch (err) {
-      const message = getApiErrorMessage(err, "Request failed");
+      const message = getApiErrorMessage(err, AUTH_ERROR_MESSAGES.register);
       setError(message);
       throw new Error(message);
     } finally {
