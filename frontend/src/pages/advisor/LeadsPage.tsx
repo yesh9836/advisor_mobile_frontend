@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { downloadLeads, getLeads, saveLeadOutcome } from "@/api/leads";
-import type { Lead, LeadOutcomeStatus } from "@/types/lead";
+import type { Lead, LeadFilters, LeadOutcomeStatus } from "@/types/lead";
 
 type LeadStage = "New" | "Contacted" | "Appointment Set";
 type StageFilter = "All" | LeadStage;
@@ -29,6 +29,27 @@ interface InboxLead {
 const STAGES: LeadStage[] = ["New", "Contacted", "Appointment Set"];
 
 const STAGE_TO_STATUS: Record<LeadStage, LeadOutcomeStatus> = {
+  New: "new",
+  Contacted: "contacted",
+  "Appointment Set": "appointment_set",
+};
+
+const PAGE_SIZE = 25;
+
+const DELIVERY_FILTER_TO_QUERY: Record<
+  DeliveryFilter,
+  NonNullable<LeadFilters["delivery_status"]>
+> = {
+  All: "all",
+  Available: "available",
+  Delivered: "delivered",
+};
+
+const STAGE_FILTER_TO_QUERY: Record<
+  StageFilter,
+  NonNullable<LeadFilters["outcome_status"]>
+> = {
+  All: "all",
   New: "new",
   Contacted: "contacted",
   "Appointment Set": "appointment_set",
@@ -129,26 +150,41 @@ const LeadsPage = () => {
 
   const [stageFilter, setStageFilter] = useState<StageFilter>("All");
   const [deliveryFilter, setDeliveryFilter] = useState<DeliveryFilter>("All");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalLeads, setTotalLeads] = useState(0);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [reloadTick, setReloadTick] = useState(0);
 
   useEffect(() => {
+    let cancelled = false;
+
     const loadInbox = async () => {
       setLoading(true);
       setError(null);
 
       try {
-        const response = await getLeads(1, 25, {});
-        const leadSlice = response.items.slice(0, 25);
+        const response = await getLeads(currentPage, PAGE_SIZE, {
+          delivery_status: DELIVERY_FILTER_TO_QUERY[deliveryFilter],
+          outcome_status: STAGE_FILTER_TO_QUERY[stageFilter],
+        });
+        if (cancelled) return;
 
-        const mapped = leadSlice.map((lead) => toInboxLead(lead));
+        setTotalLeads(response.total);
+        const lastPage = Math.max(1, Math.ceil(response.total / PAGE_SIZE));
+        if (response.total > 0 && currentPage > lastPage) {
+          setCurrentPage(lastPage);
+          return;
+        }
+
+        const mapped = response.items.map((lead) => toInboxLead(lead));
         const nextStatusByLeadId: Record<number, LeadStage> = {};
         const nextNotesByLeadId: Record<number, string> = {};
 
-        for (const lead of leadSlice) {
+        for (const lead of response.items) {
           nextStatusByLeadId[lead.id] = toDisplayStage(lead.outcome_status);
           nextNotesByLeadId[lead.id] = lead.outcome_notes ?? "";
         }
@@ -166,45 +202,31 @@ const LeadsPage = () => {
             : mapped[0].id;
         });
       } catch (loadError) {
+        if (cancelled) return;
         setLeads([]);
+        setTotalLeads(0);
         setSelectedLeadId(null);
         setError(getErrorMessage(loadError, "Unable to load lead inbox."));
       } finally {
+        if (cancelled) return;
         setLoading(false);
       }
     };
 
     void loadInbox();
-  }, []);
-
-  const filteredLeads = useMemo(() => {
-    return leads.filter((lead) => {
-      const matchesStage =
-        stageFilter === "All" ||
-        (statusByLeadId[lead.id] ?? lead.stage) === stageFilter;
-
-      const matchesDelivery =
-        deliveryFilter === "All" ||
-        (deliveryFilter === "Delivered" && lead.isDownloaded) ||
-        (deliveryFilter === "Available" && !lead.isDownloaded);
-
-      return matchesStage && matchesDelivery;
-    });
-  }, [leads, stageFilter, deliveryFilter, statusByLeadId]);
-
-  useEffect(() => {
-    if (filteredLeads.length === 0) return;
-    if (!filteredLeads.some((lead) => lead.id === selectedLeadId)) {
-      setSelectedLeadId(filteredLeads[0].id);
-    }
-  }, [filteredLeads, selectedLeadId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [currentPage, deliveryFilter, stageFilter, reloadTick]);
 
   const selectedLead = useMemo(() => {
     if (selectedLeadId === null) {
       return null;
     }
-    return filteredLeads.find((lead) => lead.id === selectedLeadId) ?? null;
-  }, [filteredLeads, selectedLeadId]);
+    return leads.find((lead) => lead.id === selectedLeadId) ?? null;
+  }, [leads, selectedLeadId]);
+
+  const totalPages = Math.max(1, Math.ceil(totalLeads / PAGE_SIZE));
 
   const selectedStatus = selectedLead
     ? (statusByLeadId[selectedLead.id] ?? selectedLead.stage)
@@ -259,14 +281,9 @@ const LeadsPage = () => {
         [selectedLead.id]: outcome.notes ?? "",
       }));
 
-      setLeads((previous) =>
-        previous.map((lead) =>
-          lead.id === selectedLead.id ? { ...lead, stage: savedStage } : lead,
-        ),
-      );
-
       setSaveMessage(`Lead updates saved for ${selectedLead.name}.`);
       window.setTimeout(() => setSaveMessage(null), 2200);
+      setReloadTick((previous) => previous + 1);
     } catch (saveError) {
       setError(getErrorMessage(saveError, "Unable to save lead outcome."));
     } finally {
@@ -309,13 +326,14 @@ const LeadsPage = () => {
       <section className="inbox-grid">
         <article className="panel">
           <div className="list-header">
-            <div className="list-title">Leads ({filteredLeads.length})</div>
+            <div className="list-title">Leads ({totalLeads})</div>
             <div className="row">
               <select
                 value={stageFilter}
-                onChange={(event) =>
-                  setStageFilter(event.target.value as StageFilter)
-                }
+                onChange={(event) => {
+                  setStageFilter(event.target.value as StageFilter);
+                  setCurrentPage(1);
+                }}
                 className="btn btn-secondary"
                 style={{ borderRadius: 10, padding: "8px 12px" }}
                 aria-label="Lead filter"
@@ -327,9 +345,10 @@ const LeadsPage = () => {
               </select>
               <select
                 value={deliveryFilter}
-                onChange={(event) =>
-                  setDeliveryFilter(event.target.value as DeliveryFilter)
-                }
+                onChange={(event) => {
+                  setDeliveryFilter(event.target.value as DeliveryFilter);
+                  setCurrentPage(1);
+                }}
                 className="btn btn-secondary"
                 style={{ borderRadius: 10, padding: "8px 12px" }}
                 aria-label="Delivery filter"
@@ -343,10 +362,10 @@ const LeadsPage = () => {
 
           {loading ? (
             <div className="metric-note">Loading leads...</div>
-          ) : filteredLeads.length === 0 ? (
+          ) : leads.length === 0 ? (
             <div className="metric-note">No leads available</div>
           ) : (
-            filteredLeads.map((lead) => {
+            leads.map((lead) => {
               const stage = statusByLeadId[lead.id] ?? lead.stage;
 
               return (
@@ -392,6 +411,35 @@ const LeadsPage = () => {
               );
             })
           )}
+
+          <div
+            className="row"
+            style={{ justifyContent: "space-between", marginTop: 12 }}
+          >
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={loading || currentPage <= 1}
+              onClick={() => setCurrentPage((previous) => Math.max(1, previous - 1))}
+            >
+              Previous
+            </button>
+            <span className="metric-note">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={loading || currentPage >= totalPages}
+              onClick={() =>
+                setCurrentPage((previous) =>
+                  Math.min(totalPages, previous + 1),
+                )
+              }
+            >
+              Next
+            </button>
+          </div>
         </article>
 
         <aside className="panel stack">
