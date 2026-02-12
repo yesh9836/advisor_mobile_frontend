@@ -1,4 +1,6 @@
 from datetime import datetime, timedelta, timezone
+import hashlib
+import secrets
 from typing import Any, Dict
 
 from jose import JWTError, jwt
@@ -81,3 +83,24 @@ def decode_access_token(token: str) -> Dict[str, Any]:
         return payload
     except JWTError as e:
         raise JWTError("Could not validate credentials") from e
+
+
+def create_refresh_token() -> str:
+    """
+    Create a high-entropy refresh token.
+    """
+    return secrets.token_urlsafe(64)
+
+
+def hash_refresh_token(token: str) -> str:
+    """
+    Hash refresh token for storage-at-rest safety.
+    """
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def create_csrf_token() -> str:
+    """
+    Create CSRF token for double-submit protection.
+    """
+    return secrets.token_urlsafe(32)
