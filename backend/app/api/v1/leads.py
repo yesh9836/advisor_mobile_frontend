@@ -26,6 +26,7 @@ def list_available_leads(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     delivery_status: Literal["all", "available", "delivered"] = Query("all"),
+    outcome_status: Literal["all", "new", "contacted", "appointment_set"] = Query("all"),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ) -> LeadListResponse:
@@ -35,6 +36,7 @@ def list_available_leads(
         page=page,
         size=size,
         delivery_status=delivery_status,
+        outcome_status=outcome_status,
     )
     items = [LeadResponse.model_validate(lead) for lead in data["items"]]
     return LeadListResponse(
