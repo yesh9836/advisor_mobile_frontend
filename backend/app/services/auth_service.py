@@ -137,10 +137,15 @@ class AuthService:
         return user
 
     @staticmethod
-    def _build_access_token(user: User) -> str:
+    def _build_access_token(user: User, *, family_id: str) -> str:
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         return create_access_token(
-            data={"sub": user.email},
+            data={
+                "sub": user.email,
+                "uid": user.id,
+                "fid": family_id,
+                "typ": "access",
+            },
             expires_delta=access_token_expires,
         )
 
@@ -195,7 +200,10 @@ class AuthService:
         try:
             user = AuthService._authenticate_credentials(db, credentials)
             family_id = str(uuid4())
-            access_token = AuthService._build_access_token(user)
+            access_token = AuthService._build_access_token(
+                user,
+                family_id=family_id,
+            )
             refresh_token = AuthService._issue_refresh_session(
                 db,
                 user=user,
@@ -277,7 +285,10 @@ class AuthService:
             session.revoked_at = now
             session.revoked_reason = "rotated"
 
-            access_token = AuthService._build_access_token(user)
+            access_token = AuthService._build_access_token(
+                user,
+                family_id=session.family_id,
+            )
             next_refresh_token = AuthService._issue_refresh_session(
                 db,
                 user=user,
