@@ -10,11 +10,6 @@ export interface User {
   created_at: string;
 }
 
-export interface Token {
-  access_token: string;
-  token_type: string;
-}
-
 export interface LoginCredentials {
   email: string;
   password: string;
