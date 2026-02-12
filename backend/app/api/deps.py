@@ -126,15 +126,23 @@ def get_current_active_user(
     """
     Get current active user.
     
-    This dependency can be extended to check if user is active/enabled
-    if an is_active field is added to the User model in the future.
-    
     Args:
         current_user: Current authenticated user
         
     Returns:
         Current active User
     """
+    if not current_user.is_active:
+        logger.warning(
+            "Inactive account access attempt by user %s (%s)",
+            current_user.id,
+            current_user.email,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Inactive user account",
+        )
+
     return current_user
 
 
