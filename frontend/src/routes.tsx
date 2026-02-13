@@ -73,10 +73,38 @@ export const AppRoutes = () => {
               </ProtectedRoute>
             }
           />
-          <Route path="/leads" element={<LeadsPage />} />
-          <Route path="/subscription" element={<SubscriptionPage />} />
-          <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/billing" element={<BillingPage />} />
+          <Route
+            path="/leads"
+            element={
+              <ProtectedRoute allowedRoles={["advisor"]}>
+                <LeadsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/subscription"
+            element={
+              <ProtectedRoute allowedRoles={["advisor"]}>
+                <SubscriptionPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute allowedRoles={["advisor"]}>
+                <ProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/billing"
+            element={
+              <ProtectedRoute allowedRoles={["advisor"]}>
+                <BillingPage />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/admin"
             element={
