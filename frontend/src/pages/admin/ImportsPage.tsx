@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { bulkImportLeadsAsAdmin, getAuditLogs } from "@/api/admin";
-import type { AuditLog, LeadBulkImportResult } from "@/types/admin";
+import { getAuditLogs } from "@/api/admin";
+import ImportModal, { toImportSummary } from "@/components/admin/ImportModal";
+import type { AuditLog } from "@/types/admin";
 import { getApiErrorMessage } from "@/utils/api-error";
 
 interface ImportHistoryItem {
@@ -13,13 +14,7 @@ interface ImportHistoryItem {
   failed: number;
 }
 
-const countDuplicates = (result: LeadBulkImportResult | null): number => {
-  if (!result) return 0;
-
-  return result.errors.filter((entry) =>
-    entry.error.toLowerCase().includes("duplicate"),
-  ).length;
-};
+const HISTORY_PAGE_SIZE = 10;
 
 const toNumber = (value: unknown): number => {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -71,21 +66,23 @@ const formatImportDate = (isoTimestamp: string): string => {
 };
 
 const ImportsPage = () => {
-  const [file, setFile] = useState<File | null>(null);
-  const [result, setResult] = useState<LeadBulkImportResult | null>(null);
-  const [importing, setImporting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [history, setHistory] = useState<ImportHistoryItem[]>([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyPage, setHistoryPage] = useState(1);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
-  const scannedRows = useMemo(() => {
-    if (!result) return 0;
-    return result.success + result.failed;
-  }, [result]);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [runSuccess, setRunSuccess] = useState<string | null>(null);
 
-  const loadImportHistory = async () => {
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(historyTotal / HISTORY_PAGE_SIZE)),
+    [historyTotal],
+  );
+
+  const loadImportHistory = useCallback(async () => {
     setHistoryLoading(true);
+    setHistoryError(null);
 
     try {
       const response = await getAuditLogs(
@@ -93,161 +90,140 @@ const ImportsPage = () => {
           action: "lead_bulk_import",
           entity_type: "LeadImport",
         },
-        1,
-        10,
+        historyPage,
+        HISTORY_PAGE_SIZE,
       );
+
       setHistory(response.items.map(mapAuditLogToImportHistory));
+      setHistoryTotal(response.total);
     } catch (loadError) {
       setHistory([]);
-      setError(getApiErrorMessage(loadError, "Failed to load import history."));
+      setHistoryTotal(0);
+      setHistoryError(getApiErrorMessage(loadError, "Failed to load import history."));
     } finally {
       setHistoryLoading(false);
     }
-  };
+  }, [historyPage]);
 
   useEffect(() => {
     void loadImportHistory();
-  }, []);
-
-  const handleRunImport = async () => {
-    if (!file) {
-      setError("Choose a CSV file before running import.");
-      return;
-    }
-
-    setImporting(true);
-    setError(null);
-    setSuccess(null);
-
-    try {
-      const response = await bulkImportLeadsAsAdmin(file);
-      setResult(response);
-      setSuccess(`Import completed. Inserted ${response.success} leads.`);
-      await loadImportHistory();
-    } catch (importError) {
-      setResult(null);
-      setError(getApiErrorMessage(importError, "Failed to import leads."));
-    } finally {
-      setImporting(false);
-    }
-  };
+  }, [loadImportHistory]);
 
   return (
     <div className="page">
-      <div>
-        <h1>Admin • Imports</h1>
-        <p className="page-subtitle">Upload CSV / JSON to add new leads.</p>
+      <div className="page-header-row">
+        <div>
+          <h1>Admin • Imports</h1>
+          <p className="page-subtitle">Dedicated history of bulk lead import runs.</p>
+        </div>
+
+        <div className="row" style={{ flexWrap: "wrap" }}>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => void loadImportHistory()}
+            disabled={historyLoading}
+          >
+            Refresh History
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setModalOpen(true)}
+          >
+            Run Import
+          </button>
+        </div>
       </div>
 
-      {error && <div className="alert">{error}</div>}
-      {success && <div className="success">{success}</div>}
+      {historyError && <div className="alert">{historyError}</div>}
+      {runSuccess && <div className="success">{runSuccess}</div>}
 
-      <section className="grid-main">
-        <article className="panel stack">
-          <div>
-            <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>Upload File</h2>
-            <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
-              CSV columns: state_code, mobile_phone, first_name, last_name, source
-            </p>
-          </div>
+      <section className="panel stack">
+        <div>
+          <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>Import Run History</h2>
+          <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+            Audit trail of scanned rows, inserts, duplicates, and failures.
+          </p>
+        </div>
 
-          <div
+        {historyLoading && <div style={{ color: "#475569" }}>Loading import history...</div>}
+
+        {!historyLoading && history.length === 0 && (
+          <div style={{ color: "#475569" }}>No import runs yet.</div>
+        )}
+
+        {!historyLoading && history.map((entry) => (
+          <section
+            key={entry.id}
+            className="panel"
             style={{
-              border: "2px dashed #cbd5e1",
-              borderRadius: 16,
-              padding: 28,
-              textAlign: "center",
               background: "#f8fafc",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 12,
             }}
           >
-            <p style={{ margin: 0, color: "#0f172a", fontSize: 24 }}>Drag & drop CSV here</p>
-            <p style={{ margin: "8px 0 0 0", color: "#64748b" }}>or click to browse</p>
-
-            <label className="btn btn-primary" style={{ marginTop: 16, display: "inline-block" }}>
-              Choose File
-              <input
-                type="file"
-                accept=".csv,text/csv"
-                onChange={(event) => {
-                  setFile(event.target.files?.[0] ?? null);
-                  setResult(null);
-                  setError(null);
-                  setSuccess(null);
-                }}
-                style={{ display: "none" }}
-              />
-            </label>
-
-            {file && (
-              <div style={{ marginTop: 12, color: "#334155" }}>
-                Selected: <strong>{file.name}</strong>
-              </div>
-            )}
-          </div>
-
-          <section className="panel" style={{ background: "#f1f5f9" }}>
-            <h3 style={{ margin: 0, fontSize: 28, color: "#0b1b49" }}>Import Preview</h3>
-
-            <div className="grid-3" style={{ marginTop: 12 }}>
-              <div>
-                <div className="metric-title">Rows</div>
-                <div style={{ fontSize: 28, fontWeight: 700, color: "#0b1b49" }}>
-                  {scannedRows.toLocaleString()}
-                </div>
-              </div>
-              <div>
-                <div className="metric-title">Valid</div>
-                <div style={{ fontSize: 28, fontWeight: 700, color: "#0b1b49" }}>
-                  {(result?.success ?? 0).toLocaleString()}
-                </div>
-              </div>
-              <div>
-                <div className="metric-title">Duplicates</div>
-                <div style={{ fontSize: 28, fontWeight: 700, color: "#0b1b49" }}>
-                  {countDuplicates(result).toLocaleString()}
-                </div>
-              </div>
-            </div>
-
-            <div className="row" style={{ marginTop: 14 }}>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => void handleRunImport()}
-                disabled={!file || importing}
-              >
-                {importing ? "Importing..." : "Run Import"}
-              </button>
-            </div>
-          </section>
-        </article>
-
-        <aside className="panel stack">
-          <div>
-            <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>Import History</h2>
-          </div>
-
-          {historyLoading && <div style={{ color: "#475569" }}>Loading import history...</div>}
-
-          {!historyLoading && history.length === 0 && (
-            <div style={{ color: "#475569" }}>No import runs yet.</div>
-          )}
-
-          {!historyLoading && history.map((entry) => (
-            <section key={entry.id} className="panel" style={{ background: "#f8fafc" }}>
-              <h3 style={{ margin: 0, fontSize: 26, color: "#0b1b49" }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 24, color: "#0b1b49" }}>
                 {formatImportDate(entry.created_at)}
               </h3>
               <p style={{ margin: "8px 0 0 0", color: "#475569" }}>
-                {entry.scanned.toLocaleString()} rows • {entry.inserted.toLocaleString()} inserted
+                {entry.scanned.toLocaleString()} rows scanned
               </p>
-              <p style={{ margin: "6px 0 0 0", color: "#64748b", fontSize: 14 }}>
+            </div>
+
+            <div style={{ textAlign: "right" }}>
+              <div style={{ color: "#0b1b49", fontWeight: 700 }}>
+                {entry.inserted.toLocaleString()} inserted
+              </div>
+              <div style={{ marginTop: 6, color: "#64748b", fontSize: 14 }}>
                 {entry.skipped_duplicates.toLocaleString()} duplicates • {entry.failed.toLocaleString()} failed
-              </p>
-            </section>
-          ))}
-        </aside>
+              </div>
+            </div>
+          </section>
+        ))}
+
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ color: "#475569", fontSize: 14 }}>
+            Page {historyPage} of {totalPages} • {historyTotal} total runs
+          </span>
+          <div className="row">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={historyPage <= 1 || historyLoading}
+              onClick={() => setHistoryPage((prev) => Math.max(1, prev - 1))}
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={historyPage >= totalPages || historyLoading}
+              onClick={() => setHistoryPage((prev) => prev + 1)}
+            >
+              Next
+            </button>
+          </div>
+        </div>
       </section>
+
+      <ImportModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onImportSuccess={(result) => {
+          const summary = toImportSummary(result);
+          setRunSuccess(
+            `Import completed. Inserted ${summary.inserted} leads, ${summary.duplicateCount} duplicates, ${summary.failed} failed rows.`,
+          );
+          setHistoryPage(1);
+          if (historyPage === 1) {
+            void loadImportHistory();
+          }
+        }}
+      />
     </div>
   );
 };
