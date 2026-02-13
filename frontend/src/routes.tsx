@@ -2,6 +2,7 @@ import { Link, Navigate, Route, Routes } from "react-router-dom";
 
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import Layout from "@/components/layout/Layout";
+import { useAuth } from "@/context/AuthContext";
 import BillingPage from "@/pages/advisor/BillingPage";
 import DashboardPage from "@/pages/advisor/DashboardPage";
 import LeadsPage from "@/pages/advisor/LeadsPage";
@@ -14,6 +15,27 @@ import LicenseReviewsPage from "@/pages/admin/LicenseReviewsPage";
 import OrdersPage from "@/pages/admin/OrdersPage";
 import LoginPage from "@/pages/auth/LoginPage";
 import RegisterPage from "@/pages/auth/RegisterPage";
+import { getHomeRouteByRole } from "@/utils/role-routing";
+
+const HomeRedirect = () => {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
+          Loading...
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <Navigate to={getHomeRouteByRole(user.role)} replace />;
+};
 
 const NotFoundPage = () => (
   <div className="flex min-h-screen items-center justify-center bg-slate-100 p-6">
@@ -25,7 +47,7 @@ const NotFoundPage = () => (
         The route you requested does not exist.
       </p>
       <Link
-        to="/dashboard"
+        to="/"
         className="mt-4 inline-block rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-500"
       >
         Back to Dashboard
@@ -37,13 +59,20 @@ const NotFoundPage = () => (
 export const AppRoutes = () => {
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+      <Route path="/" element={<HomeRedirect />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
 
       <Route element={<ProtectedRoute />}>
         <Route element={<Layout />}>
-          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute allowedRoles={["advisor"]}>
+                <DashboardPage />
+              </ProtectedRoute>
+            }
+          />
           <Route path="/leads" element={<LeadsPage />} />
           <Route path="/subscription" element={<SubscriptionPage />} />
           <Route path="/profile" element={<ProfilePage />} />
