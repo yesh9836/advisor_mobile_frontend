@@ -13,6 +13,8 @@ import ImportsPage from "@/pages/admin/ImportsPage";
 import LeadInventoryPage from "@/pages/admin/LeadInventoryPage";
 import LicenseReviewsPage from "@/pages/admin/LicenseReviewsPage";
 import OrdersPage from "@/pages/admin/OrdersPage";
+import UserDetailsPage from "@/pages/admin/UserDetailsPage";
+import UsersPage from "@/pages/admin/UsersPage";
 import LoginPage from "@/pages/auth/LoginPage";
 import RegisterPage from "@/pages/auth/RegisterPage";
 import { getHomeRouteByRole } from "@/utils/role-routing";
@@ -118,6 +120,22 @@ export const AppRoutes = () => {
             element={
               <ProtectedRoute allowedRoles={["admin"]}>
                 <LeadInventoryPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/users"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <UsersPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/users/:userId"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <UserDetailsPage />
               </ProtectedRoute>
             }
           />
