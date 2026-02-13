@@ -86,6 +86,13 @@ const LicenseIcon = () => (
   </svg>
 );
 
+const AnalyticsIcon = () => (
+  <svg viewBox="0 0 20 20" aria-hidden="true">
+    <path d="M3.5 15.5h13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    <path d="M6 13V9.5M10 13V6.5M14 13V8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+  </svg>
+);
+
 const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -104,6 +111,7 @@ const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
     { to: "/admin/users", label: "Users", icon: <UsersIcon /> },
     { to: "/admin/orders", label: "Orders", icon: <OrdersIcon /> },
     { to: "/admin/imports", label: "Imports", icon: <ImportIcon /> },
+    { to: "/admin/analytics", label: "Analytics", icon: <AnalyticsIcon /> },
     { to: "/admin/license-reviews", label: "License Reviews", icon: <LicenseIcon /> },
   ];
 
