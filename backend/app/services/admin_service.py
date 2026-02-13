@@ -17,7 +17,11 @@ from app.schemas.admin import (
     AuditLogItem,
     DashboardStats,
     ImportStats,
+    LeadInventoryFilters,
+    LeadInventoryItem,
+    LicenseStatusSummaryItem,
     PaginatedAuditLogs,
+    PaginatedLeadInventory,
     PaginatedOrders,
     PaginatedUsers,
     UserDetails,
@@ -215,6 +219,119 @@ class AdminService:
         ]
 
         return PaginatedOrders(items=items, total=total, page=page, size=size)
+
+    @staticmethod
+    def get_lead_inventory(
+        db: Session,
+        page: int,
+        size: int,
+        filters: LeadInventoryFilters,
+    ) -> PaginatedLeadInventory:
+        download_counts = (
+            db.query(
+                LeadDownload.lead_id.label("lead_id"),
+                func.count(LeadDownload.id).label("download_count"),
+            )
+            .group_by(LeadDownload.lead_id)
+            .subquery()
+        )
+
+        download_count_expr = func.coalesce(download_counts.c.download_count, 0)
+
+        query = (
+            db.query(
+                Lead,
+                download_count_expr.label("download_count"),
+            )
+            .outerjoin(download_counts, download_counts.c.lead_id == Lead.id)
+        )
+
+        if filters.search:
+            search_pattern = f"%{filters.search}%"
+            query = query.filter(
+                or_(
+                    Lead.first_name.ilike(search_pattern),
+                    Lead.last_name.ilike(search_pattern),
+                    Lead.mobile_phone.ilike(search_pattern),
+                    Lead.state_code.ilike(search_pattern),
+                    Lead.source.ilike(search_pattern),
+                )
+            )
+
+        if filters.state_code:
+            query = query.filter(Lead.state_code == filters.state_code)
+
+        if filters.source:
+            query = query.filter(Lead.source == filters.source)
+
+        if filters.delivery_status == "unsold":
+            query = query.filter(download_count_expr == 0)
+        elif filters.delivery_status == "sold":
+            query = query.filter(download_count_expr > 0)
+
+        if filters.created_from is not None:
+            query = query.filter(Lead.created_at >= filters.created_from)
+
+        if filters.created_to is not None:
+            query = query.filter(Lead.created_at <= filters.created_to)
+
+        if (
+            filters.created_from is not None
+            and filters.created_to is not None
+            and filters.created_to < filters.created_from
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="created_to must be greater than or equal to created_from",
+            )
+
+        total = query.with_entities(func.count(Lead.id)).scalar() or 0
+
+        offset = max(0, (page - 1) * size)
+        rows = (
+            query.order_by(Lead.created_at.desc(), Lead.id.desc())
+            .offset(offset)
+            .limit(size)
+            .all()
+        )
+
+        items = [
+            LeadInventoryItem(
+                id=lead.id,
+                state_code=lead.state_code,
+                first_name=lead.first_name,
+                last_name=lead.last_name,
+                mobile_phone=lead.mobile_phone,
+                source=lead.source,
+                created_at=lead.created_at,
+                download_count=int(download_count),
+            )
+            for lead, download_count in rows
+        ]
+
+        return PaginatedLeadInventory(items=items, total=total, page=page, size=size)
+
+    @staticmethod
+    def get_license_status_summary(db: Session) -> list[LicenseStatusSummaryItem]:
+        rows = (
+            db.query(
+                License.verification_status,
+                func.count(License.id),
+            )
+            .group_by(License.verification_status)
+            .all()
+        )
+
+        status_counts = {"pending": 0, "verified": 0, "rejected": 0}
+        for status, count in rows:
+            if status in status_counts:
+                status_counts[status] = int(count or 0)
+
+        return [
+            LicenseStatusSummaryItem(status="pending", count=status_counts["pending"]),
+            LicenseStatusSummaryItem(status="verified", count=status_counts["verified"]),
+            LicenseStatusSummaryItem(status="rejected", count=status_counts["rejected"]),
+        ]
 
     @staticmethod
     def get_user_details(db: Session, user_id: int) -> UserDetails:
