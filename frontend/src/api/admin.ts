@@ -1,16 +1,21 @@
 import apiClient from "@/api/client";
 import type {
+  AdminLeadCreatePayload,
   AuditLogFilters,
   DashboardStats,
   DeactivateUserRequest,
   ImportStats,
+  LeadInventoryFilters,
   LeadBulkImportResult,
+  LicenseStatusSummaryItem,
   PaginatedAuditLogs,
+  PaginatedLeadInventory,
   PaginatedOrders,
   PaginatedUsers,
   UserDetails,
   UserListFilters,
 } from "@/types/admin";
+import type { Lead } from "@/types/lead";
 import type {
   AdminLicenseDecisionRow,
   License,
@@ -116,6 +121,50 @@ export const getOrders = async (
   const response = await apiClient.get<PaginatedOrders>("/admin/orders", {
     params,
   });
+  return response.data;
+};
+
+export const getLeadInventory = async (
+  page: number,
+  size: number,
+  filters: LeadInventoryFilters = {},
+): Promise<PaginatedLeadInventory> => {
+  const params = normalizeParams({
+    page,
+    size,
+    search: filters.search,
+    state_code: filters.state_code?.toUpperCase(),
+    source: filters.source,
+    delivery_status: filters.delivery_status,
+    created_from: filters.created_from,
+    created_to: filters.created_to,
+  });
+
+  const response = await apiClient.get<PaginatedLeadInventory>("/admin/lead-inventory", {
+    params,
+  });
+  return response.data;
+};
+
+export const getLicenseStatusSummary = async (): Promise<LicenseStatusSummaryItem[]> => {
+  const response = await apiClient.get<LicenseStatusSummaryItem[]>(
+    "/admin/license-status-summary",
+  );
+  return response.data;
+};
+
+export const createLeadAsAdmin = async (
+  payload: AdminLeadCreatePayload,
+): Promise<Lead> => {
+  const requestPayload = normalizeParams({
+    state_code: payload.state_code.trim().toUpperCase(),
+    mobile_phone: payload.mobile_phone,
+    first_name: payload.first_name,
+    last_name: payload.last_name,
+    source: payload.source ?? "manual_entry",
+  });
+
+  const response = await apiClient.post<Lead>("/leads/", requestPayload);
   return response.data;
 };
 
