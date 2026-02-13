@@ -45,6 +45,46 @@ export interface PaginatedOrders {
   size: number;
 }
 
+export interface AdminLeadInventoryItem {
+  id: number;
+  state_code: string;
+  first_name: string | null;
+  last_name: string | null;
+  mobile_phone: string | null;
+  source: string | null;
+  created_at: string;
+  download_count: number;
+}
+
+export interface PaginatedLeadInventory {
+  items: AdminLeadInventoryItem[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+export interface LeadInventoryFilters {
+  search?: string;
+  state_code?: string;
+  source?: string;
+  delivery_status?: "all" | "unsold" | "sold";
+  created_from?: string;
+  created_to?: string;
+}
+
+export interface LicenseStatusSummaryItem {
+  status: "pending" | "verified" | "rejected";
+  count: number;
+}
+
+export interface AdminLeadCreatePayload {
+  state_code: string;
+  mobile_phone: string;
+  first_name?: string;
+  last_name?: string;
+  source?: string;
+}
+
 export interface UserLicenseItem {
   id: number;
   state: string;
