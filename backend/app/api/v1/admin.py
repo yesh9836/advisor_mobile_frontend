@@ -1,5 +1,5 @@
 import logging
-from typing import Annotated, Dict, Optional
+from typing import Annotated, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -11,7 +11,10 @@ from app.schemas.admin import (
     DeactivateUserRequest,
     DashboardStats,
     ImportStats,
+    LeadInventoryFilters,
+    LicenseStatusSummaryItem,
     PaginatedAuditLogs,
+    PaginatedLeadInventory,
     PaginatedOrders,
     PaginatedUsers,
     UserDetails,
@@ -76,6 +79,35 @@ def get_orders(
         size=size,
         status=normalized_status,
     )
+
+
+@router.get(
+    "/lead-inventory",
+    response_model=PaginatedLeadInventory,
+    summary="List lead inventory for admin management",
+)
+def get_lead_inventory(
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    filters: LeadInventoryFilters = Depends(),
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> PaginatedLeadInventory:
+    _ = current_admin
+    return AdminService.get_lead_inventory(db=db, page=page, size=size, filters=filters)
+
+
+@router.get(
+    "/license-status-summary",
+    response_model=List[LicenseStatusSummaryItem],
+    summary="Get license status counts",
+)
+def get_license_status_summary(
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> List[LicenseStatusSummaryItem]:
+    _ = current_admin
+    return AdminService.get_license_status_summary(db=db)
 
 
 @router.get(
