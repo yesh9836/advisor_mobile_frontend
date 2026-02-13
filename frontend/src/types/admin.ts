@@ -9,6 +9,34 @@ export interface DashboardStats {
   currency: string;
 }
 
+export interface MonthlyRevenuePoint {
+  month: string;
+  revenue_cents: number;
+}
+
+export interface PlanBreakdownItem {
+  plan_name: string;
+  active_subscriptions: number;
+  revenue_cents: number;
+}
+
+export interface StateDistributionItem {
+  state_code: string;
+  lead_count: number;
+}
+
+export interface UserGrowthPoint {
+  month: string;
+  new_users: number;
+}
+
+export interface AdminAnalyticsOverview {
+  monthly_revenue: MonthlyRevenuePoint[];
+  plan_breakdown: PlanBreakdownItem[];
+  state_distribution: StateDistributionItem[];
+  user_growth: UserGrowthPoint[];
+}
+
 export interface AdminUserListItem {
   id: number;
   name: string;
