@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { useAuth } from "@/context/AuthContext";
 import type { UserRole } from "@/types/auth";
+import { getHomeRouteByRole } from "@/utils/role-routing";
 
 interface ProtectedRouteProps {
   children?: ReactNode;
@@ -37,7 +38,7 @@ const ProtectedRoute = ({
     allowedRoles.length > 0 &&
     !allowedRoles.includes(user.role)
   ) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={getHomeRouteByRole(user.role)} replace />;
   }
 
   return children ? <>{children}</> : <Outlet />;
