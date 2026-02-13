@@ -118,6 +118,13 @@ const AdminDashboard = () => {
             <button
               type="button"
               className="btn btn-secondary"
+              onClick={() => navigate("/admin/users")}
+            >
+              Users
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
               onClick={() => navigate("/admin/imports")}
             >
               Imports
