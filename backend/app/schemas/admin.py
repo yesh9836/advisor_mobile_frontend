@@ -49,6 +49,29 @@ class PaginatedOrders(BaseModel):
     size: int
 
 
+class LeadInventoryItem(BaseModel):
+    id: int
+    state_code: str
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    mobile_phone: Optional[str] = None
+    source: Optional[str] = None
+    created_at: datetime
+    download_count: int
+
+
+class PaginatedLeadInventory(BaseModel):
+    items: List[LeadInventoryItem]
+    total: int
+    page: int
+    size: int
+
+
+class LicenseStatusSummaryItem(BaseModel):
+    status: Literal["pending", "verified", "rejected"]
+    count: int
+
+
 class UserLicenseItem(BaseModel):
     id: int
     state: str
@@ -169,4 +192,29 @@ class DeactivateUserRequest(BaseModel):
         if value is None:
             return None
         clean = value.strip()
+        return clean if clean else None
+
+
+class LeadInventoryFilters(BaseModel):
+    search: Optional[str] = None
+    state_code: Optional[str] = Field(default=None, min_length=2, max_length=2)
+    source: Optional[str] = None
+    delivery_status: Optional[Literal["all", "unsold", "sold"]] = "all"
+    created_from: Optional[datetime] = None
+    created_to: Optional[datetime] = None
+
+    @field_validator("search", "source")
+    @classmethod
+    def normalize_string_filters(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        clean = value.strip()
+        return clean if clean else None
+
+    @field_validator("state_code")
+    @classmethod
+    def normalize_state_code(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        clean = value.strip().upper()
         return clean if clean else None
