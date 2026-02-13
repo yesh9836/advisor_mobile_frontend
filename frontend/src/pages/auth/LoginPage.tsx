@@ -1,10 +1,11 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
-import { Link, Navigate, useNavigate } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { z } from "zod";
 
 import { useAuth } from "@/context/AuthContext";
+import { getHomeRouteByRole } from "@/utils/role-routing";
 
 const loginSchema = z.object({
   email: z.email("Enter a valid email"),
@@ -17,7 +18,6 @@ const inputClass =
   "mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/25";
 
 const LoginPage = () => {
-  const navigate = useNavigate();
   const { login, user, loading, error, clearError } = useAuth();
 
   const {
@@ -35,7 +35,6 @@ const LoginPage = () => {
   const onSubmit = async (values: LoginFormValues) => {
     try {
       await login(values);
-      navigate("/dashboard", { replace: true });
     } catch (err) {
       setError("root", {
         message: err instanceof Error ? err.message : "Unable to login",
@@ -44,7 +43,7 @@ const LoginPage = () => {
   };
 
   if (user && !loading) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={getHomeRouteByRole(user.role)} replace />;
   }
 
   return (

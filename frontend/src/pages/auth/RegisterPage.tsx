@@ -5,6 +5,7 @@ import { Link, Navigate, useNavigate } from "react-router-dom";
 import { z } from "zod";
 
 import { useAuth } from "@/context/AuthContext";
+import { getHomeRouteByRole } from "@/utils/role-routing";
 
 const registerSchema = z
   .object({
@@ -89,7 +90,7 @@ const RegisterPage = () => {
   };
 
   if (user && !loading) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={getHomeRouteByRole(user.role)} replace />;
   }
 
   return (
