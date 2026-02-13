@@ -63,6 +63,15 @@ const OrdersIcon = () => (
   </svg>
 );
 
+const UsersIcon = () => (
+  <svg viewBox="0 0 20 20" aria-hidden="true">
+    <circle cx="7" cy="7" r="2.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    <circle cx="13.5" cy="8.5" r="2" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    <path d="M3.5 15c.7-2 2.2-3 4.5-3s3.8 1 4.5 3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    <path d="M11.5 14.8c.5-1.4 1.5-2.2 3-2.2 1 0 1.8.3 2.5 1" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+  </svg>
+);
+
 const ImportIcon = () => (
   <svg viewBox="0 0 20 20" aria-hidden="true">
     <path d="M10 3v9M6.5 8.5 10 12l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -92,6 +101,7 @@ const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
   const adminItems: SidebarItem[] = [
     { to: "/admin", label: "Dashboard", icon: <DashboardIcon />, end: true },
     { to: "/admin/lead-inventory", label: "Lead Inventory", icon: <InventoryIcon /> },
+    { to: "/admin/users", label: "Users", icon: <UsersIcon /> },
     { to: "/admin/orders", label: "Orders", icon: <OrdersIcon /> },
     { to: "/admin/imports", label: "Imports", icon: <ImportIcon /> },
     { to: "/admin/license-reviews", label: "License Reviews", icon: <LicenseIcon /> },
