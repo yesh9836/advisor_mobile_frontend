@@ -1,5 +1,6 @@
 import apiClient from "@/api/client";
 import type {
+  AdminAnalyticsOverview,
   AdminLeadCreatePayload,
   AuditLogFilters,
   DashboardStats,
@@ -85,6 +86,11 @@ const parseFilename = (
 
 export const getDashboardStats = async (): Promise<DashboardStats> => {
   const response = await apiClient.get<DashboardStats>("/admin/dashboard");
+  return response.data;
+};
+
+export const getAnalyticsOverview = async (): Promise<AdminAnalyticsOverview> => {
+  const response = await apiClient.get<AdminAnalyticsOverview>("/admin/analytics");
   return response.data;
 };
 
