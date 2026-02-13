@@ -12,6 +12,7 @@ from app.models.license import License
 from app.models.subscription import Subscription, SubscriptionPlan
 from app.models.user import User
 from app.schemas.admin import (
+    AdminAnalyticsOverview,
     AdminOrderItem,
     AuditLogFilters,
     AuditLogItem,
@@ -20,12 +21,16 @@ from app.schemas.admin import (
     LeadInventoryFilters,
     LeadInventoryItem,
     LicenseStatusSummaryItem,
+    MonthlyRevenuePoint,
     PaginatedAuditLogs,
     PaginatedLeadInventory,
     PaginatedOrders,
     PaginatedUsers,
+    PlanBreakdownItem,
+    StateDistributionItem,
     UserDetails,
     UserDownloadHistoryItem,
+    UserGrowthPoint,
     UserLicenseItem,
     UserListFilters,
     UserListItem,
@@ -38,6 +43,12 @@ logger = logging.getLogger(__name__)
 
 
 class AdminService:
+    @staticmethod
+    def _month_label(year_value: float, month_value: float) -> str:
+        year = int(year_value)
+        month = int(month_value)
+        return f"{year:04d}-{month:02d}"
+
     @staticmethod
     def _latest_subscription_ids_subquery(db: Session):
         return (
@@ -97,6 +108,102 @@ class AdminService:
             total_leads=total_leads,
             total_revenue_cents=total_revenue_cents,
             currency=currency,
+        )
+
+    @staticmethod
+    def get_analytics_overview(db: Session) -> AdminAnalyticsOverview:
+        monthly_revenue_rows = (
+            db.query(
+                func.extract("year", Subscription.created_at).label("year"),
+                func.extract("month", Subscription.created_at).label("month"),
+                func.coalesce(func.sum(SubscriptionPlan.price_cents), 0).label("revenue_cents"),
+            )
+            .join(SubscriptionPlan, SubscriptionPlan.id == Subscription.plan_id)
+            .group_by("year", "month")
+            .order_by("year", "month")
+            .all()
+        )
+
+        monthly_revenue = [
+            MonthlyRevenuePoint(
+                month=AdminService._month_label(year_value, month_value),
+                revenue_cents=int(revenue_cents or 0),
+            )
+            for year_value, month_value, revenue_cents in monthly_revenue_rows
+        ]
+
+        latest_subscription_ids = AdminService._latest_subscription_ids_subquery(db)
+        latest_subscription = aliased(Subscription)
+
+        plan_breakdown_rows = (
+            db.query(
+                SubscriptionPlan.name.label("plan_name"),
+                func.count(latest_subscription.id).label("active_subscriptions"),
+                func.coalesce(func.sum(SubscriptionPlan.price_cents), 0).label("revenue_cents"),
+            )
+            .join(latest_subscription, latest_subscription.plan_id == SubscriptionPlan.id)
+            .join(
+                latest_subscription_ids,
+                latest_subscription.id == latest_subscription_ids.c.subscription_id,
+            )
+            .filter(latest_subscription.status == "active")
+            .group_by(SubscriptionPlan.id, SubscriptionPlan.name)
+            .order_by(func.count(latest_subscription.id).desc(), SubscriptionPlan.name.asc())
+            .all()
+        )
+
+        plan_breakdown = [
+            PlanBreakdownItem(
+                plan_name=str(plan_name),
+                active_subscriptions=int(active_subscriptions or 0),
+                revenue_cents=int(revenue_cents or 0),
+            )
+            for plan_name, active_subscriptions, revenue_cents in plan_breakdown_rows
+        ]
+
+        state_distribution_rows = (
+            db.query(
+                Lead.state_code.label("state_code"),
+                func.count(Lead.id).label("lead_count"),
+            )
+            .group_by(Lead.state_code)
+            .order_by(func.count(Lead.id).desc(), Lead.state_code.asc())
+            .all()
+        )
+
+        state_distribution = [
+            StateDistributionItem(
+                state_code=state_code,
+                lead_count=int(lead_count or 0),
+            )
+            for state_code, lead_count in state_distribution_rows
+        ]
+
+        user_growth_rows = (
+            db.query(
+                func.extract("year", User.created_at).label("year"),
+                func.extract("month", User.created_at).label("month"),
+                func.count(User.id).label("new_users"),
+            )
+            .filter(User.role == "advisor")
+            .group_by("year", "month")
+            .order_by("year", "month")
+            .all()
+        )
+
+        user_growth = [
+            UserGrowthPoint(
+                month=AdminService._month_label(year_value, month_value),
+                new_users=int(new_users or 0),
+            )
+            for year_value, month_value, new_users in user_growth_rows
+        ]
+
+        return AdminAnalyticsOverview(
+            monthly_revenue=monthly_revenue,
+            plan_breakdown=plan_breakdown,
+            state_distribution=state_distribution,
+            user_growth=user_growth,
         )
 
     @staticmethod
