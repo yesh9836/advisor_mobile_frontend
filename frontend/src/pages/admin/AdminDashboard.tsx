@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { getDashboardStats } from "@/api/admin";
-import type { DashboardStats } from "@/types/admin";
+import { getAuditLogs, getDashboardStats } from "@/api/admin";
+import type { AuditLog, DashboardStats } from "@/types/admin";
 import { getApiErrorMessage } from "@/utils/api-error";
 
 const formatCurrency = (amountCents: number, currency: string): string => {
@@ -14,35 +14,78 @@ const formatCurrency = (amountCents: number, currency: string): string => {
   });
 };
 
+const formatTimestamp = (isoTimestamp: string): string => {
+  const date = new Date(isoTimestamp);
+  if (Number.isNaN(date.getTime())) {
+    return isoTimestamp;
+  }
+
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+};
+
+const formatActionLabel = (value: string): string =>
+  value.replace(/_/g, " ").trim().toUpperCase();
+
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [statsError, setStatsError] = useState<string | null>(null);
+
+  const [recentActivity, setRecentActivity] = useState<AuditLog[]>([]);
+  const [activityLoading, setActivityLoading] = useState(true);
+  const [activityError, setActivityError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    const loadStats = async () => {
-      setLoading(true);
-      setError(null);
+    const loadDashboard = async () => {
+      setStatsLoading(true);
+      setStatsError(null);
+      setActivityLoading(true);
+      setActivityError(null);
 
-      try {
-        const response = await getDashboardStats();
-        if (cancelled) return;
-        setStats(response);
-      } catch (loadError) {
-        if (cancelled) return;
+      const [statsResult, activityResult] = await Promise.allSettled([
+        getDashboardStats(),
+        getAuditLogs({}, 1, 6),
+      ]);
+
+      if (cancelled) return;
+
+      if (statsResult.status === "fulfilled") {
+        setStats(statsResult.value);
+      } else {
         setStats(null);
-        setError(getApiErrorMessage(loadError, "Unable to load admin dashboard."));
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        setStatsError(
+          getApiErrorMessage(
+            statsResult.reason,
+            "Unable to load admin dashboard.",
+          ),
+        );
       }
+      setStatsLoading(false);
+
+      if (activityResult.status === "fulfilled") {
+        setRecentActivity(activityResult.value.items);
+      } else {
+        setRecentActivity([]);
+        setActivityError(
+          getApiErrorMessage(
+            activityResult.reason,
+            "Unable to load recent activity.",
+          ),
+        );
+      }
+      setActivityLoading(false);
     };
 
-    void loadStats();
+    void loadDashboard();
 
     return () => {
       cancelled = true;
@@ -60,19 +103,20 @@ const AdminDashboard = () => {
         </div>
       </div>
 
-      {error && <div className="alert">{error}</div>}
+      {statsError && <div className="alert">{statsError}</div>}
+      {activityError && <div className="alert">{activityError}</div>}
 
       <section className="grid-3">
         <article className="panel">
           <div className="metric-title">Total Users</div>
-          <div className="metric-value">{loading ? "..." : stats?.total_users ?? 0}</div>
+          <div className="metric-value">{statsLoading ? "..." : stats?.total_users ?? 0}</div>
           <div className="metric-note">Admin + advisor accounts</div>
         </article>
 
         <article className="panel">
           <div className="metric-title">Active Subscriptions</div>
           <div className="metric-value">
-            {loading ? "..." : stats?.active_subscriptions ?? 0}
+            {statsLoading ? "..." : stats?.active_subscriptions ?? 0}
           </div>
           <div className="metric-note">Latest active plans</div>
         </article>
@@ -80,7 +124,7 @@ const AdminDashboard = () => {
         <article className="panel">
           <div className="metric-title">Revenue</div>
           <div className="metric-value">
-            {loading
+            {statsLoading
               ? "..."
               : formatCurrency(
                   stats?.total_revenue_cents ?? 0,
@@ -136,6 +180,13 @@ const AdminDashboard = () => {
             >
               License Reviews
             </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => navigate("/admin/analytics")}
+            >
+              Analytics
+            </button>
           </div>
         </article>
 
@@ -144,16 +195,80 @@ const AdminDashboard = () => {
             <h2 style={{ margin: 0, fontSize: 28, color: "#0b1b49" }}>Queue Snapshot</h2>
           </div>
           <div style={{ color: "#334155" }}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>Pending licenses</span>
-              <strong>{loading ? "..." : stats?.pending_licenses ?? 0}</strong>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => navigate("/admin/license-reviews")}
+                className="btn btn-secondary"
+                style={{ padding: "4px 10px", fontSize: 12 }}
+              >
+                Pending approvals
+              </button>
+              <strong>{statsLoading ? "..." : stats?.pending_licenses ?? 0}</strong>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
               <span>Total leads</span>
-              <strong>{loading ? "..." : stats?.total_leads ?? 0}</strong>
+              <strong>{statsLoading ? "..." : stats?.total_leads ?? 0}</strong>
             </div>
           </div>
         </aside>
+      </section>
+
+      <section className="panel stack">
+        <div className="page-header-row">
+          <div>
+            <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>Recent Activity</h2>
+            <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+              Latest audit events across admin and advisor actions.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => navigate("/admin/imports")}
+          >
+            View Imports History
+          </button>
+        </div>
+
+        {activityLoading && <p style={{ margin: 0, color: "#475569" }}>Loading recent activity...</p>}
+
+        {!activityLoading && recentActivity.length === 0 && (
+          <p style={{ margin: 0, color: "#475569" }}>No recent activity found.</p>
+        )}
+
+        {!activityLoading && recentActivity.length > 0 && (
+          <div className="stack">
+            {recentActivity.map((entry) => (
+              <section
+                key={entry.id}
+                className="panel"
+                style={{ background: "#f8fafc" }}
+              >
+                <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ color: "#0b1b49", fontWeight: 700 }}>
+                    {formatActionLabel(entry.action)}
+                  </div>
+                  <div style={{ color: "#64748b", fontSize: 13 }}>
+                    {formatTimestamp(entry.created_at)}
+                  </div>
+                </div>
+                <p style={{ margin: "8px 0 0 0", color: "#475569" }}>
+                  {entry.entity_type}
+                  {entry.entity_id !== null ? ` #${entry.entity_id}` : ""}
+                  {entry.actor_user_id !== null ? ` • actor ${entry.actor_user_id}` : ""}
+                </p>
+              </section>
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );
