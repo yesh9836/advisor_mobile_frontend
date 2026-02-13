@@ -8,6 +8,10 @@ import LeadsPage from "@/pages/advisor/LeadsPage";
 import ProfilePage from "@/pages/advisor/ProfilePage";
 import SubscriptionPage from "@/pages/advisor/SubscriptionPage";
 import AdminDashboard from "@/pages/admin/AdminDashboard";
+import ImportsPage from "@/pages/admin/ImportsPage";
+import LeadInventoryPage from "@/pages/admin/LeadInventoryPage";
+import LicenseReviewsPage from "@/pages/admin/LicenseReviewsPage";
+import OrdersPage from "@/pages/admin/OrdersPage";
 import LoginPage from "@/pages/auth/LoginPage";
 import RegisterPage from "@/pages/auth/RegisterPage";
 
@@ -49,6 +53,38 @@ export const AppRoutes = () => {
             element={
               <ProtectedRoute allowedRoles={["admin"]}>
                 <AdminDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/lead-inventory"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <LeadInventoryPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/orders"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <OrdersPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/imports"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <ImportsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/license-reviews"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <LicenseReviewsPage />
               </ProtectedRoute>
             }
           />
