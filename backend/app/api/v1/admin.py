@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db, require_admin
 from app.models.user import User
 from app.schemas.admin import (
+    AdminAnalyticsOverview,
     AuditLogFilters,
     DeactivateUserRequest,
     DashboardStats,
@@ -38,6 +39,19 @@ def get_dashboard_stats(
 ) -> DashboardStats:
     _ = current_admin
     return AdminService.get_dashboard_stats(db)
+
+
+@router.get(
+    "/analytics",
+    response_model=AdminAnalyticsOverview,
+    summary="Get admin analytics overview",
+)
+def get_analytics_overview(
+    current_admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> AdminAnalyticsOverview:
+    _ = current_admin
+    return AdminService.get_analytics_overview(db)
 
 
 @router.get(
