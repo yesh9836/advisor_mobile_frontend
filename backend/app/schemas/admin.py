@@ -13,6 +13,34 @@ class DashboardStats(BaseModel):
     currency: str
 
 
+class MonthlyRevenuePoint(BaseModel):
+    month: str
+    revenue_cents: int
+
+
+class PlanBreakdownItem(BaseModel):
+    plan_name: str
+    active_subscriptions: int
+    revenue_cents: int
+
+
+class StateDistributionItem(BaseModel):
+    state_code: str
+    lead_count: int
+
+
+class UserGrowthPoint(BaseModel):
+    month: str
+    new_users: int
+
+
+class AdminAnalyticsOverview(BaseModel):
+    monthly_revenue: List[MonthlyRevenuePoint]
+    plan_breakdown: List[PlanBreakdownItem]
+    state_distribution: List[StateDistributionItem]
+    user_growth: List[UserGrowthPoint]
+
+
 class UserListItem(BaseModel):
     id: int
     name: str
