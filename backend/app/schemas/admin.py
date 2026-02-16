@@ -6,7 +6,8 @@ from pydantic import BaseModel, Field, field_validator
 
 class DashboardStats(BaseModel):
     total_users: int
-    active_subscriptions: int
+    completed_purchases: int
+    advisors_with_credits: int
     pending_licenses: int
     total_leads: int
     total_revenue_cents: int
@@ -19,8 +20,10 @@ class MonthlyRevenuePoint(BaseModel):
 
 
 class PlanBreakdownItem(BaseModel):
-    plan_name: str
-    active_subscriptions: int
+    package_name: str
+    purchases: int
+    credits_granted: int
+    credits_remaining: int
     revenue_cents: int
 
 
@@ -49,7 +52,8 @@ class UserListItem(BaseModel):
     is_active: bool
     created_at: datetime
     license_count: int
-    subscription_status: Optional[str] = None
+    current_credits: int
+    total_purchases: int
 
 
 class PaginatedUsers(BaseModel):
@@ -66,8 +70,11 @@ class AdminOrderItem(BaseModel):
     advisor_email: str
     package_name: Optional[str] = None
     quantity: Optional[int] = None
+    remaining_credits: Optional[int] = None
     status: str
     created_at: datetime
+    amount_cents: int
+    currency: str
 
 
 class PaginatedOrders(BaseModel):
@@ -111,15 +118,22 @@ class UserLicenseItem(BaseModel):
     rejection_reason: Optional[str] = None
 
 
-class UserSubscriptionItem(BaseModel):
+class UserCreditSummary(BaseModel):
+    total_credits: int
+    remaining_credits: int
+    completed_purchases: int
+
+
+class UserPurchaseItem(BaseModel):
     id: int
+    order_reference: str
     status: str
-    plan_name: Optional[str] = None
-    price_cents: Optional[int] = None
-    currency: Optional[str] = None
-    current_period_start: Optional[datetime] = None
-    current_period_end: Optional[datetime] = None
-    created_at: datetime
+    package_name: Optional[str] = None
+    amount_cents: int
+    currency: str
+    credits_total: int
+    credits_remaining: int
+    purchased_at: datetime
 
 
 class UserDownloadHistoryItem(BaseModel):
@@ -149,7 +163,8 @@ class UserDetails(BaseModel):
     deactivated_at: Optional[datetime] = None
     deactivated_by: Optional[int] = None
     licenses: List[UserLicenseItem]
-    subscription: Optional[UserSubscriptionItem] = None
+    credit_summary: UserCreditSummary
+    purchase_history: List[UserPurchaseItem]
     download_history: List[UserDownloadHistoryItem]
     recent_activity: List[UserRecentActivityItem]
 
