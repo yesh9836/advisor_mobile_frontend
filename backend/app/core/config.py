@@ -87,6 +87,13 @@ class Settings(BaseSettings):
     STRIPE_WEBHOOK_SECRET: str = ""
     STRIPE_API_VERSION: str = "2023-10-16"
 
+    # One-time purchase rollout controls
+    ONE_TIME_PURCHASES_ENABLED: bool = True
+    PURCHASE_WEBHOOK_CREDIT_GRANT_ENABLED: bool = True
+    SUBSCRIPTION_COMPAT_ENDPOINTS_ENABLED: bool = True
+    ONE_TIME_PURCHASES_ROLLOUT_USER_IDS: list[int] = []
+    ONE_TIME_PURCHASES_ROLLOUT_EMAILS: list[str] = []
+
     # File uploads
     UPLOAD_DIR: str = "uploads"
     MAX_UPLOAD_SIZE_MB: int = 10  # MB
@@ -168,6 +175,41 @@ class Settings(BaseSettings):
             return [item.strip() for item in parsed.split(",") if item.strip()]
         return value
 
+    @field_validator("ONE_TIME_PURCHASES_ROLLOUT_USER_IDS", mode="before")
+    @classmethod
+    def parse_rollout_user_ids(cls, value):
+        if isinstance(value, str):
+            parsed = value.strip()
+            if not parsed:
+                return []
+            if parsed.startswith("["):
+                value = json.loads(parsed)
+            else:
+                value = [item.strip() for item in parsed.split(",") if item.strip()]
+
+        if isinstance(value, (tuple, set)):
+            value = list(value)
+
+        if value is None:
+            return []
+
+        if isinstance(value, list):
+            return [int(item) for item in value]
+
+        return value
+
+    @field_validator("ONE_TIME_PURCHASES_ROLLOUT_EMAILS", mode="before")
+    @classmethod
+    def parse_rollout_emails(cls, value):
+        if isinstance(value, str):
+            parsed = value.strip()
+            if not parsed:
+                return []
+            if parsed.startswith("["):
+                return json.loads(parsed)
+            return [item.strip() for item in parsed.split(",") if item.strip()]
+        return value
+
     @field_validator("ALLOWED_EXTENSIONS", mode="after")
     @classmethod
     def normalize_extensions(cls, value: list[str]) -> list[str]:
@@ -213,6 +255,30 @@ class Settings(BaseSettings):
             network = str(ip_network(proxy.strip(), strict=False))
             if network not in normalized:
                 normalized.append(network)
+        return normalized
+
+    @field_validator("ONE_TIME_PURCHASES_ROLLOUT_USER_IDS", mode="after")
+    @classmethod
+    def validate_rollout_user_ids(cls, value: list[int]) -> list[int]:
+        normalized: list[int] = []
+        for user_id in value:
+            parsed = int(user_id)
+            if parsed <= 0:
+                raise ValueError("ONE_TIME_PURCHASES_ROLLOUT_USER_IDS must contain positive user IDs")
+            if parsed not in normalized:
+                normalized.append(parsed)
+        return normalized
+
+    @field_validator("ONE_TIME_PURCHASES_ROLLOUT_EMAILS", mode="after")
+    @classmethod
+    def normalize_rollout_emails(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for email in value:
+            lowered = email.strip().lower()
+            if not lowered:
+                continue
+            if lowered not in normalized:
+                normalized.append(lowered)
         return normalized
 
     @model_validator(mode="after")
