@@ -3,9 +3,11 @@ from typing import Any, Dict
 
 import asyncio
 import stripe
+from time import perf_counter
 from fastapi import APIRouter, HTTPException, Request, status
 
 from app.core.config import settings
+from app.services.metrics_service import MetricsService
 from app.services.subscription_service import StripeWebhookProcessingError, SubscriptionService
 
 logger = logging.getLogger(__name__)
@@ -42,6 +44,8 @@ async def stripe_webhook(
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     logger.info(f"Stripe webhook verified: type={event.get('type')} id={event.get('id')}")
+    event_type = str(event.get("type") or "unknown")
+    started_at = perf_counter()
     try:
         await asyncio.to_thread(
             SubscriptionService.handle_webhook_event_threadsafe,
@@ -54,6 +58,12 @@ async def stripe_webhook(
             event.get("id"),
             exc,
         )
+        MetricsService.increment(
+            "purchase_webhook_retry_total",
+            tags={
+                "event_type": event_type,
+            },
+        )
         raise HTTPException(status_code=500, detail="Webhook processing failed")
     except Exception as exc:
         logger.exception(
@@ -62,6 +72,27 @@ async def stripe_webhook(
             event.get("id"),
             exc,
         )
+        MetricsService.increment(
+            "purchase_webhook_failed_total",
+            tags={
+                "event_type": event_type,
+            },
+        )
         raise HTTPException(status_code=500, detail="Webhook processing failed")
+
+    elapsed_ms = (perf_counter() - started_at) * 1000.0
+    MetricsService.increment(
+        "purchase_webhook_processed_total",
+        tags={
+            "event_type": event_type,
+        },
+    )
+    MetricsService.histogram(
+        "purchase_webhook_processing_latency_ms",
+        elapsed_ms,
+        tags={
+            "event_type": event_type,
+        },
+    )
 
     return {"status": "ok"}
