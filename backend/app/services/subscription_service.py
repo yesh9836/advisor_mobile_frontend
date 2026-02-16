@@ -33,6 +33,24 @@ class SubscriptionService:
     """Service class for subscription management and Stripe webhooks."""
 
     @staticmethod
+    def _is_purchase_checkout_enabled_for_user(user: User) -> bool:
+        if settings.ONE_TIME_PURCHASES_ENABLED:
+            return True
+
+        # Admins can always validate purchase flows during staged rollout.
+        if user.role == "admin":
+            return True
+
+        if user.id in settings.ONE_TIME_PURCHASES_ROLLOUT_USER_IDS:
+            return True
+
+        user_email = (user.email or "").strip().lower()
+        if user_email and user_email in settings.ONE_TIME_PURCHASES_ROLLOUT_EMAILS:
+            return True
+
+        return False
+
+    @staticmethod
     def _resolve_package_credits(package: LeadPackage) -> int:
         """
         Resolve package credits from plan metadata.
@@ -81,6 +99,12 @@ class SubscriptionService:
         """
         Create Stripe checkout session for one-time package purchase.
         """
+        if not SubscriptionService._is_purchase_checkout_enabled_for_user(user=user):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="One-time purchases are temporarily unavailable for this account",
+            )
+
         customer_id = PaymentService.create_or_get_stripe_customer(db, user)
 
         package = db.query(LeadPackage).filter(LeadPackage.id == package_id).first()
@@ -367,6 +391,14 @@ class SubscriptionService:
         credits_total: int,
         note: str,
     ) -> None:
+        if not settings.PURCHASE_WEBHOOK_CREDIT_GRANT_ENABLED:
+            logger.warning(
+                "Credit grant deferred by feature flag for purchase_id=%s user_id=%s",
+                purchase.id,
+                purchase.user_id,
+            )
+            return
+
         if purchase.status != "completed":
             return
 
@@ -390,6 +422,8 @@ class SubscriptionService:
                 note=note,
             )
         )
+        purchase.credits_remaining = max(int(purchase.credits_remaining or 0), int(credits_total or 0))
+        db.add(purchase)
 
     @staticmethod
     def _mark_purchase_failed_by_payment_intent(
@@ -460,6 +494,12 @@ class SubscriptionService:
 
         payment_status = str(checkout_session.get("payment_status") or "unpaid").lower()
         purchase_status = forced_status or ("completed" if payment_status == "paid" else "pending")
+        if purchase_status == "completed" and not settings.PURCHASE_WEBHOOK_CREDIT_GRANT_ENABLED:
+            logger.warning(
+                "Deferring completed purchase credit grant for checkout_session_id=%s due to feature flag",
+                session_id,
+            )
+            purchase_status = "pending"
         credits_total = SubscriptionService._resolve_package_credits(package)
         credits_remaining = credits_total if purchase_status == "completed" else 0
         payment_intent_id = SubscriptionService._extract_payment_intent_id(checkout_session)
@@ -652,6 +692,17 @@ class SubscriptionService:
 
             if purchase.status == "completed":
                 logger.info("Lead purchase already completed for payment_intent_id=%s", payment_intent_id)
+                return
+
+            if not settings.PURCHASE_WEBHOOK_CREDIT_GRANT_ENABLED:
+                if purchase.status != "pending":
+                    purchase.status = "pending"
+                    db.add(purchase)
+                    db.commit()
+                logger.warning(
+                    "Deferring payment_intent fulfillment for payment_intent_id=%s due to feature flag",
+                    payment_intent_id,
+                )
                 return
 
             purchase.status = "completed"
