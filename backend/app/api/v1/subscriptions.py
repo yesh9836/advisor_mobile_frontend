@@ -8,6 +8,7 @@ from app.api.deps import get_current_active_user, get_db
 from app.models.subscription import Subscription
 from app.models.user import User
 from app.schemas.subscription import (
+    CreditSummaryResponse,
     CheckoutSessionResponse,
     SubscriptionPlanResponse,
     SubscriptionResponse,
@@ -81,6 +82,19 @@ def get_billing_summary(
 ) -> BillingSummaryResponse:
     data = SubscriptionService.get_billing_summary(db=db, user=current_user)
     return BillingSummaryResponse(**data)
+
+
+@router.get(
+    "/credits",
+    response_model=CreditSummaryResponse,
+    summary="Get advisor lead credit summary",
+)
+def get_credit_summary(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+) -> CreditSummaryResponse:
+    data = SubscriptionService.get_credit_summary(db=db, user=current_user)
+    return CreditSummaryResponse(**data)
 
 
 @router.post(
