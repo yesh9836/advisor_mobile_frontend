@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { createCheckout, getPlans } from "@/api/subscriptions";
-import type { SubscriptionPlan } from "@/types/subscription";
+import { createCheckout, getPackages } from "@/api/purchases";
+import type { PurchasePackage } from "@/types/purchase";
 import { getApiErrorMessage } from "@/utils/api-error";
 
 interface DisplayPlan {
@@ -12,7 +12,7 @@ interface DisplayPlan {
   priceLabel: string;
   leadLine: string;
   features: string[];
-  planId: number | null;
+  packageId: number | null;
 }
 
 const formatMoney = (value: number, currency: string): string => {
@@ -24,7 +24,7 @@ const formatMoney = (value: number, currency: string): string => {
 };
 
 const normalizeFeatures = (
-  features: SubscriptionPlan["features"],
+  features: PurchasePackage["features"],
 ): string[] => {
   if (Array.isArray(features)) {
     return features.map((item) => String(item));
@@ -37,24 +37,24 @@ const normalizeFeatures = (
   return [];
 };
 
-const toDisplayPlan = (plan: SubscriptionPlan): DisplayPlan => {
+const toDisplayPlan = (packageOption: PurchasePackage): DisplayPlan => {
   const stateLabel =
-    plan.state_limit === null
+    packageOption.state_limit === null
       ? "Unlimited states"
-      : `${plan.state_limit} states`;
+      : `${packageOption.state_limit} states`;
   const leadsLabel =
-    plan.daily_download_limit >= 999999
-      ? "Unlimited daily leads"
-      : `${plan.daily_download_limit} daily leads`;
+    packageOption.daily_download_limit >= 999999
+      ? "Unlimited lead credits"
+      : `${packageOption.daily_download_limit} lead credits`;
 
   return {
-    key: `plan-${plan.id}`,
-    title: plan.name || "Plan",
+    key: `package-${packageOption.id}`,
+    title: packageOption.name || "Package",
     subtitle: stateLabel,
-    priceLabel: formatMoney(plan.price_cents ?? 0, plan.currency ?? "USD"),
+    priceLabel: formatMoney(packageOption.price_cents ?? 0, packageOption.currency ?? "USD"),
     leadLine: `${leadsLabel} • instant inbox delivery`,
-    features: normalizeFeatures(plan.features),
-    planId: plan.id,
+    features: normalizeFeatures(packageOption.features),
+    packageId: packageOption.id,
   };
 };
 
@@ -69,7 +69,7 @@ const SubscriptionPage = () => {
   const checkoutSessionId = searchParams.get("session_id");
   const checkoutNotice =
     checkoutState === "success"
-      ? `Checkout completed. Subscription activation is in progress${checkoutSessionId ? ` (session ${checkoutSessionId})` : ""}.`
+      ? `Checkout completed. Your lead credits are available${checkoutSessionId ? ` (session ${checkoutSessionId})` : ""}.`
       : checkoutState === "cancel"
         ? "Checkout canceled. No charge was made."
         : null;
@@ -77,18 +77,18 @@ const SubscriptionPage = () => {
   useEffect(() => {
     let mounted = true;
 
-    const loadPlans = async () => {
+    const loadPackages = async () => {
       setLoading(true);
       setError(null);
       try {
-        const plansData = await getPlans();
+        const packages = await getPackages();
         if (!mounted) return;
 
-        setPlans(plansData.map(toDisplayPlan));
+        setPlans(packages.map(toDisplayPlan));
       } catch (loadError) {
         if (mounted) {
           setPlans([]);
-          setError(getApiErrorMessage(loadError, "Unable to load plans."));
+          setError(getApiErrorMessage(loadError, "Unable to load packages."));
         }
       } finally {
         if (mounted) {
@@ -97,7 +97,7 @@ const SubscriptionPage = () => {
       }
     };
 
-    void loadPlans();
+    void loadPackages();
 
     return () => {
       mounted = false;
@@ -105,8 +105,8 @@ const SubscriptionPage = () => {
   }, []);
 
   const handleCheckout = async (entry: DisplayPlan) => {
-    if (!entry.planId) {
-      setError("Checkout is not configured for this preview package yet.");
+    if (!entry.packageId) {
+      setError("Checkout is not configured for this package yet.");
       return;
     }
 
@@ -114,7 +114,7 @@ const SubscriptionPage = () => {
     setError(null);
 
     try {
-      const session = await createCheckout(entry.planId);
+      const session = await createCheckout(entry.packageId);
       window.location.assign(session.url);
     } catch (checkoutError) {
       setError(getApiErrorMessage(checkoutError, "Unable to start checkout."));
@@ -143,15 +143,15 @@ const SubscriptionPage = () => {
       <section className="grid-3">
         {loading ? (
           <article className="panel">
-            <div className="metric-note">Loading plans...</div>
+            <div className="metric-note">Loading packages...</div>
           </article>
         ) : plans.length === 0 ? (
           <article className="panel stack">
             <h2 style={{ margin: 0, fontSize: 28, color: "#0b1b49" }}>
-              No Plans Available
+              No Packages Available
             </h2>
             <p style={{ margin: 0, color: "#475569" }}>
-              Plan values from DB are unavailable. Showing 0 until plans are
+              Package values from DB are unavailable. Showing 0 until packages are
               configured.
             </p>
             <div className="panel" style={{ background: "#fafcff" }}>
@@ -162,7 +162,7 @@ const SubscriptionPage = () => {
                 $0
               </div>
               <div style={{ color: "#475569" }}>
-                0 daily leads • instant inbox delivery
+                0 lead credits • instant inbox delivery
               </div>
             </div>
           </article>
@@ -189,7 +189,7 @@ const SubscriptionPage = () => {
                     borderColor: "#0b1b49",
                   }}
                 >
-                  Plan
+                  Package
                 </span>
               </div>
 
@@ -221,7 +221,7 @@ const SubscriptionPage = () => {
               >
                 {checkoutKey === entry.key
                   ? "Opening Checkout..."
-                  : "Checkout (Preview)"}
+                  : "Checkout"}
               </button>
 
               <button type="button" className="btn btn-secondary">
