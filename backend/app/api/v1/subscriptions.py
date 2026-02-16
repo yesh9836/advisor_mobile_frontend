@@ -1,7 +1,7 @@
 import logging
 from typing import List
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_active_user, get_db
@@ -24,27 +24,27 @@ router = APIRouter(prefix="/subscriptions", tags=["subscriptions"])
 @router.get(
     "/plans",
     response_model=List[SubscriptionPlanResponse],
-    summary="Get available subscription plans",
+    summary="Get available packages (compatibility wrapper)",
 )
 def get_plans(db: Session = Depends(get_db)) -> List[SubscriptionPlanResponse]:
-    plans = SubscriptionService.get_available_plans(db=db)
+    plans = SubscriptionService.get_available_packages(db=db)
     return [SubscriptionPlanResponse.model_validate(plan) for plan in plans]
 
 
 @router.post(
     "/checkout",
     response_model=CheckoutSessionResponse,
-    summary="Create Stripe checkout session",
+    summary="Create package checkout session (compatibility wrapper)",
 )
 def create_checkout_session(
     plan_id: int = Body(..., embed=True),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ) -> CheckoutSessionResponse:
-    session_data = SubscriptionService.create_checkout_session(
+    session_data = SubscriptionService.create_purchase_checkout_session(
         db=db,
         user=current_user,
-        plan_id=plan_id,
+        package_id=plan_id,
     )
     return CheckoutSessionResponse(**session_data)
 
@@ -52,12 +52,16 @@ def create_checkout_session(
 @router.get(
     "/current",
     response_model=SubscriptionResponse,
-    summary="Get current user's subscription",
+    summary="Get current user's subscription (deprecated)",
+    deprecated=True,
 )
 def get_current_subscription(
+    response: Response,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ) -> SubscriptionResponse:
+    response.headers["Deprecation"] = "true"
+    response.headers["X-Deprecated-Endpoint"] = "/subscriptions/current"
     subscription = (
         db.query(Subscription)
         .filter(Subscription.user_id == current_user.id)
@@ -93,18 +97,22 @@ def get_credit_summary(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ) -> CreditSummaryResponse:
-    data = SubscriptionService.get_credit_summary(db=db, user=current_user)
+    data = SubscriptionService.get_purchase_balance(db=db, user=current_user)
     return CreditSummaryResponse(**data)
 
 
 @router.post(
     "/cancel",
     response_model=SubscriptionResponse,
-    summary="Cancel current user's subscription",
+    summary="Cancel current user's subscription (deprecated)",
+    deprecated=True,
 )
 def cancel_subscription(
+    response: Response,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ) -> SubscriptionResponse:
+    response.headers["Deprecation"] = "true"
+    response.headers["X-Deprecated-Endpoint"] = "/subscriptions/cancel"
     subscription = SubscriptionService.cancel_subscription(db=db, user=current_user)
     return SubscriptionResponse.model_validate(subscription)
