@@ -4,7 +4,7 @@ from .subscription import Subscription, SubscriptionPlan
 from .purchase import LeadCreditLedger, LeadPackage, LeadPurchase
 from .license import License
 from .license_resubmission import LicenseResubmission
-from .lead import Lead, LeadDownload, LeadOutcome
+from .lead import Lead, LeadDownload, LeadOutcome, LeadOwnership
 from .audit_log import AuditLog
 from .auth_session import RefreshTokenSession
 
@@ -21,6 +21,7 @@ __all__ = [
     "LicenseResubmission",
     "Lead",
     "LeadDownload",
+    "LeadOwnership",
     "LeadOutcome",
     "AuditLog",
     "RefreshTokenSession",

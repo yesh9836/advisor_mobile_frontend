@@ -137,6 +137,11 @@ class Lead(Base):
         back_populates="lead",
         cascade="all, delete-orphan",
     )
+    ownerships: Mapped[list["LeadOwnership"]] = relationship(
+        "LeadOwnership",
+        back_populates="lead",
+        cascade="all, delete-orphan",
+    )
 
     outcomes: Mapped[list["LeadOutcome"]] = relationship(
         "LeadOutcome",
@@ -214,6 +219,65 @@ class LeadDownload(Base):
 
     def __repr__(self) -> str:
         return f"<LeadDownload(id={self.id}, user_id={self.user_id}, lead_id={self.lead_id}, batch='{self.csv_batch_id}')>"
+
+
+class LeadOwnership(Base):
+    """
+    Immutable ownership record for purchased lead assignments.
+    One lead can only be owned by one advisor globally.
+    """
+
+    __tablename__ = "lead_ownerships"
+    __table_args__ = (
+        UniqueConstraint("user_id", "lead_id", name="uq_lead_ownerships_user_lead"),
+        UniqueConstraint("lead_id", name="uq_lead_ownerships_global_lead"),
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    user_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("users.id", onupdate="CASCADE", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    lead_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("leads.id", onupdate="CASCADE", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    purchase_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("lead_purchases.id", onupdate="CASCADE", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    assigned_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        nullable=False,
+        default=utcnow,
+        server_default=text("CURRENT_TIMESTAMP"),
+        index=True,
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="lead_ownerships")
+    lead: Mapped["Lead"] = relationship("Lead", back_populates="ownerships")
+    purchase: Mapped[Optional["LeadPurchase"]] = relationship("LeadPurchase")
+
+    def __repr__(self) -> str:
+        return (
+            f"<LeadOwnership(id={self.id}, user_id={self.user_id}, "
+            f"lead_id={self.lead_id}, purchase_id={self.purchase_id})>"
+        )
+
 
 class LeadOutcome(Base):
     """

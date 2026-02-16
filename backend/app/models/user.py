@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from .license import License
     from .purchase import LeadCreditLedger, LeadPurchase
     from .subscription import Subscription
-    from .lead import LeadDownload, LeadOutcome
+    from .lead import LeadDownload, LeadOutcome, LeadOwnership
     from .audit_log import AuditLog
     from .auth_session import RefreshTokenSession
 
@@ -122,6 +122,11 @@ class User(Base):
 
     lead_downloads: Mapped[List["LeadDownload"]] = relationship(
         "LeadDownload",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    lead_ownerships: Mapped[List["LeadOwnership"]] = relationship(
+        "LeadOwnership",
         back_populates="user",
         cascade="all, delete-orphan",
     )
