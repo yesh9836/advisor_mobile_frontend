@@ -22,6 +22,8 @@ _LEGACY_PLAN_TABLE = "subscription_plans"
 _PACKAGE_TABLE = "lead_packages"
 _FK_TO_PACKAGES = "fk_lead_purchases_package_id_lead_packages"
 _FK_TO_LEGACY_PLANS = "fk_lead_purchases_package_id_subscription_plans"
+_PACKAGE_NAME_INDEX = "ix_lead_packages_name"
+_PACKAGE_STRIPE_PRICE_INDEX = "ix_lead_packages_stripe_price_id"
 
 
 def _drop_package_fk_to(table_name: str) -> None:
@@ -35,8 +37,47 @@ def _drop_package_fk_to(table_name: str) -> None:
             and constrained_columns == ["package_id"]
             and constraint_name
         ):
-            op.drop_constraint(constraint_name, _PURCHASES_TABLE, type_="foreignkey")
+            with op.batch_alter_table(_PURCHASES_TABLE) as batch_op:
+                batch_op.drop_constraint(constraint_name, type_="foreignkey")
             break
+
+
+def _create_package_fk(constraint_name: str, referred_table: str) -> None:
+    with op.batch_alter_table(_PURCHASES_TABLE) as batch_op:
+        batch_op.create_foreign_key(
+            constraint_name,
+            referred_table,
+            ["package_id"],
+            ["id"],
+            onupdate="CASCADE",
+            ondelete="RESTRICT",
+        )
+
+
+def _table_exists(table_name: str) -> bool:
+    inspector = sa.inspect(op.get_bind())
+    return table_name in inspector.get_table_names()
+
+
+def _index_exists(table_name: str, index_name: str) -> bool:
+    inspector = sa.inspect(op.get_bind())
+    existing_indexes = {
+        index.get("name")
+        for index in inspector.get_indexes(table_name)
+        if index.get("name")
+    }
+    return index_name in existing_indexes
+
+
+def _has_package_fk_to(table_name: str) -> bool:
+    inspector = sa.inspect(op.get_bind())
+    for foreign_key in inspector.get_foreign_keys(_PURCHASES_TABLE):
+        if (
+            foreign_key.get("referred_table") == table_name
+            and (foreign_key.get("constrained_columns") or []) == ["package_id"]
+        ):
+            return True
+    return False
 
 
 def _backfill_packages_from_subscription_plans() -> None:
@@ -106,49 +147,44 @@ def _backfill_subscription_plans_from_packages() -> None:
 
 
 def upgrade() -> None:
-    op.create_table(
-        _PACKAGE_TABLE,
-        sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
-        sa.Column("name", sa.String(length=120), nullable=False),
-        sa.Column("price_cents", sa.Integer(), nullable=False),
-        sa.Column("currency", sa.String(length=3), server_default=sa.text("'USD'"), nullable=False),
-        sa.Column("stripe_price_id", sa.String(length=100), nullable=False),
-        sa.Column("state_limit", sa.Integer(), nullable=True),
-        sa.Column("daily_download_limit", sa.Integer(), server_default=sa.text("0"), nullable=False),
-        sa.Column("features", sa.JSON(), nullable=True),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(op.f("ix_lead_packages_name"), _PACKAGE_TABLE, ["name"], unique=True)
-    op.create_index(op.f("ix_lead_packages_stripe_price_id"), _PACKAGE_TABLE, ["stripe_price_id"], unique=True)
+    if not _table_exists(_PACKAGE_TABLE):
+        op.create_table(
+            _PACKAGE_TABLE,
+            sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
+            sa.Column("name", sa.String(length=120), nullable=False),
+            sa.Column("price_cents", sa.Integer(), nullable=False),
+            sa.Column("currency", sa.String(length=3), server_default=sa.text("'USD'"), nullable=False),
+            sa.Column("stripe_price_id", sa.String(length=100), nullable=False),
+            sa.Column("state_limit", sa.Integer(), nullable=True),
+            sa.Column("daily_download_limit", sa.Integer(), server_default=sa.text("0"), nullable=False),
+            sa.Column("features", sa.JSON(), nullable=True),
+            sa.Column("created_at", sa.DateTime(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
+            sa.PrimaryKeyConstraint("id"),
+        )
+
+    if not _index_exists(_PACKAGE_TABLE, _PACKAGE_NAME_INDEX):
+        op.create_index(op.f(_PACKAGE_NAME_INDEX), _PACKAGE_TABLE, ["name"], unique=True)
+    if not _index_exists(_PACKAGE_TABLE, _PACKAGE_STRIPE_PRICE_INDEX):
+        op.create_index(op.f(_PACKAGE_STRIPE_PRICE_INDEX), _PACKAGE_TABLE, ["stripe_price_id"], unique=True)
 
     _backfill_packages_from_subscription_plans()
 
-    _drop_package_fk_to(_LEGACY_PLAN_TABLE)
-    op.create_foreign_key(
-        _FK_TO_PACKAGES,
-        _PURCHASES_TABLE,
-        _PACKAGE_TABLE,
-        ["package_id"],
-        ["id"],
-        onupdate="CASCADE",
-        ondelete="RESTRICT",
-    )
+    if _has_package_fk_to(_LEGACY_PLAN_TABLE):
+        _drop_package_fk_to(_LEGACY_PLAN_TABLE)
+    if not _has_package_fk_to(_PACKAGE_TABLE):
+        _create_package_fk(_FK_TO_PACKAGES, _PACKAGE_TABLE)
 
 
 def downgrade() -> None:
-    _drop_package_fk_to(_PACKAGE_TABLE)
+    if _has_package_fk_to(_PACKAGE_TABLE):
+        _drop_package_fk_to(_PACKAGE_TABLE)
     _backfill_subscription_plans_from_packages()
-    op.create_foreign_key(
-        _FK_TO_LEGACY_PLANS,
-        _PURCHASES_TABLE,
-        _LEGACY_PLAN_TABLE,
-        ["package_id"],
-        ["id"],
-        onupdate="CASCADE",
-        ondelete="RESTRICT",
-    )
+    if not _has_package_fk_to(_LEGACY_PLAN_TABLE):
+        _create_package_fk(_FK_TO_LEGACY_PLANS, _LEGACY_PLAN_TABLE)
 
-    op.drop_index(op.f("ix_lead_packages_stripe_price_id"), table_name=_PACKAGE_TABLE)
-    op.drop_index(op.f("ix_lead_packages_name"), table_name=_PACKAGE_TABLE)
-    op.drop_table(_PACKAGE_TABLE)
+    if _table_exists(_PACKAGE_TABLE):
+        if _index_exists(_PACKAGE_TABLE, _PACKAGE_STRIPE_PRICE_INDEX):
+            op.drop_index(op.f(_PACKAGE_STRIPE_PRICE_INDEX), table_name=_PACKAGE_TABLE)
+        if _index_exists(_PACKAGE_TABLE, _PACKAGE_NAME_INDEX):
+            op.drop_index(op.f(_PACKAGE_NAME_INDEX), table_name=_PACKAGE_TABLE)
+        op.drop_table(_PACKAGE_TABLE)
