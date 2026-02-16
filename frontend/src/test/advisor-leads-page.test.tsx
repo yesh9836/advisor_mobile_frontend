@@ -112,5 +112,24 @@ describe("Advisor LeadsPage server query state", () => {
         outcome_status: "contacted",
       });
     });
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => {
+      expect(getLeadsMock).toHaveBeenLastCalledWith(2, 25, {
+        delivery_status: "delivered",
+        outcome_status: "contacted",
+      });
+    });
+
+    fireEvent.change(screen.getByLabelText("Lead search"), {
+      target: { value: "casey" },
+    });
+    await waitFor(() => {
+      expect(getLeadsMock).toHaveBeenLastCalledWith(1, 25, {
+        delivery_status: "delivered",
+        outcome_status: "contacted",
+        search: "casey",
+      });
+    });
   });
 });
