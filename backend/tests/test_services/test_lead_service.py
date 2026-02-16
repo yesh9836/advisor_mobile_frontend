@@ -2,7 +2,7 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
-from app.models.lead import LeadDownload
+from app.models.lead import LeadDownload, LeadOwnership
 from app.services.lead_service import LeadService
 
 
@@ -443,6 +443,167 @@ def test_download_delivered_leads_csv_does_not_consume_credits(
     assert "state_code" in csv_text
     assert "555-DELIVERED-0001" in csv_text
     assert purchase.credits_remaining == 0
+
+
+@pytest.mark.unit
+def test_get_available_leads_for_user_uses_owned_scope_when_present(
+    db,
+    user_factory,
+    plan_factory,
+    license_factory,
+    purchase_factory,
+    lead_factory,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LeadUnitOwnedScope123!",
+        email="lead.unit.owned.scope@example.com",
+    )
+    plan = plan_factory(
+        daily_download_limit=5,
+        state_limit=1,
+        stripe_price_id="price_owned_scope",
+    )
+    license_factory(user_id=advisor.id, state="CA", status="verified")
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=2,
+        credits_remaining=2,
+        status="completed",
+    )
+    owned_a = lead_factory(state_code="CA", mobile_phone="555-OWN-SCOPE-0001")
+    owned_b = lead_factory(state_code="CA", mobile_phone="555-OWN-SCOPE-0002")
+    unowned = lead_factory(state_code="CA", mobile_phone="555-OWN-SCOPE-0003")
+    _ = unowned
+    db.add(
+        LeadOwnership(
+            user_id=advisor.id,
+            lead_id=owned_a.id,
+            purchase_id=purchase.id,
+        )
+    )
+    db.add(
+        LeadOwnership(
+            user_id=advisor.id,
+            lead_id=owned_b.id,
+            purchase_id=purchase.id,
+        )
+    )
+    db.add(
+        LeadDownload(
+            user_id=advisor.id,
+            lead_id=owned_a.id,
+            purchase_id=purchase.id,
+            csv_batch_id="batch_owned_scope",
+        )
+    )
+    db.commit()
+
+    all_data = LeadService.get_available_leads_for_user(
+        db=db,
+        user=advisor,
+        page=1,
+        size=20,
+        delivery_status="all",
+    )
+    assert all_data["total"] == 2
+
+    delivered_data = LeadService.get_available_leads_for_user(
+        db=db,
+        user=advisor,
+        page=1,
+        size=20,
+        delivery_status="delivered",
+    )
+    assert delivered_data["total"] == 1
+    assert delivered_data["items"][0].id == owned_a.id
+
+    available_data = LeadService.get_available_leads_for_user(
+        db=db,
+        user=advisor,
+        page=1,
+        size=20,
+        delivery_status="available",
+    )
+    assert available_data["total"] == 1
+    assert available_data["items"][0].id == owned_b.id
+
+
+@pytest.mark.unit
+def test_download_leads_csv_exports_owned_leads_without_consuming_credits(
+    db,
+    monkeypatch,
+    user_factory,
+    plan_factory,
+    license_factory,
+    purchase_factory,
+    lead_factory,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LeadUnitOwnedExport123!",
+        email="lead.unit.owned.export@example.com",
+    )
+    plan = plan_factory(
+        daily_download_limit=5,
+        state_limit=1,
+        stripe_price_id="price_owned_export",
+    )
+    license_factory(user_id=advisor.id, state="CA", status="verified")
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=2,
+        credits_remaining=2,
+        status="completed",
+    )
+    owned_a = lead_factory(state_code="CA", mobile_phone="555-OWN-EXPORT-0001")
+    owned_b = lead_factory(state_code="CA", mobile_phone="555-OWN-EXPORT-0002")
+    db.add(
+        LeadOwnership(
+            user_id=advisor.id,
+            lead_id=owned_a.id,
+            purchase_id=purchase.id,
+        )
+    )
+    db.add(
+        LeadOwnership(
+            user_id=advisor.id,
+            lead_id=owned_b.id,
+            purchase_id=purchase.id,
+        )
+    )
+    db.commit()
+
+    captured_events = []
+    monkeypatch.setattr(
+        "app.services.lead_service.AuditService.log_purchase_event",
+        lambda **kwargs: captured_events.append(kwargs),
+    )
+
+    first_csv = "".join(LeadService.download_leads_csv(db=db, user=advisor))
+    assert "555-OWN-EXPORT-0001" in first_csv
+    assert "555-OWN-EXPORT-0002" in first_csv
+    assert (
+        db.query(LeadDownload)
+        .filter(LeadDownload.user_id == advisor.id)
+        .count()
+        == 2
+    )
+    db.refresh(purchase)
+    assert purchase.credits_remaining == 2
+    assert captured_events == []
+
+    second_csv = "".join(LeadService.download_leads_csv(db=db, user=advisor))
+    assert "555-OWN-EXPORT-0001" in second_csv
+    assert "555-OWN-EXPORT-0002" in second_csv
+    assert (
+        db.query(LeadDownload)
+        .filter(LeadDownload.user_id == advisor.id)
+        .count()
+        == 2
+    )
 
 
 @pytest.mark.unit

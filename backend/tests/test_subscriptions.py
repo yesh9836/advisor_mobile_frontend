@@ -4,6 +4,7 @@ import pytest
 import stripe
 
 from app.models.audit_log import AuditLog
+from app.models.lead import LeadOwnership
 from app.models.purchase import LeadCreditLedger, LeadPurchase
 from app.models.subscription import Subscription
 from app.services.subscription_service import StripeWebhookProcessingError
@@ -309,7 +310,9 @@ def test_webhook_checkout_completed_creates_purchase_and_credit_grant(
     client,
     db,
     user_factory,
+    license_factory,
     plan_factory,
+    lead_factory,
     monkeypatch,
 ):
     advisor = user_factory(
@@ -318,7 +321,15 @@ def test_webhook_checkout_completed_creates_purchase_and_credit_grant(
         email="advisor.webhook@example.com",
         name="Webhook Advisor",
     )
-    plan = plan_factory(stripe_price_id="price_webhook_plan")
+    license_factory(user_id=advisor.id, state="CA", status="verified")
+    plan = plan_factory(
+        stripe_price_id="price_webhook_plan",
+        state_limit=1,
+        daily_download_limit=2,
+    )
+    ca_one = lead_factory(state_code="CA", mobile_phone="555-WEBHOOK-OWN-0001")
+    ca_two = lead_factory(state_code="CA", mobile_phone="555-WEBHOOK-OWN-0002")
+    lead_factory(state_code="TX", mobile_phone="555-WEBHOOK-OWN-0003")
 
     event = {
         "id": "evt_checkout_complete",
@@ -371,6 +382,69 @@ def test_webhook_checkout_completed_creates_purchase_and_credit_grant(
     )
     assert ledger_entry is not None
     assert ledger_entry.credits_delta == plan.daily_download_limit
+    ownership_rows = (
+        db.query(LeadOwnership)
+        .filter(LeadOwnership.purchase_id == purchase.id, LeadOwnership.user_id == advisor.id)
+        .all()
+    )
+    assert len(ownership_rows) == 2
+    assert {row.lead_id for row in ownership_rows} == {ca_one.id, ca_two.id}
+
+
+@pytest.mark.integration
+def test_webhook_checkout_completed_assigns_leads_visible_in_advisor_inbox(
+    client,
+    db,
+    user_factory,
+    license_factory,
+    plan_factory,
+    lead_factory,
+    auth_headers,
+    monkeypatch,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="AdvisorWebhookInbox123!",
+        email="advisor.webhook.inbox@example.com",
+        name="Webhook Inbox Advisor",
+    )
+    headers = auth_headers(advisor.email, "AdvisorWebhookInbox123!")
+    license_factory(user_id=advisor.id, state="CA", status="verified")
+    plan = plan_factory(
+        stripe_price_id="price_webhook_inbox",
+        state_limit=1,
+        daily_download_limit=1,
+    )
+    owned_lead = lead_factory(state_code="CA", mobile_phone="555-888-1001")
+
+    event = _build_purchase_webhook_event(
+        event_id="evt_checkout_inbox",
+        event_type="checkout.session.completed",
+        session_id="cs_inbox",
+        payment_intent_id="pi_inbox",
+        user_id=advisor.id,
+        package_id=plan.id,
+        amount_cents=plan.price_cents,
+    )
+
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: event,
+    )
+
+    webhook_response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert webhook_response.status_code == 200, webhook_response.text
+
+    inbox_response = client.get("/api/v1/leads/?delivery_status=all", headers=headers)
+    assert inbox_response.status_code == 200, inbox_response.text
+    payload = inbox_response.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["id"] == owned_lead.id
+    assert payload["items"][0]["is_downloaded"] is False
 
 
 @pytest.mark.integration
@@ -532,7 +606,9 @@ def test_webhook_duplicate_delivery_same_event_id_grants_credit_once(
     client,
     db,
     user_factory,
+    license_factory,
     plan_factory,
+    lead_factory,
     monkeypatch,
 ):
     advisor = user_factory(
@@ -541,7 +617,14 @@ def test_webhook_duplicate_delivery_same_event_id_grants_credit_once(
         email="advisor.webhook.same.event@example.com",
         name="Webhook Same Event Advisor",
     )
-    plan = plan_factory(stripe_price_id="price_webhook_same_event")
+    license_factory(user_id=advisor.id, state="CA", status="verified")
+    plan = plan_factory(
+        stripe_price_id="price_webhook_same_event",
+        state_limit=1,
+        daily_download_limit=1,
+    )
+    first_candidate = lead_factory(state_code="CA", mobile_phone="555-WEBHOOK-DUP-0001")
+    second_candidate = lead_factory(state_code="CA", mobile_phone="555-WEBHOOK-DUP-0002")
     event = _build_purchase_webhook_event(
         event_id="evt_same_event_replayed",
         event_type="checkout.session.completed",
@@ -589,6 +672,13 @@ def test_webhook_duplicate_delivery_same_event_id_grants_credit_once(
         .count()
         == 1
     )
+    ownership_rows = (
+        db.query(LeadOwnership)
+        .filter(LeadOwnership.purchase_id == purchase.id, LeadOwnership.user_id == advisor.id)
+        .all()
+    )
+    assert len(ownership_rows) == 1
+    assert ownership_rows[0].lead_id in {first_candidate.id, second_candidate.id}
 
 
 @pytest.mark.integration
