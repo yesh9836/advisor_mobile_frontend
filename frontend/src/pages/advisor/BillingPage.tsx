@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { getBillingSummary } from "@/api/subscriptions";
+import { getPurchaseBillingSummary } from "@/api/purchases";
 import type { BillingInvoice, BillingSummary } from "@/types/subscription";
 import { getApiErrorMessage } from "@/utils/api-error";
 
@@ -33,7 +33,7 @@ const BillingPage = () => {
       setError(null);
 
       try {
-        const summary = await getBillingSummary();
+        const summary = await getPurchaseBillingSummary();
         setBilling(summary);
       } catch (loadError) {
         setBilling(null);

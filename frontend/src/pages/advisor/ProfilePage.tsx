@@ -1,12 +1,12 @@
 import axios from "axios";
 import { useCallback, useEffect, useState } from "react";
 
-import { getCurrentSubscription } from "@/api/subscriptions";
+import { getPurchaseBalance, getPurchaseHistory } from "@/api/purchases";
 import Card from "@/components/common/Card";
 import LicenseForm from "@/components/license/LicenseForm";
 import LicenseList from "@/components/license/LicenseList";
 import { useAuth } from "@/context/AuthContext";
-import type { Subscription } from "@/types/subscription";
+import type { PurchaseBalance, PurchaseOrderItem } from "@/types/purchase";
 import { getApiErrorMessage } from "@/utils/api-error";
 
 const formatDate = (value: string | null | undefined): string => {
@@ -29,36 +29,40 @@ const formatDate = (value: string | null | undefined): string => {
 const ProfilePage = () => {
   const { user } = useAuth();
 
-  const [subscription, setSubscription] = useState<Subscription | null>(null);
-  const [subscriptionLoading, setSubscriptionLoading] = useState(true);
-  const [subscriptionError, setSubscriptionError] = useState<string | null>(
-    null,
-  );
+  const [balance, setBalance] = useState<PurchaseBalance | null>(null);
+  const [recentPurchases, setRecentPurchases] = useState<PurchaseOrderItem[]>([]);
+  const [billingLoading, setBillingLoading] = useState(true);
+  const [billingError, setBillingError] = useState<string | null>(null);
   const [licensesRefreshKey, setLicensesRefreshKey] = useState(0);
 
-  const loadSubscription = useCallback(async () => {
-    setSubscriptionLoading(true);
-    setSubscriptionError(null);
+  const loadPurchaseSummary = useCallback(async () => {
+    setBillingLoading(true);
+    setBillingError(null);
 
     try {
-      const current = await getCurrentSubscription();
-      setSubscription(current);
+      const [balanceResponse, historyResponse] = await Promise.all([
+        getPurchaseBalance(),
+        getPurchaseHistory(5),
+      ]);
+      setBalance(balanceResponse);
+      setRecentPurchases(historyResponse.items);
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 404) {
-        setSubscription(null);
+        setBalance(null);
+        setRecentPurchases([]);
       } else {
-        setSubscriptionError(
-          getApiErrorMessage(error, "Unable to load subscription status."),
+        setBillingError(
+          getApiErrorMessage(error, "Unable to load purchase summary."),
         );
       }
     } finally {
-      setSubscriptionLoading(false);
+      setBillingLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void loadSubscription();
-  }, [loadSubscription]);
+    void loadPurchaseSummary();
+  }, [loadPurchaseSummary]);
 
   return (
     <div className="space-y-6">
@@ -67,7 +71,7 @@ const ProfilePage = () => {
           Advisor Profile
         </h1>
         <p className="mt-1 text-base text-[#4c628a]">
-          Manage account details, licenses, and subscription status.
+          Manage account details, licenses, purchases, and credits.
         </p>
       </div>
 
@@ -97,32 +101,36 @@ const ProfilePage = () => {
           </div>
         </Card>
 
-        <Card title="Subscription Status">
-          {subscriptionLoading ? (
-            <p className="text-sm text-[#4c628a]">Loading subscription...</p>
-          ) : subscriptionError ? (
-            <p className="text-sm text-[#8a1d1d]">{subscriptionError}</p>
-          ) : subscription ? (
+        <Card title="Credits & Purchases">
+          {billingLoading ? (
+            <p className="text-sm text-[#4c628a]">Loading purchase summary...</p>
+          ) : billingError ? (
+            <p className="text-sm text-[#8a1d1d]">{billingError}</p>
+          ) : balance ? (
             <div className="space-y-2 text-sm text-[#4c628a]">
               <p>
-                <span className="font-semibold text-[#0a1633]">Plan:</span>{" "}
-                {subscription.plan.name}
-              </p>
-              <p className="capitalize">
-                <span className="font-semibold text-[#0a1633]">Status:</span>{" "}
-                {subscription.status}
+                <span className="font-semibold text-[#0a1633]">Remaining credits:</span>{" "}
+                {balance.remaining_credits}
               </p>
               <p>
-                <span className="font-semibold text-[#0a1633]">
-                  Billing period:
-                </span>{" "}
-                {formatDate(subscription.current_period_start)} -{" "}
-                {formatDate(subscription.current_period_end)}
+                <span className="font-semibold text-[#0a1633]">Total credits purchased:</span>{" "}
+                {balance.total_credits}
               </p>
+              <p>
+                <span className="font-semibold text-[#0a1633]">Completed purchases:</span>{" "}
+                {balance.completed_purchases}
+              </p>
+              {recentPurchases.length > 0 && (
+                <p>
+                  <span className="font-semibold text-[#0a1633]">Latest purchase:</span>{" "}
+                  {recentPurchases[0].package_name ?? "Package"} on{" "}
+                  {formatDate(recentPurchases[0].purchased_at)}
+                </p>
+              )}
             </div>
           ) : (
             <p className="text-sm text-[#4c628a]">
-              No active subscription found.
+              No completed purchases found.
             </p>
           )}
         </Card>
@@ -132,7 +140,7 @@ const ProfilePage = () => {
         <LicenseForm
           onSubmitted={() => {
             setLicensesRefreshKey((previous) => previous + 1);
-            void loadSubscription();
+            void loadPurchaseSummary();
           }}
         />
         <LicenseList refreshKey={licensesRefreshKey} />
