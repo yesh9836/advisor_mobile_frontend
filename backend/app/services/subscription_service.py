@@ -9,7 +9,7 @@ from sqlalchemy import and_, func
 
 from app.core.config import settings
 from app.models.license import License
-from app.models.purchase import LeadCreditLedger, LeadPurchase
+from app.models.purchase import LeadCreditLedger, LeadPackage, LeadPurchase
 from app.models.subscription import Subscription, SubscriptionPlan
 from app.models.user import User
 from app.services.payment_service import PaymentService
@@ -33,7 +33,7 @@ class SubscriptionService:
     """Service class for subscription management and Stripe webhooks."""
 
     @staticmethod
-    def _resolve_package_credits(plan: SubscriptionPlan) -> int:
+    def _resolve_package_credits(package: LeadPackage) -> int:
         """
         Resolve package credits from plan metadata.
 
@@ -41,13 +41,13 @@ class SubscriptionService:
         as the default package credit amount when explicit feature metadata is absent.
         """
         raw_credits: Optional[object] = None
-        if isinstance(plan.features, dict):
-            raw_credits = plan.features.get("credits_total")
+        if isinstance(package.features, dict):
+            raw_credits = package.features.get("credits_total")
             if raw_credits is None:
-                raw_credits = plan.features.get("credits")
+                raw_credits = package.features.get("credits")
 
         if raw_credits is None:
-            return max(int(plan.daily_download_limit or 0), 0)
+            return max(int(package.daily_download_limit or 0), 0)
 
         if isinstance(raw_credits, (int, float)):
             return max(int(raw_credits), 0)
@@ -55,7 +55,7 @@ class SubscriptionService:
         if isinstance(raw_credits, str) and raw_credits.isdigit():
             return int(raw_credits)
 
-        return max(int(plan.daily_download_limit or 0), 0)
+        return max(int(package.daily_download_limit or 0), 0)
 
     @staticmethod
     def handle_webhook_event_threadsafe(event: Dict[str, Any]) -> None:
@@ -67,20 +67,25 @@ class SubscriptionService:
             db.close()
 
     @staticmethod
-    def get_available_plans(db: Session) -> List[SubscriptionPlan]:
-        """Return all available subscription plans."""
-        return db.query(SubscriptionPlan).order_by(SubscriptionPlan.price_cents.asc()).all()
+    def get_available_packages(db: Session) -> List[LeadPackage]:
+        """Return all available one-time lead packages."""
+        return db.query(LeadPackage).order_by(LeadPackage.price_cents.asc()).all()
 
     @staticmethod
-    def create_checkout_session(db: Session, user: User, plan_id: int) -> Dict[str, str]:
+    def get_available_plans(db: Session) -> List[LeadPackage]:
+        """Backward-compatible alias for package listing."""
+        return SubscriptionService.get_available_packages(db=db)
+
+    @staticmethod
+    def create_purchase_checkout_session(db: Session, user: User, package_id: int) -> Dict[str, str]:
         """
         Create Stripe checkout session for one-time package purchase.
         """
         customer_id = PaymentService.create_or_get_stripe_customer(db, user)
 
-        plan = db.query(SubscriptionPlan).filter(SubscriptionPlan.id == plan_id).first()
-        if not plan:
-            raise HTTPException(status_code=404, detail="Subscription plan not found")
+        package = db.query(LeadPackage).filter(LeadPackage.id == package_id).first()
+        if not package:
+            raise HTTPException(status_code=404, detail="Package not found")
 
         # Validate verified license
         verified_license = (
@@ -107,27 +112,36 @@ class SubscriptionService:
         cancel_url = f"{frontend_base_url}/subscription?checkout=cancel"
 
         try:
+            idempotency_key = PaymentService.checkout_session_idempotency_key(
+                user_id=user.id,
+                package_id=package.id,
+            )
             session = stripe.checkout.Session.create(
                 customer=customer_id,
                 mode="payment",
-                line_items=[{"price": plan.stripe_price_id, "quantity": 1}],
+                line_items=[{"price": package.stripe_price_id, "quantity": 1}],
                 client_reference_id=str(user.id),
                 metadata={
                     "user_id": str(user.id),
-                    "package_id": str(plan.id),
+                    "package_id": str(package.id),
                 },
                 payment_intent_data={
                     "metadata": {
                         "user_id": str(user.id),
-                        "package_id": str(plan.id),
+                        "package_id": str(package.id),
                     }
                 },
                 success_url=success_url,
                 cancel_url=cancel_url,
+                idempotency_key=idempotency_key,
             )
 
             logger.info(
-                f"Checkout session created user_id={user.id}, plan_id={plan.id}, session_id={session['id']}"
+                "Checkout session created user_id=%s package_id=%s session_id=%s idempotency_key=%s",
+                user.id,
+                package.id,
+                session["id"],
+                idempotency_key,
             )
 
             return {"session_id": session["id"], "url": session["url"]}
@@ -138,7 +152,16 @@ class SubscriptionService:
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="Stripe checkout session creation failed",
             )
-        
+
+    @staticmethod
+    def create_checkout_session(db: Session, user: User, plan_id: int) -> Dict[str, str]:
+        """Backward-compatible wrapper for package checkout creation."""
+        return SubscriptionService.create_purchase_checkout_session(
+            db=db,
+            user=user,
+            package_id=plan_id,
+        )
+
     @staticmethod
     def get_billing_summary(db: Session, user: User) -> Dict[str, Any]:
         if not settings.STRIPE_SECRET_KEY or not user.stripe_customer_id:
@@ -242,6 +265,93 @@ class SubscriptionService:
         }
 
     @staticmethod
+    def get_purchase_balance(db: Session, user: User) -> Dict[str, int]:
+        """Return advisor credit balance derived from completed purchases."""
+        return SubscriptionService.get_credit_summary(db=db, user=user)
+
+    @staticmethod
+    def get_purchase_orders(
+        db: Session,
+        user: User,
+        page: int = 1,
+        size: int = 20,
+        status_filter: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        query = (
+            db.query(LeadPurchase, LeadPackage)
+            .outerjoin(LeadPackage, LeadPackage.id == LeadPurchase.package_id)
+            .filter(LeadPurchase.user_id == user.id)
+        )
+        if status_filter:
+            query = query.filter(LeadPurchase.status == status_filter)
+
+        total = query.with_entities(func.count(LeadPurchase.id)).scalar() or 0
+        offset = max(0, (page - 1) * size)
+        rows = (
+            query.order_by(LeadPurchase.purchased_at.desc(), LeadPurchase.id.desc())
+            .offset(offset)
+            .limit(size)
+            .all()
+        )
+        items: List[Dict[str, Any]] = []
+        for purchase, package in rows:
+            items.append(
+                {
+                    "id": int(purchase.id),
+                    "order_reference": (
+                        purchase.stripe_checkout_session_id
+                        or purchase.stripe_payment_intent_id
+                        or f"purchase-{purchase.id}"
+                    ),
+                    "package_name": package.name if package else None,
+                    "amount_cents": int(purchase.amount_cents),
+                    "currency": str((purchase.currency or "USD")).upper(),
+                    "credits_total": int(purchase.credits_total),
+                    "credits_remaining": int(purchase.credits_remaining),
+                    "status": str(purchase.status),
+                    "purchased_at": purchase.purchased_at,
+                    "stripe_checkout_session_id": purchase.stripe_checkout_session_id,
+                    "stripe_payment_intent_id": purchase.stripe_payment_intent_id,
+                }
+            )
+        return {"items": items, "total": int(total), "page": page, "size": size}
+
+    @staticmethod
+    def get_purchase_history(db: Session, user: User, limit: int = 50) -> Dict[str, Any]:
+        sanitized_limit = max(1, min(int(limit), 200))
+        rows = (
+            db.query(LeadPurchase, LeadPackage)
+            .outerjoin(LeadPackage, LeadPackage.id == LeadPurchase.package_id)
+            .filter(LeadPurchase.user_id == user.id)
+            .order_by(LeadPurchase.purchased_at.desc(), LeadPurchase.id.desc())
+            .limit(sanitized_limit)
+            .all()
+        )
+
+        items: List[Dict[str, Any]] = []
+        for purchase, package in rows:
+            items.append(
+                {
+                    "id": int(purchase.id),
+                    "order_reference": (
+                        purchase.stripe_checkout_session_id
+                        or purchase.stripe_payment_intent_id
+                        or f"purchase-{purchase.id}"
+                    ),
+                    "package_name": package.name if package else None,
+                    "amount_cents": int(purchase.amount_cents),
+                    "currency": str((purchase.currency or "USD")).upper(),
+                    "credits_total": int(purchase.credits_total),
+                    "credits_remaining": int(purchase.credits_remaining),
+                    "status": str(purchase.status),
+                    "purchased_at": purchase.purchased_at,
+                    "stripe_checkout_session_id": purchase.stripe_checkout_session_id,
+                    "stripe_payment_intent_id": purchase.stripe_payment_intent_id,
+                }
+            )
+        return {"items": items}
+
+    @staticmethod
     def _extract_payment_intent_id(checkout_session: Dict[str, Any]) -> Optional[str]:
         payment_intent = checkout_session.get("payment_intent")
         if isinstance(payment_intent, dict):
@@ -251,9 +361,77 @@ class SubscriptionService:
         return None
 
     @staticmethod
+    def _grant_purchase_credits_if_needed(
+        db: Session,
+        purchase: LeadPurchase,
+        credits_total: int,
+        note: str,
+    ) -> None:
+        if purchase.status != "completed":
+            return
+
+        existing_grant = (
+            db.query(LeadCreditLedger)
+            .filter(
+                LeadCreditLedger.purchase_id == purchase.id,
+                LeadCreditLedger.movement_type == "purchase_grant",
+            )
+            .first()
+        )
+        if existing_grant:
+            return
+
+        db.add(
+            LeadCreditLedger(
+                user_id=purchase.user_id,
+                purchase_id=purchase.id,
+                movement_type="purchase_grant",
+                credits_delta=credits_total,
+                note=note,
+            )
+        )
+
+    @staticmethod
+    def _mark_purchase_failed_by_payment_intent(
+        db: Session,
+        payment_intent_id: Optional[str],
+        *,
+        source_event: str,
+    ) -> None:
+        if not payment_intent_id:
+            logger.warning("%s missing payment intent ID", source_event)
+            return
+
+        purchase = (
+            db.query(LeadPurchase)
+            .filter(LeadPurchase.stripe_payment_intent_id == payment_intent_id)
+            .first()
+        )
+        if not purchase:
+            logger.warning("No local lead purchase found for payment_intent_id=%s", payment_intent_id)
+            return
+
+        if purchase.status in {"failed", "canceled", "refunded"}:
+            logger.info(
+                "Lead purchase already terminal for payment_intent_id=%s status=%s",
+                payment_intent_id,
+                purchase.status,
+            )
+            return
+
+        purchase.status = "failed"
+        if purchase.credits_remaining < 0:
+            purchase.credits_remaining = 0
+        db.add(purchase)
+        db.commit()
+        logger.info("Lead purchase marked failed for payment_intent_id=%s", payment_intent_id)
+
+    @staticmethod
     def _create_or_update_purchase_from_checkout_session(
         db: Session,
         checkout_session: Dict[str, Any],
+        *,
+        forced_status: Optional[str] = None,
     ) -> None:
         session_id = checkout_session.get("id")
         if not session_id:
@@ -276,17 +454,17 @@ class SubscriptionService:
                 f"checkout.session.completed invalid purchase metadata for session_id={session_id}"
             ) from exc
 
-        plan = db.query(SubscriptionPlan).filter(SubscriptionPlan.id == parsed_package_id).first()
-        if not plan:
+        package = db.query(LeadPackage).filter(LeadPackage.id == parsed_package_id).first()
+        if not package:
             raise StripeWebhookProcessingError(f"Package not found for package_id={parsed_package_id}")
 
         payment_status = str(checkout_session.get("payment_status") or "unpaid").lower()
-        purchase_status = "completed" if payment_status == "paid" else "pending"
-        credits_total = SubscriptionService._resolve_package_credits(plan)
+        purchase_status = forced_status or ("completed" if payment_status == "paid" else "pending")
+        credits_total = SubscriptionService._resolve_package_credits(package)
         credits_remaining = credits_total if purchase_status == "completed" else 0
         payment_intent_id = SubscriptionService._extract_payment_intent_id(checkout_session)
-        amount_cents = int(checkout_session.get("amount_total") or plan.price_cents or 0)
-        currency = str(checkout_session.get("currency") or plan.currency or "USD").upper()
+        amount_cents = int(checkout_session.get("amount_total") or package.price_cents or 0)
+        currency = str(checkout_session.get("currency") or package.currency or "USD").upper()
         purchased_at = _to_datetime(checkout_session.get("created")) or datetime.now(timezone.utc)
 
         purchase = (
@@ -294,11 +472,24 @@ class SubscriptionService:
             .filter(LeadPurchase.stripe_checkout_session_id == session_id)
             .first()
         )
+        if not purchase and payment_intent_id:
+            purchase = (
+                db.query(LeadPurchase)
+                .filter(LeadPurchase.stripe_payment_intent_id == payment_intent_id)
+                .first()
+            )
+
+        if purchase and purchase.status == "completed" and purchase_status != "completed":
+            # Keep fulfilled purchases immutable against out-of-order failure retries.
+            purchase_status = "completed"
+            credits_remaining = max(int(purchase.credits_remaining or 0), int(credits_total or 0))
 
         if purchase:
             purchase.status = purchase_status
             purchase.amount_cents = amount_cents
             purchase.currency = currency
+            if not purchase.stripe_checkout_session_id:
+                purchase.stripe_checkout_session_id = session_id
             if payment_intent_id:
                 purchase.stripe_payment_intent_id = payment_intent_id
             purchase.credits_total = credits_total
@@ -320,25 +511,12 @@ class SubscriptionService:
             db.add(purchase)
             db.flush()
 
-        if purchase_status == "completed":
-            existing_grant = (
-                db.query(LeadCreditLedger)
-                .filter(
-                    LeadCreditLedger.purchase_id == purchase.id,
-                    LeadCreditLedger.movement_type == "purchase_grant",
-                )
-                .first()
-            )
-            if not existing_grant:
-                db.add(
-                    LeadCreditLedger(
-                        user_id=purchase.user_id,
-                        purchase_id=purchase.id,
-                        movement_type="purchase_grant",
-                        credits_delta=credits_total,
-                        note=f"Checkout session {session_id}",
-                    )
-                )
+        SubscriptionService._grant_purchase_credits_if_needed(
+            db=db,
+            purchase=purchase,
+            credits_total=credits_total,
+            note=f"Checkout session {session_id}",
+        )
 
         db.add(purchase)
         db.commit()
@@ -366,7 +544,7 @@ class SubscriptionService:
 
         logger.info(f"Stripe webhook received: type={event_type} id={event_id}")
 
-        if event_type == "checkout.session.completed":
+        if event_type in {"checkout.session.completed", "checkout.session.async_payment_succeeded"}:
             session = data_object
             stripe_subscription_id = session.get("subscription")
 
@@ -445,6 +623,18 @@ class SubscriptionService:
                     db.rollback()
                     raise
 
+        elif event_type == "checkout.session.async_payment_failed":
+            session = data_object
+            try:
+                SubscriptionService._create_or_update_purchase_from_checkout_session(
+                    db=db,
+                    checkout_session=session,
+                    forced_status="failed",
+                )
+            except Exception:
+                db.rollback()
+                raise
+
         elif event_type == "payment_intent.succeeded":
             payment_intent_id = data_object.get("id")
             if not payment_intent_id:
@@ -468,27 +658,22 @@ class SubscriptionService:
             purchase.credits_remaining = purchase.credits_total
             db.add(purchase)
 
-            existing_grant = (
-                db.query(LeadCreditLedger)
-                .filter(
-                    LeadCreditLedger.purchase_id == purchase.id,
-                    LeadCreditLedger.movement_type == "purchase_grant",
-                )
-                .first()
+            SubscriptionService._grant_purchase_credits_if_needed(
+                db=db,
+                purchase=purchase,
+                credits_total=purchase.credits_total,
+                note=f"Payment intent {payment_intent_id}",
             )
-            if not existing_grant:
-                db.add(
-                    LeadCreditLedger(
-                        user_id=purchase.user_id,
-                        purchase_id=purchase.id,
-                        movement_type="purchase_grant",
-                        credits_delta=purchase.credits_total,
-                        note=f"Payment intent {payment_intent_id}",
-                    )
-                )
 
             db.commit()
             logger.info("Lead purchase marked completed for payment_intent_id=%s", payment_intent_id)
+
+        elif event_type == "payment_intent.payment_failed":
+            SubscriptionService._mark_purchase_failed_by_payment_intent(
+                db=db,
+                payment_intent_id=data_object.get("id"),
+                source_event=event_type,
+            )
 
         elif event_type == "customer.subscription.updated":
             stripe_subscription_id = data_object.get("id")
