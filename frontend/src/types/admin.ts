@@ -2,7 +2,8 @@ import type { License } from "@/types/license";
 
 export interface DashboardStats {
   total_users: number;
-  active_subscriptions: number;
+  completed_purchases: number;
+  advisors_with_credits: number;
   pending_licenses: number;
   total_leads: number;
   total_revenue_cents: number;
@@ -15,8 +16,10 @@ export interface MonthlyRevenuePoint {
 }
 
 export interface PlanBreakdownItem {
-  plan_name: string;
-  active_subscriptions: number;
+  package_name: string;
+  purchases: number;
+  credits_granted: number;
+  credits_remaining: number;
   revenue_cents: number;
 }
 
@@ -45,7 +48,8 @@ export interface AdminUserListItem {
   is_active: boolean;
   created_at: string;
   license_count: number;
-  subscription_status: string | null;
+  current_credits: number;
+  total_purchases: number;
 }
 
 export interface PaginatedUsers {
@@ -62,8 +66,11 @@ export interface AdminOrderListItem {
   advisor_email: string;
   package_name: string | null;
   quantity: number | null;
+  remaining_credits: number | null;
   status: string;
   created_at: string;
+  amount_cents: number;
+  currency: string;
 }
 
 export interface PaginatedOrders {
@@ -124,15 +131,22 @@ export interface UserLicenseItem {
   rejection_reason: string | null;
 }
 
-export interface UserSubscriptionItem {
+export interface UserCreditSummary {
+  total_credits: number;
+  remaining_credits: number;
+  completed_purchases: number;
+}
+
+export interface UserPurchaseItem {
   id: number;
+  order_reference: string;
   status: string;
-  plan_name: string | null;
-  price_cents: number | null;
-  currency: string | null;
-  current_period_start: string | null;
-  current_period_end: string | null;
-  created_at: string;
+  package_name: string | null;
+  amount_cents: number;
+  currency: string;
+  credits_total: number;
+  credits_remaining: number;
+  purchased_at: string;
 }
 
 export interface UserDownloadHistoryItem {
@@ -163,7 +177,8 @@ export interface UserDetails {
   deactivated_at: string | null;
   deactivated_by: number | null;
   licenses: Array<UserLicenseItem | License>;
-  subscription: UserSubscriptionItem | null;
+  credit_summary: UserCreditSummary;
+  purchase_history: UserPurchaseItem[];
   download_history: UserDownloadHistoryItem[];
   recent_activity: AuditLog[];
 }
