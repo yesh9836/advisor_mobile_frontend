@@ -127,6 +127,7 @@ const LeadsPage = () => {
 
   const [stageFilter, setStageFilter] = useState<StageFilter>("All");
   const [deliveryFilter, setDeliveryFilter] = useState<DeliveryFilter>("All");
+  const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [totalLeads, setTotalLeads] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -147,6 +148,7 @@ const LeadsPage = () => {
         const response = await getLeads(currentPage, PAGE_SIZE, {
           delivery_status: DELIVERY_FILTER_TO_QUERY[deliveryFilter],
           outcome_status: STAGE_FILTER_TO_QUERY[stageFilter],
+          ...(searchQuery.trim() ? { search: searchQuery.trim() } : {}),
         });
         if (cancelled) return;
 
@@ -194,7 +196,7 @@ const LeadsPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [currentPage, deliveryFilter, stageFilter, reloadTick]);
+  }, [currentPage, deliveryFilter, stageFilter, searchQuery, reloadTick]);
 
   const selectedLead = useMemo(() => {
     if (selectedLeadId === null) {
@@ -305,6 +307,17 @@ const LeadsPage = () => {
           <div className="list-header">
             <div className="list-title">Leads ({totalLeads})</div>
             <div className="row">
+              <input
+                value={searchQuery}
+                onChange={(event) => {
+                  setSearchQuery(event.target.value);
+                  setCurrentPage(1);
+                }}
+                className="btn btn-secondary"
+                style={{ borderRadius: 10, padding: "8px 12px", width: 200 }}
+                aria-label="Lead search"
+                placeholder="Search name, phone..."
+              />
               <select
                 value={stageFilter}
                 onChange={(event) => {
