@@ -26,10 +26,6 @@ vi.mock("@/context/AuthContext", () => ({
   }),
 }));
 
-vi.mock("@/api/subscriptions", () => ({
-  getBillingSummary: vi.fn().mockResolvedValue({ payment_method: null, invoices: [] }),
-}));
-
 vi.mock("@/api/purchases", () => ({
   getPurchaseBalance: vi.fn().mockResolvedValue(null),
   getPurchaseHistory: vi.fn().mockResolvedValue({ items: [] }),

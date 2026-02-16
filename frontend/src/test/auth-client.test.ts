@@ -71,7 +71,7 @@ describe("apiClient auth transport", () => {
     document.cookie = "csrf_token=test-csrf-token; path=/";
     const seen = installCaptureAdapter();
 
-    await apiClient.post("/subscriptions/cancel");
+    await apiClient.post("/purchases/checkout", { package_id: 1 });
     await apiClient.get("/auth/me");
 
     const postCsrf = getHeader(seen[0]?.headers, "X-CSRF-Token");
