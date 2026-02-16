@@ -31,6 +31,20 @@ def _to_datetime(timestamp: Optional[int]) -> Optional[datetime]:
 class SubscriptionService:
     """Service class for subscription management and Stripe webhooks."""
 
+    _CHECKOUT_BLOCKING_STATUSES = (
+        "trialing",
+        "active",
+        "past_due",
+        "unpaid",
+        "incomplete",
+        "paused",
+    )
+
+    @staticmethod
+    def _checkout_idempotency_key(user_id: int, plan_id: int) -> str:
+        """Build a deterministic idempotency key for checkout session creation."""
+        return f"checkout-session:{user_id}:{plan_id}:v1"
+
     @staticmethod
     def handle_webhook_event_threadsafe(event: Dict[str, Any]) -> None:
         """Create an isolated DB session for background-thread webhook work."""
@@ -73,13 +87,13 @@ class SubscriptionService:
                 detail="At least one verified license is required",
             )
 
-        # Validate no active subscription
+        # Validate no active-like subscription in Stripe lifecycle states.
         active_subscription = (
             db.query(Subscription)
             .filter(
                 and_(
                     Subscription.user_id == user.id,
-                    Subscription.status == "active",
+                    Subscription.status.in_(SubscriptionService._CHECKOUT_BLOCKING_STATUSES),
                 )
             )
             .first()
@@ -111,6 +125,10 @@ class SubscriptionService:
                 },
                 success_url=success_url,
                 cancel_url=cancel_url,
+                idempotency_key=SubscriptionService._checkout_idempotency_key(
+                    user_id=user.id,
+                    plan_id=plan.id,
+                ),
             )
 
             logger.info(
@@ -186,6 +204,10 @@ class SubscriptionService:
 
         except stripe.error.StripeError as exc:
             logger.error("Failed to fetch billing summary from Stripe for user_id=%s: %s", user.id, exc)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Stripe billing provider unavailable",
+            )
 
         return {
             "payment_method": payment_method,
@@ -351,8 +373,12 @@ class SubscriptionService:
             try:
                 stripe_subscription = stripe.Subscription.retrieve(stripe_subscription_id)
             except stripe.error.StripeError as e:
-                logger.error(f"Failed to retrieve Stripe subscription: {e}")
-                return
+                message = (
+                    "Failed to retrieve Stripe subscription during invoice.payment_succeeded "
+                    f"for stripe_subscription_id={stripe_subscription_id}: {e}"
+                )
+                logger.error(message)
+                raise StripeWebhookProcessingError(message) from e
 
             try:
                 subscription.status = "active"
