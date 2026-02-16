@@ -5,10 +5,11 @@ import { useNavigate, useParams } from "react-router-dom";
 import { deactivateUser, getUser } from "@/api/admin";
 import type {
   AuditLog,
+  UserCreditSummary,
   UserDetails,
   UserDownloadHistoryItem,
   UserLicenseItem,
-  UserSubscriptionItem,
+  UserPurchaseItem,
 } from "@/types/admin";
 import { getApiErrorMessage } from "@/utils/api-error";
 
@@ -35,9 +36,7 @@ const formatRole = (role: string): string =>
 const formatStatusLabel = (status: string): string =>
   status.replace(/_/g, " ").trim().toUpperCase();
 
-const formatCurrency = (priceCents: number | null, currency: string | null): string => {
-  if (priceCents === null || !currency) return "N/A";
-
+const formatCurrency = (priceCents: number, currency: string): string => {
   return (priceCents / 100).toLocaleString("en-US", {
     style: "currency",
     currency: currency.toUpperCase(),
@@ -88,47 +87,25 @@ const licenseStatusBadgeStyle = (status: string): CSSProperties => {
   };
 };
 
-const renderSubscription = (subscription: UserSubscriptionItem | null) => {
-  if (!subscription) {
-    return <p style={{ color: "#475569", margin: 0 }}>No subscription found.</p>;
-  }
-
+const renderCreditSummary = (summary: UserCreditSummary) => {
   return (
     <div className="grid-3">
       <div>
-        <div style={{ color: "#64748b", fontSize: 13 }}>Plan</div>
+        <div style={{ color: "#64748b", fontSize: 13 }}>Total Credits</div>
         <div style={{ color: "#0b1b49", fontWeight: 700 }}>
-          {subscription.plan_name ?? "Unknown plan"}
+          {summary.total_credits}
         </div>
       </div>
       <div>
-        <div style={{ color: "#64748b", fontSize: 13 }}>Status</div>
+        <div style={{ color: "#64748b", fontSize: 13 }}>Remaining Credits</div>
         <div style={{ color: "#0b1b49", fontWeight: 700 }}>
-          {formatStatusLabel(subscription.status)}
+          {summary.remaining_credits}
         </div>
       </div>
       <div>
-        <div style={{ color: "#64748b", fontSize: 13 }}>Price</div>
+        <div style={{ color: "#64748b", fontSize: 13 }}>Completed Purchases</div>
         <div style={{ color: "#0b1b49", fontWeight: 700 }}>
-          {formatCurrency(subscription.price_cents, subscription.currency)}
-        </div>
-      </div>
-      <div>
-        <div style={{ color: "#64748b", fontSize: 13 }}>Current Period Start</div>
-        <div style={{ color: "#334155" }}>
-          {formatDateTime(subscription.current_period_start)}
-        </div>
-      </div>
-      <div>
-        <div style={{ color: "#64748b", fontSize: 13 }}>Current Period End</div>
-        <div style={{ color: "#334155" }}>
-          {formatDateTime(subscription.current_period_end)}
-        </div>
-      </div>
-      <div>
-        <div style={{ color: "#64748b", fontSize: 13 }}>Subscription Created</div>
-        <div style={{ color: "#334155" }}>
-          {formatDateTime(subscription.created_at)}
+          {summary.completed_purchases}
         </div>
       </div>
     </div>
@@ -175,6 +152,37 @@ const renderLicense = (license: UserLicenseItem, index: number) => {
         </p>
       )}
     </section>
+  );
+};
+
+const renderPurchaseRow = (purchase: UserPurchaseItem, index: number) => {
+  return (
+    <tr
+      key={`${purchase.id}-${index}`}
+      style={{ borderTop: "1px solid #e2e8f0" }}
+    >
+      <td style={{ padding: "10px 12px", color: "#0b1b49", fontWeight: 700 }}>
+        {purchase.order_reference}
+      </td>
+      <td style={{ padding: "10px 12px", color: "#334155" }}>
+        {purchase.package_name ?? "Unknown package"}
+      </td>
+      <td style={{ padding: "10px 12px", color: "#334155" }}>
+        {formatStatusLabel(purchase.status)}
+      </td>
+      <td style={{ padding: "10px 12px", color: "#334155" }}>
+        {formatCurrency(purchase.amount_cents, purchase.currency)}
+      </td>
+      <td style={{ padding: "10px 12px", color: "#334155" }}>
+        {purchase.credits_total}
+      </td>
+      <td style={{ padding: "10px 12px", color: "#334155" }}>
+        {purchase.credits_remaining}
+      </td>
+      <td style={{ padding: "10px 12px", color: "#475569" }}>
+        {formatDateTime(purchase.purchased_at)}
+      </td>
+    </tr>
   );
 };
 
@@ -317,7 +325,7 @@ const UserDetailsPage = () => {
         <div>
           <h1>Admin • User Details</h1>
           <p className="page-subtitle">
-            Review user account, subscription, licenses, and recent platform activity.
+            Review user account, purchases, licenses, and recent platform activity.
           </p>
         </div>
 
@@ -379,9 +387,9 @@ const UserDetailsPage = () => {
 
               <div>
                 <h3 style={{ margin: "4px 0 8px 0", fontSize: 24, color: "#0b1b49" }}>
-                  Subscription
+                  Credit Summary
                 </h3>
-                {renderSubscription(details.subscription)}
+                {renderCreditSummary(details.credit_summary)}
               </div>
             </article>
 
@@ -415,6 +423,42 @@ const UserDetailsPage = () => {
                   : "User Already Inactive"}
               </button>
             </aside>
+          </section>
+
+          <section className="panel stack">
+            <div>
+              <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>Purchase History</h2>
+              <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+                Most recent purchase orders for this user (up to 100 records).
+              </p>
+            </div>
+
+            {details.purchase_history.length === 0 ? (
+              <p style={{ color: "#475569", margin: 0 }}>No purchases found.</p>
+            ) : (
+              <div
+                style={{
+                  overflowX: "auto",
+                  border: "1px solid #dbe4f0",
+                  borderRadius: 12,
+                }}
+              >
+                <table className="min-w-full bg-white text-left text-sm">
+                  <thead style={{ background: "#f8fafc", color: "#1f3a6b" }}>
+                    <tr>
+                      <th style={{ padding: "10px 12px" }}>Order</th>
+                      <th style={{ padding: "10px 12px" }}>Package</th>
+                      <th style={{ padding: "10px 12px" }}>Status</th>
+                      <th style={{ padding: "10px 12px" }}>Amount</th>
+                      <th style={{ padding: "10px 12px" }}>Credits</th>
+                      <th style={{ padding: "10px 12px" }}>Remaining</th>
+                      <th style={{ padding: "10px 12px" }}>Purchased At</th>
+                    </tr>
+                  </thead>
+                  <tbody>{details.purchase_history.map(renderPurchaseRow)}</tbody>
+                </table>
+              </div>
+            )}
           </section>
 
           <section className="panel stack">

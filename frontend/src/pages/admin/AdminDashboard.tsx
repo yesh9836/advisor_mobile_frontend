@@ -114,11 +114,19 @@ const AdminDashboard = () => {
         </article>
 
         <article className="panel">
-          <div className="metric-title">Active Subscriptions</div>
+          <div className="metric-title">Completed Purchases</div>
           <div className="metric-value">
-            {statsLoading ? "..." : stats?.active_subscriptions ?? 0}
+            {statsLoading ? "..." : stats?.completed_purchases ?? 0}
           </div>
-          <div className="metric-note">Latest active plans</div>
+          <div className="metric-note">Paid package checkouts</div>
+        </article>
+
+        <article className="panel">
+          <div className="metric-title">Advisors With Credits</div>
+          <div className="metric-value">
+            {statsLoading ? "..." : stats?.advisors_with_credits ?? 0}
+          </div>
+          <div className="metric-note">Advisors able to download now</div>
         </article>
 
         <article className="panel">
@@ -131,7 +139,7 @@ const AdminDashboard = () => {
                   stats?.currency ?? "USD",
                 )}
           </div>
-          <div className="metric-note">From active subscriptions</div>
+          <div className="metric-note">From completed purchases</div>
         </article>
       </section>
 

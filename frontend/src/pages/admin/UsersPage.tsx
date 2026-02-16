@@ -47,9 +47,10 @@ const formatDateTime = (isoTimestamp: string): string => {
 const formatRole = (role: string): string =>
   role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
 
-const formatSubscriptionStatus = (status: string | null): string => {
-  if (!status) return "No subscription";
-  return status.replace(/_/g, " ").trim().toUpperCase();
+const formatCreditSummary = (credits: number, purchases: number): string => {
+  if (purchases <= 0) return "No purchases";
+  const purchaseLabel = purchases === 1 ? "purchase" : "purchases";
+  return `${credits} credits • ${purchases} ${purchaseLabel}`;
 };
 
 const statusBadgeStyle = (isActive: boolean): CSSProperties => {
@@ -251,7 +252,7 @@ const UsersPage = () => {
                 <th style={{ padding: "12px 14px" }}>Role</th>
                 <th style={{ padding: "12px 14px" }}>Status</th>
                 <th style={{ padding: "12px 14px" }}>Licenses</th>
-                <th style={{ padding: "12px 14px" }}>Subscription</th>
+                <th style={{ padding: "12px 14px" }}>Credits</th>
                 <th style={{ padding: "12px 14px" }}>Created</th>
               </tr>
             </thead>
@@ -312,7 +313,7 @@ const UsersPage = () => {
                       {user.license_count}
                     </td>
                     <td style={{ padding: "12px 14px", color: "#334155" }}>
-                      {formatSubscriptionStatus(user.subscription_status)}
+                      {formatCreditSummary(user.current_credits, user.total_purchases)}
                     </td>
                     <td style={{ padding: "12px 14px", color: "#475569" }}>
                       {formatDateTime(user.created_at)}

@@ -29,7 +29,7 @@ const formatStatusLabel = (status: string): string =>
 const badgeStyle = (status: string): CSSProperties => {
   const normalizedStatus = status.toLowerCase();
 
-  if (normalizedStatus === "active" || normalizedStatus === "trialing") {
+  if (normalizedStatus === "completed") {
     return {
       border: "1px solid #bfdbfe",
       background: "#eff6ff",
@@ -37,7 +37,7 @@ const badgeStyle = (status: string): CSSProperties => {
     };
   }
 
-  if (["past_due", "unpaid", "incomplete", "incomplete_expired", "paused"].includes(normalizedStatus)) {
+  if (normalizedStatus === "pending") {
     return {
       border: "1px solid #fde68a",
       background: "#fffbeb",
@@ -45,11 +45,11 @@ const badgeStyle = (status: string): CSSProperties => {
     };
   }
 
-  if (normalizedStatus === "canceled") {
+  if (["failed", "refunded", "canceled"].includes(normalizedStatus)) {
     return {
-      border: "1px solid #cbd5e1",
-      background: "#f8fafc",
-      color: "#475569",
+      border: "1px solid #fecaca",
+      background: "#fef2f2",
+      color: "#b91c1c",
     };
   }
 
@@ -154,6 +154,13 @@ const OrdersPage = () => {
               </div>
               <div style={{ marginTop: 4, color: "#475569" }}>
                 {order.order_reference} • {formatOrderTimestamp(order.created_at)}
+              </div>
+              <div style={{ marginTop: 4, color: "#475569" }}>
+                {(order.amount_cents / 100).toLocaleString("en-US", {
+                  style: "currency",
+                  currency: (order.currency || "USD").toUpperCase(),
+                })}{" "}
+                • remaining credits {order.remaining_credits ?? 0}
               </div>
             </div>
 
