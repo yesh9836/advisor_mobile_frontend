@@ -6,6 +6,7 @@ from sqlalchemy import (
     Enum as SQLEnum,
     ForeignKey,
     Integer,
+    JSON,
     String,
     Text,
     text,
@@ -18,8 +19,49 @@ from .base import Base
 
 if TYPE_CHECKING:
     from .lead import LeadDownload
-    from .subscription import SubscriptionPlan
     from .user import User
+
+
+class LeadPackage(Base):
+    """Catalog entry for one-time lead packages."""
+
+    __tablename__ = "lead_packages"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    name: Mapped[str] = mapped_column(String(120), nullable=False, unique=True, index=True)
+    price_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(
+        String(3),
+        nullable=False,
+        default="USD",
+        server_default=text("'USD'"),
+    )
+    stripe_price_id: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
+    state_limit: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    daily_download_limit: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    features: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        nullable=False,
+        default=utcnow,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    purchases: Mapped[List["LeadPurchase"]] = relationship(
+        "LeadPurchase",
+        back_populates="package",
+    )
 
 
 class LeadPurchase(Base):
@@ -41,7 +83,7 @@ class LeadPurchase(Base):
     )
     package_id: Mapped[int] = mapped_column(
         BigInteger,
-        ForeignKey("subscription_plans.id", onupdate="CASCADE", ondelete="RESTRICT"),
+        ForeignKey("lead_packages.id", onupdate="CASCADE", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )
@@ -94,7 +136,7 @@ class LeadPurchase(Base):
     )
 
     user: Mapped["User"] = relationship("User", back_populates="lead_purchases")
-    package: Mapped["SubscriptionPlan"] = relationship("SubscriptionPlan", back_populates="lead_purchases")
+    package: Mapped["LeadPackage"] = relationship("LeadPackage", back_populates="purchases")
     credit_ledger_entries: Mapped[List["LeadCreditLedger"]] = relationship(
         "LeadCreditLedger",
         back_populates="purchase",
