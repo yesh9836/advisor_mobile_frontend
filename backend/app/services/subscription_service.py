@@ -13,6 +13,7 @@ from app.models.purchase import LeadCreditLedger, LeadPackage, LeadPurchase
 from app.models.subscription import Subscription, SubscriptionPlan
 from app.models.user import User
 from app.services.audit_service import AuditService
+from app.services.lead_service import LeadService
 from app.services.metrics_service import MetricsService
 from app.services.payment_service import PaymentService
 from app.db.session import SessionLocal
@@ -625,6 +626,10 @@ class SubscriptionService:
             credits_total=credits_total,
             note=f"Checkout session {session_id}",
         )
+        allocation_summary = LeadService.allocate_unsold_leads_for_purchase(
+            db=db,
+            purchase=purchase,
+        )
 
         db.add(purchase)
         db.commit()
@@ -661,14 +666,32 @@ class SubscriptionService:
                     "grant_note": f"Checkout session {session_id}",
                 },
             )
+        if purchase.status == "completed":
+            AuditService.log_purchase_event(
+                actor_user_id=purchase.user_id,
+                action="purchase_leads_allocated",
+                purchase_id=purchase.id,
+                correlation_ids=correlation_ids,
+                meta_data={
+                    "requested_count": int(allocation_summary.get("requested_count", 0)),
+                    "assigned_count": int(allocation_summary.get("assigned_count", 0)),
+                    "unfulfilled_count": int(allocation_summary.get("unfulfilled_count", 0)),
+                    "assigned_lead_ids": allocation_summary.get("assigned_lead_ids", []),
+                },
+            )
 
         logger.info(
-            "Lead purchase fulfilled from checkout session: session_id=%s user_id=%s package_id=%s status=%s credits=%s",
+            (
+                "Lead purchase fulfilled from checkout session: session_id=%s user_id=%s "
+                "package_id=%s status=%s credits=%s assigned=%s unfulfilled=%s"
+            ),
             session_id,
             parsed_user_id,
             parsed_package_id,
             purchase_status,
             credits_total,
+            int(allocation_summary.get("assigned_count", 0)),
+            int(allocation_summary.get("unfulfilled_count", 0)),
         )
 
 
@@ -819,6 +842,10 @@ class SubscriptionService:
                 credits_total=purchase.credits_total,
                 note=f"Payment intent {payment_intent_id}",
             )
+            allocation_summary = LeadService.allocate_unsold_leads_for_purchase(
+                db=db,
+                purchase=purchase,
+            )
 
             db.commit()
             correlation_ids = SubscriptionService._build_purchase_correlation_ids(
@@ -854,6 +881,18 @@ class SubscriptionService:
                         "grant_note": f"Payment intent {payment_intent_id}",
                     },
                 )
+            AuditService.log_purchase_event(
+                actor_user_id=purchase.user_id,
+                action="purchase_leads_allocated",
+                purchase_id=purchase.id,
+                correlation_ids=correlation_ids,
+                meta_data={
+                    "requested_count": int(allocation_summary.get("requested_count", 0)),
+                    "assigned_count": int(allocation_summary.get("assigned_count", 0)),
+                    "unfulfilled_count": int(allocation_summary.get("unfulfilled_count", 0)),
+                    "assigned_lead_ids": allocation_summary.get("assigned_lead_ids", []),
+                },
+            )
             logger.info("Lead purchase marked completed for payment_intent_id=%s", payment_intent_id)
 
         elif event_type == "payment_intent.payment_failed":
