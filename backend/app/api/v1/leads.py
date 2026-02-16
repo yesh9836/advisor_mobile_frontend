@@ -69,6 +69,28 @@ def download_leads_csv(
         },
     )
 
+
+@router.post(
+    "/download/delivered",
+    summary="Re-download previously delivered leads as CSV",
+    response_class=StreamingResponse,
+)
+def download_delivered_leads_csv(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    csv_iterator = LeadService.download_delivered_leads_csv(db=db, user=current_user)
+    filename = f"delivered_leads_{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"
+
+    return StreamingResponse(
+        csv_iterator,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+            "Cache-Control": "no-cache",
+        },
+    )
+
 @router.get(
     "/dashboard/summary",
     response_model=LeadDashboardSummaryResponse,
