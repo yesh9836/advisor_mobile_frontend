@@ -309,9 +309,9 @@ class LeadService:
         user_id: int,
         leads: List[Lead],
         purchase_ids_by_lead_id: Optional[Dict[int, int]] = None,
-    ) -> None:
+    ) -> Optional[str]:
         if not leads:
-            return
+            return None
 
         batch_id = uuid4().hex
         for lead in leads:
@@ -329,6 +329,7 @@ class LeadService:
         # Flush inside the transaction so uniqueness errors are handled
         # before commit and can trigger a safe retry path.
         db.flush()
+        return batch_id
 
     @staticmethod
     def _consume_credits_for_leads(
@@ -587,17 +588,6 @@ class LeadService:
         owned_leads = LeadService._get_owned_leads_for_user(db=db, user_id=user.id)
         if owned_leads:
             lead_ids = [lead.id for lead in owned_leads]
-            existing_download_ids = {
-                row[0]
-                for row in (
-                    db.query(LeadDownload.lead_id)
-                    .filter(
-                        LeadDownload.user_id == user.id,
-                        LeadDownload.lead_id.in_(lead_ids),
-                    )
-                    .all()
-                )
-            }
             ownership_rows = (
                 db.query(LeadOwnership)
                 .filter(
@@ -611,22 +601,18 @@ class LeadService:
                 for ownership in ownership_rows
                 if ownership.purchase_id is not None
             }
-            leads_to_mark_delivered = [
-                lead for lead in owned_leads if lead.id not in existing_download_ids
-            ]
-            if leads_to_mark_delivered:
-                try:
-                    LeadService._record_download_batch(
-                        db=db,
-                        user_id=user.id,
-                        leads=leads_to_mark_delivered,
-                        purchase_ids_by_lead_id=purchase_ids_by_lead_id,
-                    )
-                    db.commit()
-                except Exception as exc:
-                    db.rollback()
-                    logger.error("Failed to record owned lead download batch for user_id=%s: %s", user.id, exc)
-                    raise HTTPException(status_code=500, detail="Failed to record lead downloads")
+            try:
+                LeadService._record_download_batch(
+                    db=db,
+                    user_id=user.id,
+                    leads=owned_leads,
+                    purchase_ids_by_lead_id=purchase_ids_by_lead_id,
+                )
+                db.commit()
+            except Exception as exc:
+                db.rollback()
+                logger.error("Failed to record owned lead download batch for user_id=%s: %s", user.id, exc)
+                raise HTTPException(status_code=500, detail="Failed to record lead downloads")
             return generate_leads_csv_stream(owned_leads)
 
         prepend_msg = ""
