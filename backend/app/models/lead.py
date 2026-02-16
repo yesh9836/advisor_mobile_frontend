@@ -18,6 +18,7 @@ from app.db.timezone import UTCDateTime, utcnow
 from .base import Base
 
 if TYPE_CHECKING:
+    from .purchase import LeadPurchase
     from .user import User
 
 
@@ -186,6 +187,12 @@ class LeadDownload(Base):
         nullable=False,
         index=True,
     )
+    purchase_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("lead_purchases.id", onupdate="CASCADE", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     # Download tracking
     downloaded_at: Mapped[datetime] = mapped_column(
@@ -202,6 +209,7 @@ class LeadDownload(Base):
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="lead_downloads")
     lead: Mapped["Lead"] = relationship("Lead", back_populates="downloads")
+    purchase: Mapped[Optional["LeadPurchase"]] = relationship("LeadPurchase", back_populates="funded_downloads")
 
     def __repr__(self) -> str:
         return f"<LeadDownload(id={self.id}, user_id={self.user_id}, lead_id={self.lead_id}, batch='{self.csv_batch_id}')>"
