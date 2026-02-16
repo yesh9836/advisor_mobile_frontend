@@ -10,6 +10,7 @@ from .base import Base
 
 if TYPE_CHECKING:
     from .license import License
+    from .purchase import LeadCreditLedger, LeadPurchase
     from .subscription import Subscription
     from .lead import LeadDownload, LeadOutcome
     from .audit_log import AuditLog
@@ -105,6 +106,16 @@ class User(Base):
 
     subscriptions: Mapped[List["Subscription"]] = relationship(
         "Subscription",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    lead_purchases: Mapped[List["LeadPurchase"]] = relationship(
+        "LeadPurchase",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    lead_credit_ledger_entries: Mapped[List["LeadCreditLedger"]] = relationship(
+        "LeadCreditLedger",
         back_populates="user",
         cascade="all, delete-orphan",
     )
