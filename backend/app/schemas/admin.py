@@ -93,6 +93,11 @@ class LeadInventoryItem(BaseModel):
     source: Optional[str] = None
     created_at: datetime
     download_count: int
+    assigned_advisor_id: Optional[int] = None
+    assigned_advisor_name: Optional[str] = None
+    assigned_advisor_email: Optional[str] = None
+    purchase_id: Optional[int] = None
+    purchase_reference: Optional[str] = None
 
 
 class PaginatedLeadInventory(BaseModel):
