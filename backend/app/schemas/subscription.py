@@ -67,3 +67,9 @@ class BillingInvoiceResponse(BaseModel):
 class BillingSummaryResponse(BaseModel):
     payment_method: Optional[BillingPaymentMethodResponse] = None
     invoices: List[BillingInvoiceResponse]
+
+
+class CreditSummaryResponse(BaseModel):
+    total_credits: int
+    remaining_credits: int
+    completed_purchases: int
