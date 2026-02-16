@@ -17,7 +17,6 @@ from app.db.timezone import UTCDateTime, utcnow
 from .base import Base
 
 if TYPE_CHECKING:
-    from .purchase import LeadPurchase
     from .user import User
 
 
@@ -69,11 +68,6 @@ class SubscriptionPlan(Base):
         "Subscription",
         back_populates="plan",
     )
-    lead_purchases: Mapped[List["LeadPurchase"]] = relationship(
-        "LeadPurchase",
-        back_populates="package",
-    )
-
     def __repr__(self) -> str:
         return f"<SubscriptionPlan(id={self.id}, name='{self.name}', price_cents={self.price_cents})>"
 
