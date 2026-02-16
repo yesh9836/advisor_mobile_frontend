@@ -2,7 +2,7 @@ import logging
 
 import stripe
 from fastapi import HTTPException, status
-from sqlalchemy.orm import object_session, Session
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.user import User
@@ -14,6 +14,15 @@ class PaymentService:
     """Service for Stripe payment interactions."""
     
     _initialized: bool = False
+
+    @staticmethod
+    def _customer_create_idempotency_key(user: User) -> str:
+        """Build a deterministic idempotency key for Stripe customer creation."""
+        if user.id is not None:
+            identity = str(user.id)
+        else:
+            identity = (user.email or "").strip().lower()
+        return f"customer-create:{identity}:v1"
 
     @classmethod
     def _init_stripe(cls) -> None:
@@ -59,6 +68,7 @@ class PaymentService:
                 name=user.name,
                 phone=user.phone,
                 metadata={"user_id": str(user.id)},
+                idempotency_key=PaymentService._customer_create_idempotency_key(user),
             )
 
             user.stripe_customer_id = customer["id"]
