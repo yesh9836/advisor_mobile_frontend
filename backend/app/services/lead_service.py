@@ -376,6 +376,7 @@ class LeadService:
         size: int = 20,
         delivery_status: Literal["all", "available", "delivered"] = "all",
         outcome_status: Literal["all", "new", "contacted", "appointment_set"] = "all",
+        search: Optional[str] = None,
     ) -> Dict[str, object]:
         states = LeadService._get_user_allowed_states_for_new_leads(db, user.id)
         downloaded_subquery = select(LeadDownload.lead_id).where(LeadDownload.user_id == user.id)
@@ -405,6 +406,19 @@ class LeadService:
                 )
             else:
                 query = query.filter(LeadOutcome.status == outcome_status)
+
+        normalized_search = (search or "").strip()
+        if normalized_search:
+            search_pattern = f"%{normalized_search}%"
+            query = query.filter(
+                or_(
+                    Lead.first_name.ilike(search_pattern),
+                    Lead.last_name.ilike(search_pattern),
+                    Lead.mobile_phone.ilike(search_pattern),
+                    Lead.state_code.ilike(search_pattern),
+                    Lead.source.ilike(search_pattern),
+                )
+            )
 
         if delivery_status == "available":
             query = query.filter(available_condition)
