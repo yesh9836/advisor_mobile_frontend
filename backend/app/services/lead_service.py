@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Literal, Optional, Tuple
 from uuid import uuid4
 
 from fastapi import HTTPException
@@ -14,6 +14,7 @@ from app.models.purchase import LeadCreditLedger, LeadPackage, LeadPurchase
 from app.models.user import User
 from app.schemas.lead import LeadCreate, LeadOutcomeUpdateRequest
 from app.services.audit_service import AuditService
+from app.services.metrics_service import MetricsService
 from app.utils.csv_generator import generate_leads_csv_stream
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,22 @@ class LeadService:
             .scalar()
         )
         return int(remaining or 0)
+
+    @staticmethod
+    def _record_credit_denial_metrics(
+        *,
+        reason: str,
+        remaining_credits: int,
+    ) -> None:
+        MetricsService.increment(
+            "lead_download_credit_denied_total",
+            tags={"reason": reason},
+        )
+        MetricsService.histogram(
+            "lead_download_credit_denied_remaining_credits",
+            float(max(int(remaining_credits), 0)),
+            tags={"reason": reason},
+        )
     
     @staticmethod
     def _get_user_allowed_states(db: Session, user_id: int, state_limit: Optional[int]) -> List[str]:
@@ -227,9 +244,9 @@ class LeadService:
         db: Session,
         user_id: int,
         leads: List[Lead],
-    ) -> Dict[int, int]:
+    ) -> Tuple[Dict[int, int], List[Dict[str, int]]]:
         if not leads:
-            return {}
+            return {}, []
 
         bind = db.get_bind()
         dialect_name = bind.dialect.name if bind is not None else ""
@@ -248,15 +265,27 @@ class LeadService:
 
         purchases = purchases_query.all()
         if not purchases:
+            LeadService._record_credit_denial_metrics(
+                reason="no_remaining_credits",
+                remaining_credits=0,
+            )
             raise HTTPException(status_code=403, detail="No remaining lead credits")
 
         purchase_ids_by_lead_id: Dict[int, int] = {}
+        consumed_events: List[Dict[str, int]] = []
         lead_index = 0
         for purchase in purchases:
             while purchase.credits_remaining > 0 and lead_index < len(leads):
                 lead = leads[lead_index]
                 purchase.credits_remaining -= 1
                 purchase_ids_by_lead_id[lead.id] = purchase.id
+                consumed_events.append(
+                    {
+                        "purchase_id": int(purchase.id),
+                        "lead_id": int(lead.id),
+                        "credits_delta": -1,
+                    }
+                )
                 db.add(
                     LeadCreditLedger(
                         user_id=user_id,
@@ -273,21 +302,29 @@ class LeadService:
                 break
 
         if lead_index < len(leads):
+            LeadService._record_credit_denial_metrics(
+                reason="insufficient_credits",
+                remaining_credits=0,
+            )
             raise HTTPException(status_code=403, detail="No remaining lead credits")
 
-        return purchase_ids_by_lead_id
+        return purchase_ids_by_lead_id, consumed_events
 
     @staticmethod
-    def _allocate_download_batch_atomically(db: Session, user: User) -> List[Lead]:
+    def _allocate_download_batch_atomically(db: Session, user: User) -> Tuple[List[Lead], List[Dict[str, int]]]:
         LeadService._lock_user_download_row(db, user.id)
         remaining_credits = LeadService._get_user_remaining_credits(db, user.id)
         if remaining_credits <= 0:
+            LeadService._record_credit_denial_metrics(
+                reason="no_remaining_credits",
+                remaining_credits=remaining_credits,
+            )
             raise HTTPException(status_code=403, detail="No remaining lead credits")
         export_size = min(DEFAULT_DOWNLOAD_SIZE, remaining_credits)
 
         states = LeadService._get_user_allowed_states_for_new_leads(db, user.id)
         if not states:
-            return []
+            return [], []
 
         leads = LeadService._get_exportable_leads_for_states(
             db=db,
@@ -297,9 +334,9 @@ class LeadService:
             lock_rows=True,
         )
         if not leads:
-            return []
+            return [], []
 
-        purchase_ids_by_lead_id = LeadService._consume_credits_for_leads(
+        purchase_ids_by_lead_id, consumed_events = LeadService._consume_credits_for_leads(
             db=db,
             user_id=user.id,
             leads=leads,
@@ -311,7 +348,7 @@ class LeadService:
             leads=leads,
             purchase_ids_by_lead_id=purchase_ids_by_lead_id,
         )
-        return leads
+        return leads, consumed_events
 
     @staticmethod
     def _is_duplicate_download_integrity_error(exc: IntegrityError) -> bool:
@@ -400,6 +437,10 @@ class LeadService:
     def can_user_download_leads(db: Session, user: User) -> Dict[str, object]:
         remaining_credits = LeadService._get_user_remaining_credits(db, user.id)
         if remaining_credits <= 0:
+            LeadService._record_credit_denial_metrics(
+                reason="no_remaining_credits",
+                remaining_credits=0,
+            )
             return {"can_download": False, "reason": "No remaining lead credits", "remaining": 0}
 
         states = LeadService._get_user_allowed_states_for_new_leads(db, user.id)
@@ -424,8 +465,25 @@ class LeadService:
 
         for attempt in range(1, max_attempts + 1):
             try:
-                leads = LeadService._allocate_download_batch_atomically(db=db, user=user)
+                leads, consumed_events = LeadService._allocate_download_batch_atomically(db=db, user=user)
                 db.commit()
+                for consumed in consumed_events:
+                    purchase_id = consumed["purchase_id"]
+                    lead_id = consumed["lead_id"]
+                    credits_delta = consumed["credits_delta"]
+                    AuditService.log_purchase_event(
+                        actor_user_id=user.id,
+                        action="purchase_credit_consumed",
+                        purchase_id=purchase_id,
+                        credits_delta=credits_delta,
+                        correlation_ids={
+                            "purchase_id": purchase_id,
+                        },
+                        meta_data={
+                            "lead_id": lead_id,
+                            "movement_type": "lead_consumed",
+                        },
+                    )
                 return generate_leads_csv_stream(leads, prepend_message=prepend_msg)
             except HTTPException:
                 db.rollback()
