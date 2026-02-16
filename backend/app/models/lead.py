@@ -156,7 +156,7 @@ class Lead(Base):
 
 class LeadDownload(Base):
     """
-    Track which leads each advisor has downloaded.
+    Append-only export audit rows for advisor lead downloads.
     
     Attributes:
         id: Primary key
@@ -167,10 +167,6 @@ class LeadDownload(Base):
     """
 
     __tablename__ = "lead_downloads"
-    __table_args__ = (
-        UniqueConstraint("user_id", "lead_id", name="uq_lead_downloads_user_lead"),
-        UniqueConstraint("lead_id", name="uq_lead_downloads_global_lead"),
-    )
 
     # Primary key
     id: Mapped[int] = mapped_column(
