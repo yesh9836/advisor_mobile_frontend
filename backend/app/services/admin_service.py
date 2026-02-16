@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.timezone import utcnow
 from app.models.audit_log import AuditLog
-from app.models.lead import Lead, LeadDownload
+from app.models.lead import Lead, LeadDownload, LeadOwnership
 from app.models.license import License
 from app.models.purchase import LeadPackage, LeadPurchase
 from app.models.user import User
@@ -49,6 +49,21 @@ class AdminService:
         year = int(year_value)
         month = int(month_value)
         return f"{year:04d}-{month:02d}"
+
+    @staticmethod
+    def _resolve_purchase_reference(
+        *,
+        purchase_id: Optional[int],
+        stripe_checkout_session_id: Optional[str],
+        stripe_payment_intent_id: Optional[str],
+    ) -> Optional[str]:
+        if stripe_checkout_session_id:
+            return stripe_checkout_session_id
+        if stripe_payment_intent_id:
+            return stripe_payment_intent_id
+        if purchase_id is not None:
+            return f"purchase-{purchase_id}"
+        return None
 
     @staticmethod
     def get_dashboard_stats(db: Session) -> DashboardStats:
@@ -348,13 +363,38 @@ class AdminService:
         )
 
         download_count_expr = func.coalesce(download_counts.c.download_count, 0)
+        ownership_details = (
+            db.query(
+                LeadOwnership.lead_id.label("lead_id"),
+                LeadOwnership.user_id.label("assigned_advisor_id"),
+                User.name.label("assigned_advisor_name"),
+                User.email.label("assigned_advisor_email"),
+                LeadOwnership.purchase_id.label("purchase_id"),
+                LeadPurchase.stripe_checkout_session_id.label("stripe_checkout_session_id"),
+                LeadPurchase.stripe_payment_intent_id.label("stripe_payment_intent_id"),
+            )
+            .outerjoin(User, User.id == LeadOwnership.user_id)
+            .outerjoin(LeadPurchase, LeadPurchase.id == LeadOwnership.purchase_id)
+            .subquery()
+        )
+        sold_condition = or_(
+            ownership_details.c.lead_id.isnot(None),
+            download_count_expr > 0,
+        )
 
         query = (
             db.query(
                 Lead,
                 download_count_expr.label("download_count"),
+                ownership_details.c.assigned_advisor_id,
+                ownership_details.c.assigned_advisor_name,
+                ownership_details.c.assigned_advisor_email,
+                ownership_details.c.purchase_id,
+                ownership_details.c.stripe_checkout_session_id,
+                ownership_details.c.stripe_payment_intent_id,
             )
             .outerjoin(download_counts, download_counts.c.lead_id == Lead.id)
+            .outerjoin(ownership_details, ownership_details.c.lead_id == Lead.id)
         )
 
         if filters.search:
@@ -376,9 +416,9 @@ class AdminService:
             query = query.filter(Lead.source == filters.source)
 
         if filters.delivery_status == "unsold":
-            query = query.filter(download_count_expr == 0)
+            query = query.filter(~sold_condition)
         elif filters.delivery_status == "sold":
-            query = query.filter(download_count_expr > 0)
+            query = query.filter(sold_condition)
 
         if filters.created_from is not None:
             query = query.filter(Lead.created_at >= filters.created_from)
@@ -416,8 +456,26 @@ class AdminService:
                 source=lead.source,
                 created_at=lead.created_at,
                 download_count=int(download_count),
+                assigned_advisor_id=int(assigned_advisor_id) if assigned_advisor_id is not None else None,
+                assigned_advisor_name=assigned_advisor_name,
+                assigned_advisor_email=assigned_advisor_email,
+                purchase_id=int(purchase_id) if purchase_id is not None else None,
+                purchase_reference=AdminService._resolve_purchase_reference(
+                    purchase_id=int(purchase_id) if purchase_id is not None else None,
+                    stripe_checkout_session_id=stripe_checkout_session_id,
+                    stripe_payment_intent_id=stripe_payment_intent_id,
+                ),
             )
-            for lead, download_count in rows
+            for (
+                lead,
+                download_count,
+                assigned_advisor_id,
+                assigned_advisor_name,
+                assigned_advisor_email,
+                purchase_id,
+                stripe_checkout_session_id,
+                stripe_payment_intent_id,
+            ) in rows
         ]
 
         return PaginatedLeadInventory(items=items, total=total, page=page, size=size)
