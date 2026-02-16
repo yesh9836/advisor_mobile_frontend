@@ -419,6 +419,51 @@ def test_list_leads_delivery_status_filter_returns_expected_records(
 
 
 @pytest.mark.integration
+def test_list_leads_search_filters_delivered_results(
+    client,
+    user_factory,
+    lead_factory,
+    license_factory,
+    plan_factory,
+    purchase_factory,
+    auth_headers,
+):
+    _advisor, _, headers = _create_advisor_with_access(
+        user_factory,
+        license_factory,
+        plan_factory,
+        purchase_factory,
+        auth_headers,
+    )
+
+    casey_lead = lead_factory(
+        state_code="CA",
+        mobile_phone="555-CA-SEARCH-001",
+        first_name="Casey",
+        last_name="Owned",
+    )
+    lead_factory(
+        state_code="CA",
+        mobile_phone="555-CA-SEARCH-002",
+        first_name="Taylor",
+        last_name="Owned",
+    )
+
+    download_response = client.post("/api/v1/leads/download", headers=headers)
+    assert download_response.status_code == 200, download_response.text
+
+    search_response = client.get(
+        "/api/v1/leads/?delivery_status=delivered&search=casey",
+        headers=headers,
+    )
+    assert search_response.status_code == 200, search_response.text
+    payload = search_response.json()
+    assert payload["total"] == 1
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["id"] == casey_lead.id
+
+
+@pytest.mark.integration
 def test_list_leads_outcome_status_filter_returns_expected_records(
     client,
     user_factory,

@@ -125,6 +125,55 @@ def test_get_available_leads_for_user_returns_empty_for_no_matching_state(
 
 
 @pytest.mark.unit
+def test_get_available_leads_for_user_applies_search_filter(
+    db,
+    user_factory,
+    plan_factory,
+    license_factory,
+    purchase_factory,
+    lead_factory,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LeadUnitSearch123!",
+        email="lead.unit.search@example.com",
+    )
+    plan = plan_factory(state_limit=1, stripe_price_id="price_state_search")
+    license_factory(user_id=advisor.id, state="CA", status="verified")
+    purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=5,
+        credits_remaining=5,
+        status="completed",
+    )
+    casey = lead_factory(
+        state_code="CA",
+        mobile_phone="555-SEARCH-9001",
+        first_name="Casey",
+        last_name="Advisor",
+    )
+    lead_factory(
+        state_code="CA",
+        mobile_phone="555-SEARCH-9002",
+        first_name="Taylor",
+        last_name="Advisor",
+    )
+
+    data = LeadService.get_available_leads_for_user(
+        db=db,
+        user=advisor,
+        page=1,
+        size=20,
+        search=" casey ",
+    )
+
+    assert data["total"] == 1
+    assert len(data["items"]) == 1
+    assert data["items"][0].id == casey.id
+
+
+@pytest.mark.unit
 def test_can_user_download_leads_requires_available_new_inventory(
     db,
     user_factory,
