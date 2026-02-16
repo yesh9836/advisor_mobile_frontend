@@ -2,14 +2,14 @@ import logging
 from typing import Optional
 
 from fastapi import HTTPException
-from sqlalchemy import func, or_
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy import case, func, or_
+from sqlalchemy.orm import Session
 
 from app.db.timezone import utcnow
 from app.models.audit_log import AuditLog
 from app.models.lead import Lead, LeadDownload
 from app.models.license import License
-from app.models.subscription import Subscription, SubscriptionPlan
+from app.models.purchase import LeadPackage, LeadPurchase
 from app.models.user import User
 from app.schemas.admin import (
     AdminAnalyticsOverview,
@@ -31,11 +31,12 @@ from app.schemas.admin import (
     UserDetails,
     UserDownloadHistoryItem,
     UserGrowthPoint,
+    UserCreditSummary,
     UserLicenseItem,
     UserListFilters,
     UserListItem,
+    UserPurchaseItem,
     UserRecentActivityItem,
-    UserSubscriptionItem,
 )
 from app.services.audit_service import AuditService
 
@@ -50,17 +51,6 @@ class AdminService:
         return f"{year:04d}-{month:02d}"
 
     @staticmethod
-    def _latest_subscription_ids_subquery(db: Session):
-        return (
-            db.query(
-                Subscription.user_id.label("user_id"),
-                func.max(Subscription.id).label("subscription_id"),
-            )
-            .group_by(Subscription.user_id)
-            .subquery()
-        )
-
-    @staticmethod
     def get_dashboard_stats(db: Session) -> DashboardStats:
         total_users = db.query(func.count(User.id)).scalar() or 0
         pending_licenses = (
@@ -71,30 +61,29 @@ class AdminService:
         )
         total_leads = db.query(func.count(Lead.id)).scalar() or 0
 
-        latest_subscription_ids = AdminService._latest_subscription_ids_subquery(db)
+        completed_purchases = (
+            db.query(func.count(LeadPurchase.id))
+            .filter(LeadPurchase.status == "completed")
+            .scalar()
+            or 0
+        )
 
-        active_subscriptions = (
-            db.query(func.count(Subscription.id))
-            .join(
-                latest_subscription_ids,
-                Subscription.id == latest_subscription_ids.c.subscription_id,
+        advisors_with_credits = (
+            db.query(func.count(func.distinct(LeadPurchase.user_id)))
+            .filter(
+                LeadPurchase.status == "completed",
+                LeadPurchase.credits_remaining > 0,
             )
-            .filter(Subscription.status == "active")
             .scalar()
             or 0
         )
 
         revenue_row = (
             db.query(
-                func.coalesce(func.sum(SubscriptionPlan.price_cents), 0),
-                func.min(SubscriptionPlan.currency),
+                func.coalesce(func.sum(LeadPurchase.amount_cents), 0),
+                func.min(LeadPurchase.currency),
             )
-            .join(Subscription, SubscriptionPlan.id == Subscription.plan_id)
-            .join(
-                latest_subscription_ids,
-                Subscription.id == latest_subscription_ids.c.subscription_id,
-            )
-            .filter(Subscription.status == "active")
+            .filter(LeadPurchase.status == "completed")
             .first()
         )
 
@@ -103,7 +92,8 @@ class AdminService:
 
         return DashboardStats(
             total_users=total_users,
-            active_subscriptions=active_subscriptions,
+            completed_purchases=completed_purchases,
+            advisors_with_credits=advisors_with_credits,
             pending_licenses=pending_licenses,
             total_leads=total_leads,
             total_revenue_cents=total_revenue_cents,
@@ -114,11 +104,11 @@ class AdminService:
     def get_analytics_overview(db: Session) -> AdminAnalyticsOverview:
         monthly_revenue_rows = (
             db.query(
-                func.extract("year", Subscription.created_at).label("year"),
-                func.extract("month", Subscription.created_at).label("month"),
-                func.coalesce(func.sum(SubscriptionPlan.price_cents), 0).label("revenue_cents"),
+                func.extract("year", LeadPurchase.purchased_at).label("year"),
+                func.extract("month", LeadPurchase.purchased_at).label("month"),
+                func.coalesce(func.sum(LeadPurchase.amount_cents), 0).label("revenue_cents"),
             )
-            .join(SubscriptionPlan, SubscriptionPlan.id == Subscription.plan_id)
+            .filter(LeadPurchase.status == "completed")
             .group_by("year", "month")
             .order_by("year", "month")
             .all()
@@ -132,33 +122,30 @@ class AdminService:
             for year_value, month_value, revenue_cents in monthly_revenue_rows
         ]
 
-        latest_subscription_ids = AdminService._latest_subscription_ids_subquery(db)
-        latest_subscription = aliased(Subscription)
-
         plan_breakdown_rows = (
             db.query(
-                SubscriptionPlan.name.label("plan_name"),
-                func.count(latest_subscription.id).label("active_subscriptions"),
-                func.coalesce(func.sum(SubscriptionPlan.price_cents), 0).label("revenue_cents"),
+                LeadPackage.name.label("package_name"),
+                func.count(LeadPurchase.id).label("purchases"),
+                func.coalesce(func.sum(LeadPurchase.credits_total), 0).label("credits_granted"),
+                func.coalesce(func.sum(LeadPurchase.credits_remaining), 0).label("credits_remaining"),
+                func.coalesce(func.sum(LeadPurchase.amount_cents), 0).label("revenue_cents"),
             )
-            .join(latest_subscription, latest_subscription.plan_id == SubscriptionPlan.id)
-            .join(
-                latest_subscription_ids,
-                latest_subscription.id == latest_subscription_ids.c.subscription_id,
-            )
-            .filter(latest_subscription.status == "active")
-            .group_by(SubscriptionPlan.id, SubscriptionPlan.name)
-            .order_by(func.count(latest_subscription.id).desc(), SubscriptionPlan.name.asc())
+            .join(LeadPurchase, LeadPurchase.package_id == LeadPackage.id)
+            .filter(LeadPurchase.status == "completed")
+            .group_by(LeadPackage.id, LeadPackage.name)
+            .order_by(func.count(LeadPurchase.id).desc(), LeadPackage.name.asc())
             .all()
         )
 
         plan_breakdown = [
             PlanBreakdownItem(
-                plan_name=str(plan_name),
-                active_subscriptions=int(active_subscriptions or 0),
+                package_name=str(package_name),
+                purchases=int(purchases or 0),
+                credits_granted=int(credits_granted or 0),
+                credits_remaining=int(credits_remaining or 0),
                 revenue_cents=int(revenue_cents or 0),
             )
-            for plan_name, active_subscriptions, revenue_cents in plan_breakdown_rows
+            for package_name, purchases, credits_granted, credits_remaining, revenue_cents in plan_breakdown_rows
         ]
 
         state_distribution_rows = (
@@ -222,24 +209,33 @@ class AdminService:
             .subquery()
         )
 
-        latest_subscription_ids = AdminService._latest_subscription_ids_subquery(db)
-        latest_subscription = aliased(Subscription)
+        purchase_aggregates = (
+            db.query(
+                LeadPurchase.user_id.label("user_id"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (LeadPurchase.status == "completed", LeadPurchase.credits_remaining),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("current_credits"),
+                func.coalesce(func.count(LeadPurchase.id), 0).label("total_purchases"),
+            )
+            .group_by(LeadPurchase.user_id)
+            .subquery()
+        )
 
         query = (
             db.query(
                 User,
                 func.coalesce(license_counts.c.license_count, 0).label("license_count"),
-                latest_subscription.status.label("subscription_status"),
+                func.coalesce(purchase_aggregates.c.current_credits, 0).label("current_credits"),
+                func.coalesce(purchase_aggregates.c.total_purchases, 0).label("total_purchases"),
             )
             .outerjoin(license_counts, license_counts.c.user_id == User.id)
-            .outerjoin(
-                latest_subscription_ids,
-                latest_subscription_ids.c.user_id == User.id,
-            )
-            .outerjoin(
-                latest_subscription,
-                latest_subscription.id == latest_subscription_ids.c.subscription_id,
-            )
+            .outerjoin(purchase_aggregates, purchase_aggregates.c.user_id == User.id)
         )
 
         if filters.search:
@@ -278,9 +274,10 @@ class AdminService:
                 is_active=row_user.is_active,
                 created_at=row_user.created_at,
                 license_count=int(license_count or 0),
-                subscription_status=subscription_status,
+                current_credits=int(current_credits or 0),
+                total_purchases=int(total_purchases or 0),
             )
-            for row_user, license_count, subscription_status in rows
+            for row_user, license_count, current_credits, total_purchases in rows
         ]
 
         return PaginatedUsers(items=items, total=total, page=page, size=size)
@@ -293,19 +290,19 @@ class AdminService:
         status: Optional[str] = None,
     ) -> PaginatedOrders:
         query = (
-            db.query(Subscription, User, SubscriptionPlan)
-            .join(User, User.id == Subscription.user_id)
-            .outerjoin(SubscriptionPlan, SubscriptionPlan.id == Subscription.plan_id)
+            db.query(LeadPurchase, User, LeadPackage)
+            .join(User, User.id == LeadPurchase.user_id)
+            .outerjoin(LeadPackage, LeadPackage.id == LeadPurchase.package_id)
         )
 
         if status:
-            query = query.filter(Subscription.status == status)
+            query = query.filter(LeadPurchase.status == status)
 
-        total = query.with_entities(func.count(Subscription.id)).scalar() or 0
+        total = query.with_entities(func.count(LeadPurchase.id)).scalar() or 0
 
         offset = max(0, (page - 1) * size)
         rows = (
-            query.order_by(Subscription.created_at.desc(), Subscription.id.desc())
+            query.order_by(LeadPurchase.purchased_at.desc(), LeadPurchase.id.desc())
             .offset(offset)
             .limit(size)
             .all()
@@ -313,16 +310,23 @@ class AdminService:
 
         items = [
             AdminOrderItem(
-                id=subscription.id,
-                order_reference=subscription.stripe_subscription_id,
+                id=purchase.id,
+                order_reference=(
+                    purchase.stripe_checkout_session_id
+                    or purchase.stripe_payment_intent_id
+                    or f"purchase-{purchase.id}"
+                ),
                 advisor_name=user.name,
                 advisor_email=user.email,
                 package_name=plan.name if plan else None,
-                quantity=plan.daily_download_limit if plan else None,
-                status=subscription.status,
-                created_at=subscription.created_at,
+                quantity=purchase.credits_total,
+                remaining_credits=purchase.credits_remaining,
+                status=purchase.status,
+                created_at=purchase.purchased_at,
+                amount_cents=purchase.amount_cents,
+                currency=(purchase.currency or "USD").upper(),
             )
-            for subscription, user, plan in rows
+            for purchase, user, plan in rows
         ]
 
         return PaginatedOrders(items=items, total=total, page=page, size=size)
@@ -467,27 +471,71 @@ class AdminService:
             for license in licenses
         ]
 
-        latest_subscription_row = (
-            db.query(Subscription, SubscriptionPlan)
-            .outerjoin(SubscriptionPlan, Subscription.plan_id == SubscriptionPlan.id)
-            .filter(Subscription.user_id == user_id)
-            .order_by(Subscription.created_at.desc(), Subscription.id.desc())
+        credit_totals_row = (
+            db.query(
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (LeadPurchase.status == "completed", LeadPurchase.credits_total),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("total_credits"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (LeadPurchase.status == "completed", LeadPurchase.credits_remaining),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("remaining_credits"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (LeadPurchase.status == "completed", 1),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("completed_purchases"),
+            )
+            .filter(LeadPurchase.user_id == user_id)
             .first()
         )
+        credit_summary = UserCreditSummary(
+            total_credits=int((credit_totals_row[0] if credit_totals_row else 0) or 0),
+            remaining_credits=int((credit_totals_row[1] if credit_totals_row else 0) or 0),
+            completed_purchases=int((credit_totals_row[2] if credit_totals_row else 0) or 0),
+        )
 
-        subscription_item: Optional[UserSubscriptionItem] = None
-        if latest_subscription_row is not None:
-            subscription, plan = latest_subscription_row
-            subscription_item = UserSubscriptionItem(
-                id=subscription.id,
-                status=subscription.status,
-                plan_name=plan.name if plan else None,
-                price_cents=plan.price_cents if plan else None,
-                currency=plan.currency if plan else None,
-                current_period_start=subscription.current_period_start,
-                current_period_end=subscription.current_period_end,
-                created_at=subscription.created_at,
+        purchase_rows = (
+            db.query(LeadPurchase, LeadPackage)
+            .outerjoin(LeadPackage, LeadPurchase.package_id == LeadPackage.id)
+            .filter(LeadPurchase.user_id == user_id)
+            .order_by(LeadPurchase.purchased_at.desc(), LeadPurchase.id.desc())
+            .limit(100)
+            .all()
+        )
+        purchase_history = [
+            UserPurchaseItem(
+                id=purchase.id,
+                order_reference=(
+                    purchase.stripe_checkout_session_id
+                    or purchase.stripe_payment_intent_id
+                    or f"purchase-{purchase.id}"
+                ),
+                status=purchase.status,
+                package_name=package.name if package else None,
+                amount_cents=purchase.amount_cents,
+                currency=(purchase.currency or "USD").upper(),
+                credits_total=purchase.credits_total,
+                credits_remaining=purchase.credits_remaining,
+                purchased_at=purchase.purchased_at,
             )
+            for purchase, package in purchase_rows
+        ]
 
         download_rows = (
             db.query(LeadDownload, Lead.state_code)
@@ -539,7 +587,8 @@ class AdminService:
             deactivated_at=user.deactivated_at,
             deactivated_by=user.deactivated_by,
             licenses=license_items,
-            subscription=subscription_item,
+            credit_summary=credit_summary,
+            purchase_history=purchase_history,
             download_history=download_history,
             recent_activity=recent_activity,
         )
