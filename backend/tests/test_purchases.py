@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
@@ -23,20 +22,17 @@ def _create_advisor_with_verified_license(user_factory, license_factory, auth_he
 
 
 @pytest.mark.integration
-def test_purchase_packages_and_subscription_plans_wrapper_match(client, plan_factory):
+def test_purchase_packages_return_sorted_by_price(client, plan_factory):
     plan_factory(name="PackageA", price_cents=10000, stripe_price_id="price_package_a")
     plan_factory(name="PackageB", price_cents=20000, stripe_price_id="price_package_b")
 
     purchases_response = client.get("/api/v1/purchases/packages")
-    plans_wrapper_response = client.get("/api/v1/subscriptions/plans")
-
     assert purchases_response.status_code == 200, purchases_response.text
-    assert plans_wrapper_response.status_code == 200, plans_wrapper_response.text
 
     purchase_payload = purchases_response.json()
-    wrapper_payload = plans_wrapper_response.json()
-    assert [item["id"] for item in purchase_payload] == [item["id"] for item in wrapper_payload]
-    assert [item["price_cents"] for item in purchase_payload] == [item["price_cents"] for item in wrapper_payload]
+    assert [item["price_cents"] for item in purchase_payload] == sorted(
+        [item["price_cents"] for item in purchase_payload]
+    )
 
 
 @pytest.mark.integration
@@ -239,83 +235,8 @@ def test_purchase_balance_orders_and_history_endpoints(
 
 
 @pytest.mark.integration
-def test_subscription_current_and_cancel_expose_deprecation_headers(
-    client,
-    user_factory,
-    plan_factory,
-    subscription_factory,
-    auth_headers,
-    monkeypatch,
-):
-    unique_key = uuid4().hex[:10]
-    advisor = user_factory(
-        role="advisor",
-        password="AdvisorPurchaseDeprecated123!",
-        email=f"advisor.purchase.deprecated.{unique_key}@example.com",
-        name="Advisor Purchase Deprecated",
-    )
-    plan = plan_factory(stripe_price_id="price_purchase_deprecated")
-    subscription_factory(
-        user_id=advisor.id,
-        plan_id=plan.id,
-        status="active",
-        stripe_subscription_id="sub_purchase_deprecated",
-    )
-    headers = auth_headers(advisor.email, "AdvisorPurchaseDeprecated123!")
-
-    current_response = client.get("/api/v1/subscriptions/current", headers=headers)
-    assert current_response.status_code == 200, current_response.text
-    assert current_response.headers.get("Deprecation") == "true"
-    assert current_response.headers.get("X-Deprecated-Endpoint") == "/subscriptions/current"
-
-    monkeypatch.setattr(
-        "app.services.subscription_service.stripe.Subscription.modify",
-        lambda subscription_id, cancel_at_period_end=True: {
-            "id": subscription_id,
-            "status": "active",
-            "current_period_end": int(datetime.now(timezone.utc).timestamp()),
-        },
-    )
-    cancel_response = client.post("/api/v1/subscriptions/cancel", headers=headers)
-    assert cancel_response.status_code == 200, cancel_response.text
-    assert cancel_response.headers.get("Deprecation") == "true"
-    assert cancel_response.headers.get("X-Deprecated-Endpoint") == "/subscriptions/cancel"
-
-
-@pytest.mark.integration
-def test_subscription_current_and_cancel_return_410_when_compat_disabled(
-    client,
-    user_factory,
-    plan_factory,
-    subscription_factory,
-    auth_headers,
-    monkeypatch,
-):
-    unique_key = uuid4().hex[:10]
-    advisor = user_factory(
-        role="advisor",
-        password="AdvisorPurchaseCompatOff123!",
-        email=f"advisor.purchase.compatoff.{unique_key}@example.com",
-        name="Advisor Purchase Compat Off",
-    )
-    plan = plan_factory(stripe_price_id="price_purchase_compat_disabled")
-    subscription_factory(
-        user_id=advisor.id,
-        plan_id=plan.id,
-        status="active",
-        stripe_subscription_id="sub_purchase_compat_disabled",
-    )
-    headers = auth_headers(advisor.email, "AdvisorPurchaseCompatOff123!")
-    monkeypatch.setattr("app.api.v1.subscriptions.settings.SUBSCRIPTION_COMPAT_ENDPOINTS_ENABLED", False)
-
-    current_response = client.get("/api/v1/subscriptions/current", headers=headers)
-    assert current_response.status_code == 410
-    assert current_response.json()["detail"] == (
-        "/subscriptions/current has been sunset. Use /purchases endpoints instead."
-    )
-
-    cancel_response = client.post("/api/v1/subscriptions/cancel", headers=headers)
-    assert cancel_response.status_code == 410
-    assert cancel_response.json()["detail"] == (
-        "/subscriptions/cancel has been sunset. Use /purchases endpoints instead."
-    )
+def test_subscription_compat_routes_are_removed(client):
+    assert client.get("/api/v1/subscriptions/plans").status_code == 404
+    assert client.post("/api/v1/subscriptions/checkout", json={"plan_id": 1}).status_code == 404
+    assert client.get("/api/v1/subscriptions/current").status_code == 404
+    assert client.post("/api/v1/subscriptions/cancel").status_code == 404

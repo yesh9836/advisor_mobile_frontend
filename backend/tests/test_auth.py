@@ -146,7 +146,7 @@ def test_cookie_auth_requires_csrf_for_mutating_request(client, plan_factory):
     )
     assert login.status_code == 204, login.text
 
-    checkout = client.post("/api/v1/subscriptions/checkout", json={"plan_id": plan.id})
+    checkout = client.post("/api/v1/purchases/checkout", json={"package_id": plan.id})
     assert checkout.status_code == 403
     assert checkout.json()["detail"] == "CSRF token validation failed"
 
@@ -168,13 +168,11 @@ def test_cookie_auth_allows_mutating_request_with_csrf(client):
     assert login.status_code == 204, login.text
     csrf_token = client.cookies.get(settings.AUTH_CSRF_COOKIE_NAME)
     assert csrf_token
-
-    cancel = client.post(
-        "/api/v1/subscriptions/cancel",
+    logout = client.post(
+        "/api/v1/auth/logout",
         headers={settings.AUTH_CSRF_HEADER_NAME: csrf_token},
     )
-    assert cancel.status_code == 404
-    assert cancel.json()["detail"] == "No subscription found"
+    assert logout.status_code == 204, logout.text
 
 
 @pytest.mark.integration

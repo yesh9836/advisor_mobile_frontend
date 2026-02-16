@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import pytest
 import stripe
@@ -60,7 +60,7 @@ def test_get_plans_sorted_by_price(client, plan_factory):
     plan_factory(name="Premium", price_cents=120000, stripe_price_id="price_premium")
     plan_factory(name="Basic", price_cents=40000, stripe_price_id="price_basic")
 
-    response = client.get("/api/v1/subscriptions/plans")
+    response = client.get("/api/v1/purchases/packages")
     assert response.status_code == 200, response.text
     plans = response.json()
     assert len(plans) == 2
@@ -90,9 +90,9 @@ def test_checkout_requires_verified_license(
     )
 
     response = client.post(
-        "/api/v1/subscriptions/checkout",
+        "/api/v1/purchases/checkout",
         headers=headers,
-        json={"plan_id": plan.id},
+        json={"package_id": plan.id},
     )
     assert response.status_code == 400
     assert response.json()["detail"] == "At least one verified license is required"
@@ -134,9 +134,9 @@ def test_checkout_success_returns_session(
     )
 
     response = client.post(
-        "/api/v1/subscriptions/checkout",
+        "/api/v1/purchases/checkout",
         headers=headers,
-        json={"plan_id": plan.id},
+        json={"package_id": plan.id},
     )
     assert response.status_code == 200, response.text
     body = response.json()
@@ -196,9 +196,9 @@ def test_checkout_success_emits_metric_and_purchase_initiated_audit(
     )
 
     response = client.post(
-        "/api/v1/subscriptions/checkout",
+        "/api/v1/purchases/checkout",
         headers=headers,
-        json={"plan_id": plan.id},
+        json={"package_id": plan.id},
     )
     assert response.status_code == 200, response.text
     assert any(name == "purchase_checkout_created_total" for name, _, _ in metric_calls)
@@ -254,9 +254,9 @@ def test_checkout_failure_emits_metric(
     )
 
     response = client.post(
-        "/api/v1/subscriptions/checkout",
+        "/api/v1/purchases/checkout",
         headers=headers,
-        json={"plan_id": plan.id},
+        json={"package_id": plan.id},
     )
     assert response.status_code == 502
     assert any(name == "purchase_checkout_failed_total" for name, _, _ in metric_calls)
@@ -296,9 +296,9 @@ def test_checkout_allows_purchase_with_existing_trialing_subscription(
     )
 
     response = client.post(
-        "/api/v1/subscriptions/checkout",
+        "/api/v1/purchases/checkout",
         headers=headers,
-        json={"plan_id": target_plan.id},
+        json={"package_id": target_plan.id},
     )
     assert response.status_code == 200, response.text
     assert response.json()["session_id"] == "cs_trialing_ok"
@@ -1089,8 +1089,9 @@ def test_webhook_checkout_completed_missing_metadata_returns_500(
         json={"email": advisor.email, "password": "AdvisorWebhookMissingMeta123!"},
     )
     assert current.status_code == 204, current.text
-    current_subscription = client.get("/api/v1/subscriptions/current")
-    assert current_subscription.status_code == 404, current_subscription.text
+    purchase_history = client.get("/api/v1/purchases/history?limit=5")
+    assert purchase_history.status_code == 200, purchase_history.text
+    assert purchase_history.json() == {"items": []}
 
 
 @pytest.mark.integration
@@ -1140,8 +1141,9 @@ def test_webhook_checkout_completed_missing_plan_returns_500(
         json={"email": advisor.email, "password": "AdvisorWebhookMissingPlan123!"},
     )
     assert current.status_code == 204, current.text
-    current_subscription = client.get("/api/v1/subscriptions/current")
-    assert current_subscription.status_code == 404, current_subscription.text
+    purchase_history = client.get("/api/v1/purchases/history?limit=5")
+    assert purchase_history.status_code == 200, purchase_history.text
+    assert purchase_history.json() == {"items": []}
 
 
 @pytest.mark.integration
@@ -1210,46 +1212,6 @@ def test_webhook_invoice_payment_succeeded_stripe_error_returns_500(
 
 
 @pytest.mark.integration
-def test_cancel_subscription_updates_status(
-    client,
-    user_factory,
-    plan_factory,
-    subscription_factory,
-    auth_headers,
-    monkeypatch,
-):
-    advisor = user_factory(
-        role="advisor",
-        password="AdvisorCancel123!",
-        email="advisor.cancel@example.com",
-        name="Cancel Advisor",
-    )
-    plan = plan_factory(stripe_price_id="price_cancel_plan")
-    sub = subscription_factory(
-        user_id=advisor.id,
-        plan_id=plan.id,
-        status="active",
-        period_end_days=10,
-        stripe_subscription_id="sub_cancel_123",
-    )
-    _ = sub
-
-    headers = auth_headers(advisor.email, "AdvisorCancel123!")
-    monkeypatch.setattr(
-        "app.services.subscription_service.stripe.Subscription.modify",
-        lambda subscription_id, cancel_at_period_end=True: {
-            "id": subscription_id,
-            "status": "active",
-            "current_period_end": int((datetime.now(timezone.utc) + timedelta(days=10)).timestamp()),
-        },
-    )
-
-    response = client.post("/api/v1/subscriptions/cancel", headers=headers)
-    assert response.status_code == 200, response.text
-    assert response.json()["status"] == "active"
-
-
-@pytest.mark.integration
 def test_billing_summary_without_customer_returns_empty(
     client,
     user_factory,
@@ -1262,7 +1224,7 @@ def test_billing_summary_without_customer_returns_empty(
         name="Billing Advisor",
     )
     headers = auth_headers(advisor.email, "AdvisorBilling123!")
-    response = client.get("/api/v1/subscriptions/billing/summary", headers=headers)
+    response = client.get("/api/v1/purchases/billing/summary", headers=headers)
     assert response.status_code == 200, response.text
     assert response.json() == {"payment_method": None, "invoices": []}
 
@@ -1299,7 +1261,7 @@ def test_billing_summary_stripe_error_returns_502(
     )
 
     headers = auth_headers(advisor.email, "AdvisorBillingFail123!")
-    response = client.get("/api/v1/subscriptions/billing/summary", headers=headers)
+    response = client.get("/api/v1/purchases/billing/summary", headers=headers)
     assert response.status_code == 502
     assert response.json()["detail"] == "Stripe billing provider unavailable"
 
@@ -1344,7 +1306,7 @@ def test_credit_summary_returns_aggregated_purchase_credits(
         status="failed",
     )
 
-    response = client.get("/api/v1/subscriptions/credits", headers=headers)
+    response = client.get("/api/v1/purchases/balance", headers=headers)
     assert response.status_code == 200, response.text
     assert response.json() == {
         "total_credits": 15,
