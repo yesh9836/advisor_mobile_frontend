@@ -41,3 +41,36 @@ class AuditService:
             logger.error("Failed to write audit log: %s", exc)
         finally:
             db.close()
+
+    @staticmethod
+    def log_purchase_event(
+        *,
+        actor_user_id: int,
+        action: str,
+        purchase_id: Optional[int],
+        credits_delta: Optional[int] = None,
+        amount_cents: Optional[int] = None,
+        correlation_ids: Optional[Dict[str, Any]] = None,
+        meta_data: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        metadata: Dict[str, Any] = dict(meta_data or {})
+        metadata["event_schema"] = "purchase_audit.v1"
+        if credits_delta is not None:
+            metadata["credits_delta"] = int(credits_delta)
+        if amount_cents is not None:
+            metadata["amount_cents"] = int(amount_cents)
+
+        if correlation_ids:
+            metadata["correlation_ids"] = {
+                str(key): value
+                for key, value in correlation_ids.items()
+                if value is not None
+            }
+
+        AuditService.log_event(
+            actor_user_id=actor_user_id,
+            action=action,
+            entity_type="LeadPurchase",
+            entity_id=purchase_id,
+            meta_data=metadata,
+        )
