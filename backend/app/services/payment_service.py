@@ -1,4 +1,6 @@
 import logging
+from datetime import datetime, timezone
+from typing import Optional
 
 import stripe
 from fastapi import HTTPException, status
@@ -14,6 +16,7 @@ class PaymentService:
     """Service for Stripe payment interactions."""
     
     _initialized: bool = False
+    CHECKOUT_IDEMPOTENCY_WINDOW_SECONDS: int = 300
 
     @staticmethod
     def _customer_create_idempotency_key(user: User) -> str:
@@ -23,6 +26,21 @@ class PaymentService:
         else:
             identity = (user.email or "").strip().lower()
         return f"customer-create:{identity}:v1"
+
+    @staticmethod
+    def checkout_session_idempotency_key(
+        *,
+        user_id: int,
+        package_id: int,
+        request_window_seconds: Optional[int] = None,
+        now: Optional[datetime] = None,
+    ) -> str:
+        """Build a deterministic idempotency key for checkout creation retries."""
+        window_seconds = request_window_seconds or PaymentService.CHECKOUT_IDEMPOTENCY_WINDOW_SECONDS
+        window_seconds = max(int(window_seconds), 1)
+        current_time = now or datetime.now(timezone.utc)
+        window_bucket = int(current_time.timestamp()) // window_seconds
+        return f"checkout-create:{int(user_id)}:{int(package_id)}:{window_bucket}:v1"
 
     @classmethod
     def _init_stripe(cls) -> None:
