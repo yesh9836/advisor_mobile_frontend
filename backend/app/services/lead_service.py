@@ -8,7 +8,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models.lead import Lead, LeadDownload, LeadOutcome
+from app.models.lead import Lead, LeadDownload, LeadOutcome, LeadOwnership
 from app.models.license import License
 from app.models.purchase import LeadCreditLedger, LeadPackage, LeadPurchase
 from app.models.user import User
@@ -152,7 +152,98 @@ class LeadService:
             download = latest_by_lead_id.get(lead.id)
             setattr(lead, "is_downloaded", download is not None)
             setattr(lead, "downloaded_at", download.downloaded_at if download else None)
-    
+
+    @staticmethod
+    def _user_has_owned_leads(db: Session, user_id: int) -> bool:
+        return (
+            db.query(LeadOwnership.id)
+            .filter(LeadOwnership.user_id == user_id)
+            .first()
+            is not None
+        )
+
+    @staticmethod
+    def _get_owned_leads_for_user(db: Session, user_id: int) -> List[Lead]:
+        rows = (
+            db.query(LeadOwnership, Lead)
+            .join(Lead, Lead.id == LeadOwnership.lead_id)
+            .filter(LeadOwnership.user_id == user_id)
+            .order_by(LeadOwnership.assigned_at.desc(), LeadOwnership.id.desc())
+            .all()
+        )
+        return [lead for _ownership, lead in rows]
+
+    @staticmethod
+    def allocate_unsold_leads_for_purchase(
+        db: Session,
+        purchase: LeadPurchase,
+    ) -> Dict[str, object]:
+        requested_count = max(int(purchase.credits_total or 0), 0)
+        if purchase.status != "completed" or requested_count <= 0:
+            return {
+                "requested_count": requested_count,
+                "assigned_count": 0,
+                "unfulfilled_count": 0,
+                "assigned_lead_ids": [],
+            }
+
+        existing_assignments = (
+            db.query(LeadOwnership)
+            .filter(LeadOwnership.purchase_id == purchase.id)
+            .order_by(LeadOwnership.id.asc())
+            .all()
+        )
+        assigned_lead_ids = [int(row.lead_id) for row in existing_assignments]
+        if len(assigned_lead_ids) >= requested_count:
+            return {
+                "requested_count": requested_count,
+                "assigned_count": len(assigned_lead_ids),
+                "unfulfilled_count": 0,
+                "assigned_lead_ids": assigned_lead_ids,
+            }
+
+        states = LeadService._get_user_allowed_states_for_new_leads(db, purchase.user_id)
+        if not states:
+            return {
+                "requested_count": requested_count,
+                "assigned_count": len(assigned_lead_ids),
+                "unfulfilled_count": max(requested_count - len(assigned_lead_ids), 0),
+                "assigned_lead_ids": assigned_lead_ids,
+            }
+
+        needed = requested_count - len(assigned_lead_ids)
+        candidate_query = (
+            db.query(Lead)
+            .filter(Lead.state_code.in_(states))
+            .filter(~Lead.id.in_(select(LeadOwnership.lead_id)))
+            .order_by(Lead.created_at.desc(), Lead.id.desc())
+        )
+        bind = db.get_bind()
+        dialect_name = bind.dialect.name if bind is not None else ""
+        if dialect_name == "mysql":
+            candidate_query = candidate_query.with_for_update(skip_locked=True)
+
+        newly_assigned_leads = candidate_query.limit(needed).all()
+        for lead in newly_assigned_leads:
+            db.add(
+                LeadOwnership(
+                    user_id=purchase.user_id,
+                    lead_id=lead.id,
+                    purchase_id=purchase.id,
+                )
+            )
+            assigned_lead_ids.append(int(lead.id))
+
+        if newly_assigned_leads:
+            db.flush()
+
+        assigned_count = len(assigned_lead_ids)
+        return {
+            "requested_count": requested_count,
+            "assigned_count": assigned_count,
+            "unfulfilled_count": max(requested_count - assigned_count, 0),
+            "assigned_lead_ids": assigned_lead_ids,
+        }
 
     @staticmethod
     def _get_exportable_leads_for_user(
@@ -181,13 +272,13 @@ class LeadService:
         lock_rows: bool = False,
     ) -> List[Lead]:
         user_downloaded_subquery = select(LeadDownload.lead_id).where(LeadDownload.user_id == user_id)
-        globally_sold_subquery = select(LeadDownload.lead_id)
 
         query = (
             db.query(Lead)
             .filter(Lead.state_code.in_(states))
             .filter(~Lead.id.in_(user_downloaded_subquery))
-            .filter(~Lead.id.in_(globally_sold_subquery))
+            .filter(~Lead.id.in_(select(LeadDownload.lead_id)))
+            .filter(~Lead.id.in_(select(LeadOwnership.lead_id)))
             .order_by(Lead.created_at.desc())
         )
 
@@ -378,16 +469,23 @@ class LeadService:
         outcome_status: Literal["all", "new", "contacted", "appointment_set"] = "all",
         search: Optional[str] = None,
     ) -> Dict[str, object]:
-        states = LeadService._get_user_allowed_states_for_new_leads(db, user.id)
         downloaded_subquery = select(LeadDownload.lead_id).where(LeadDownload.user_id == user.id)
-        globally_sold_subquery = select(LeadDownload.lead_id)
-        available_condition = and_(
-            Lead.state_code.in_(states),
-            ~Lead.id.in_(downloaded_subquery),
-            ~Lead.id.in_(globally_sold_subquery),
-        )
-
         query = db.query(Lead)
+        has_owned_leads = LeadService._user_has_owned_leads(db, user.id)
+        if has_owned_leads:
+            owned_subquery = select(LeadOwnership.lead_id).where(LeadOwnership.user_id == user.id)
+            query = query.filter(Lead.id.in_(owned_subquery))
+            available_condition = ~Lead.id.in_(downloaded_subquery)
+            delivered_condition = Lead.id.in_(downloaded_subquery)
+        else:
+            states = LeadService._get_user_allowed_states_for_new_leads(db, user.id)
+            available_condition = and_(
+                Lead.state_code.in_(states),
+                ~Lead.id.in_(downloaded_subquery),
+                ~Lead.id.in_(select(LeadDownload.lead_id)),
+                ~Lead.id.in_(select(LeadOwnership.lead_id)),
+            )
+            delivered_condition = Lead.id.in_(downloaded_subquery)
 
         if outcome_status != "all":
             query = query.outerjoin(
@@ -423,14 +521,15 @@ class LeadService:
         if delivery_status == "available":
             query = query.filter(available_condition)
         elif delivery_status == "delivered":
-            query = query.filter(Lead.id.in_(downloaded_subquery))
+            query = query.filter(delivered_condition)
         else:
-            query = query.filter(
-                or_(
-                    Lead.id.in_(downloaded_subquery),
-                    available_condition,
+            if not has_owned_leads:
+                query = query.filter(
+                    or_(
+                        delivered_condition,
+                        available_condition,
+                    )
                 )
-            )
 
         total = query.count()
         offset = max(0, (page - 1) * size)
@@ -449,6 +548,16 @@ class LeadService:
 
     @staticmethod
     def can_user_download_leads(db: Session, user: User) -> Dict[str, object]:
+        if LeadService._user_has_owned_leads(db, user.id):
+            owned_count = (
+                db.query(func.count(LeadOwnership.id))
+                .filter(LeadOwnership.user_id == user.id)
+                .scalar()
+            ) or 0
+            if owned_count <= 0:
+                return {"can_download": False, "reason": "No leads available", "remaining": 0}
+            return {"can_download": True, "remaining": int(owned_count)}
+
         remaining_credits = LeadService._get_user_remaining_credits(db, user.id)
         if remaining_credits <= 0:
             LeadService._record_credit_denial_metrics(
@@ -465,6 +574,7 @@ class LeadService:
             db.query(func.count(Lead.id))
             .filter(Lead.state_code.in_(states))
             .filter(~Lead.id.in_(select(LeadDownload.lead_id)))
+            .filter(~Lead.id.in_(select(LeadOwnership.lead_id)))
             .scalar()
         ) or 0
         if available_count <= 0:
@@ -474,6 +584,51 @@ class LeadService:
 
     @staticmethod
     def download_leads_csv(db: Session, user: User) -> str:
+        owned_leads = LeadService._get_owned_leads_for_user(db=db, user_id=user.id)
+        if owned_leads:
+            lead_ids = [lead.id for lead in owned_leads]
+            existing_download_ids = {
+                row[0]
+                for row in (
+                    db.query(LeadDownload.lead_id)
+                    .filter(
+                        LeadDownload.user_id == user.id,
+                        LeadDownload.lead_id.in_(lead_ids),
+                    )
+                    .all()
+                )
+            }
+            ownership_rows = (
+                db.query(LeadOwnership)
+                .filter(
+                    LeadOwnership.user_id == user.id,
+                    LeadOwnership.lead_id.in_(lead_ids),
+                )
+                .all()
+            )
+            purchase_ids_by_lead_id = {
+                int(ownership.lead_id): int(ownership.purchase_id)
+                for ownership in ownership_rows
+                if ownership.purchase_id is not None
+            }
+            leads_to_mark_delivered = [
+                lead for lead in owned_leads if lead.id not in existing_download_ids
+            ]
+            if leads_to_mark_delivered:
+                try:
+                    LeadService._record_download_batch(
+                        db=db,
+                        user_id=user.id,
+                        leads=leads_to_mark_delivered,
+                        purchase_ids_by_lead_id=purchase_ids_by_lead_id,
+                    )
+                    db.commit()
+                except Exception as exc:
+                    db.rollback()
+                    logger.error("Failed to record owned lead download batch for user_id=%s: %s", user.id, exc)
+                    raise HTTPException(status_code=500, detail="Failed to record lead downloads")
+            return generate_leads_csv_stream(owned_leads)
+
         prepend_msg = ""
         max_attempts = 2
 
@@ -645,8 +800,14 @@ class LeadService:
             .first()
             is not None
         )
+        has_ownership_access = (
+            db.query(LeadOwnership.id)
+            .filter(LeadOwnership.user_id == user.id, LeadOwnership.lead_id == lead_id)
+            .first()
+            is not None
+        )
         has_state_access = lead.state_code in states
-        if not has_download_access and not has_state_access:
+        if not has_download_access and not has_ownership_access and not has_state_access:
             raise HTTPException(status_code=404, detail="Lead not found")
 
         outcome = (
