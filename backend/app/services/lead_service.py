@@ -10,8 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.models.lead import Lead, LeadDownload, LeadOutcome
 from app.models.license import License
-from app.models.purchase import LeadCreditLedger, LeadPurchase
-from app.models.subscription import Subscription, SubscriptionPlan
+from app.models.purchase import LeadCreditLedger, LeadPackage, LeadPurchase
 from app.models.user import User
 from app.schemas.lead import LeadCreate, LeadOutcomeUpdateRequest
 from app.services.audit_service import AuditService
@@ -35,40 +34,11 @@ class LeadService:
     """Service for lead distribution and downloads."""
 
     @staticmethod
-    def _get_latest_subscription(db: Session, user_id: int) -> Optional[Subscription]:
-        return (
-            db.query(Subscription)
-            .filter(Subscription.user_id == user_id)
-            .order_by(Subscription.created_at.desc())
-            .first()
-        )
-
-    @staticmethod
-    def _require_active_subscription(db: Session, user: User) -> Subscription:
-        subscription = LeadService._get_active_subscription(db, user.id)
-        if not subscription:
-            raise HTTPException(status_code=403, detail="Active subscription required")
-        return subscription
-
-    @staticmethod
-    def _get_active_subscription(db: Session, user_id: int) -> Optional[Subscription]:
-        subscription = LeadService._get_latest_subscription(db, user_id)
-        now = datetime.now(timezone.utc)
-
-        if not subscription or subscription.status != "active":
-            return None
-
-        if not subscription.current_period_end or subscription.current_period_end <= now:
-            return None
-
-        return subscription
-
-    @staticmethod
     def _get_user_purchase_state_limit(db: Session, user_id: int) -> Optional[int]:
         rows = (
-            db.query(SubscriptionPlan.state_limit)
+            db.query(LeadPackage.state_limit)
             .select_from(LeadPurchase)
-            .join(SubscriptionPlan, SubscriptionPlan.id == LeadPurchase.package_id)
+            .join(LeadPackage, LeadPackage.id == LeadPurchase.package_id)
             .filter(
                 LeadPurchase.user_id == user_id,
                 LeadPurchase.status == "completed",
@@ -86,14 +56,6 @@ class LeadService:
 
     @staticmethod
     def _get_user_allowed_states_for_new_leads(db: Session, user_id: int) -> List[str]:
-        active_subscription = LeadService._get_active_subscription(db, user_id)
-        if active_subscription:
-            return LeadService._get_user_allowed_states(
-                db=db,
-                user_id=user_id,
-                state_limit=active_subscription.plan.state_limit,
-            )
-
         purchase_state_limit = LeadService._get_user_purchase_state_limit(db, user_id)
         return LeadService._get_user_allowed_states(
             db=db,
@@ -221,19 +183,6 @@ class LeadService:
         return query.limit(size).all()
 
     @staticmethod
-    def _is_unlimited_daily_limit(daily_limit: Optional[int]) -> bool:
-        return daily_limit is None or daily_limit >= 999999
-
-    @staticmethod
-    def _get_today_download_count(db: Session, user_id: int, today_start: datetime) -> int:
-        return (
-            db.query(func.count(LeadDownload.id))
-            .filter(LeadDownload.user_id == user_id)
-            .filter(LeadDownload.downloaded_at >= today_start)
-            .scalar()
-        ) or 0
-
-    @staticmethod
     def _lock_user_download_row(db: Session, user_id: int) -> None:
         lock_query = select(User.id).where(User.id == user_id)
         bind = db.get_bind()
@@ -331,30 +280,10 @@ class LeadService:
     @staticmethod
     def _allocate_download_batch_atomically(db: Session, user: User) -> List[Lead]:
         LeadService._lock_user_download_row(db, user.id)
-
-        active_subscription = LeadService._get_active_subscription(db, user.id)
-        is_credit_backed_download = active_subscription is None
-
-        if active_subscription:
-            plan = active_subscription.plan
-            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-            today_count = LeadService._get_today_download_count(db, user.id, today_start)
-
-            daily_limit = plan.daily_download_limit
-            if LeadService._is_unlimited_daily_limit(daily_limit):
-                export_size = DEFAULT_DOWNLOAD_SIZE
-            else:
-                if daily_limit is None:
-                    raise HTTPException(status_code=500, detail="Invalid plan daily limit")
-                remaining = daily_limit - today_count
-                if remaining <= 0:
-                    raise HTTPException(status_code=403, detail="Daily limit reached")
-                export_size = min(DEFAULT_DOWNLOAD_SIZE, remaining)
-        else:
-            remaining_credits = LeadService._get_user_remaining_credits(db, user.id)
-            if remaining_credits <= 0:
-                raise HTTPException(status_code=403, detail="No remaining lead credits")
-            export_size = min(DEFAULT_DOWNLOAD_SIZE, remaining_credits)
+        remaining_credits = LeadService._get_user_remaining_credits(db, user.id)
+        if remaining_credits <= 0:
+            raise HTTPException(status_code=403, detail="No remaining lead credits")
+        export_size = min(DEFAULT_DOWNLOAD_SIZE, remaining_credits)
 
         states = LeadService._get_user_allowed_states_for_new_leads(db, user.id)
         if not states:
@@ -370,13 +299,11 @@ class LeadService:
         if not leads:
             return []
 
-        purchase_ids_by_lead_id: Optional[Dict[int, int]] = None
-        if is_credit_backed_download:
-            purchase_ids_by_lead_id = LeadService._consume_credits_for_leads(
-                db=db,
-                user_id=user.id,
-                leads=leads,
-            )
+        purchase_ids_by_lead_id = LeadService._consume_credits_for_leads(
+            db=db,
+            user_id=user.id,
+            leads=leads,
+        )
 
         LeadService._record_download_batch(
             db=db,
@@ -389,10 +316,15 @@ class LeadService:
     @staticmethod
     def _is_duplicate_download_integrity_error(exc: IntegrityError) -> bool:
         error_text = str(getattr(exc, "orig", exc)).lower()
-        if "lead_downloads" not in error_text and "uq_lead_downloads_user_lead" not in error_text:
+        if (
+            "lead_downloads" not in error_text
+            and "uq_lead_downloads_user_lead" not in error_text
+            and "uq_lead_downloads_global_lead" not in error_text
+        ):
             return False
         duplicate_markers = (
             "uq_lead_downloads_user_lead",
+            "uq_lead_downloads_global_lead",
             "duplicate entry",
             "unique constraint",
         )
@@ -466,18 +398,6 @@ class LeadService:
 
     @staticmethod
     def can_user_download_leads(db: Session, user: User) -> Dict[str, object]:
-        active_subscription = LeadService._get_active_subscription(db, user.id)
-        if active_subscription:
-            daily_limit = active_subscription.plan.daily_download_limit
-            if LeadService._is_unlimited_daily_limit(daily_limit):
-                return {"can_download": True, "remaining": -1}
-
-            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-            today_count = LeadService._get_today_download_count(db, user.id, today_start)
-            if today_count >= daily_limit:
-                return {"can_download": False, "reason": "Daily limit reached", "remaining": 0}
-            return {"can_download": True, "remaining": daily_limit - today_count}
-
         remaining_credits = LeadService._get_user_remaining_credits(db, user.id)
         if remaining_credits <= 0:
             return {"can_download": False, "reason": "No remaining lead credits", "remaining": 0}
@@ -528,6 +448,22 @@ class LeadService:
                 raise HTTPException(status_code=500, detail="Failed to record lead downloads")
 
         raise HTTPException(status_code=500, detail="Failed to record lead downloads")
+
+    @staticmethod
+    def download_delivered_leads_csv(db: Session, user: User) -> str:
+        delivered_leads = (
+            db.query(Lead)
+            .join(LeadDownload, LeadDownload.lead_id == Lead.id)
+            .filter(LeadDownload.user_id == user.id)
+            .order_by(LeadDownload.downloaded_at.desc(), LeadDownload.id.desc())
+            .all()
+        )
+        if not delivered_leads:
+            raise HTTPException(status_code=404, detail="No delivered leads found")
+        return generate_leads_csv_stream(
+            delivered_leads,
+            prepend_message="Previously delivered leads export.",
+        )
 
     @staticmethod
     def create_lead(db: Session, data: LeadCreate) -> Lead:
@@ -694,8 +630,6 @@ class LeadService:
 
     @staticmethod
     def get_dashboard_summary(db: Session, user: User) -> Dict[str, object]:
-        active_subscription = LeadService._get_active_subscription(db, user.id)
-
         now = datetime.now(timezone.utc)
         seven_days_ago = now - timedelta(days=7)
         states = LeadService._get_user_allowed_states_for_new_leads(db, user.id)
@@ -744,12 +678,7 @@ class LeadService:
             appointments_set=appointments_set_7_days,
         )
 
-        if latest_completed_purchase:
-            currency = (latest_completed_purchase.currency or "USD").upper()
-        elif active_subscription:
-            currency = (active_subscription.plan.currency or "USD").upper()
-        else:
-            currency = "USD"
+        currency = (latest_completed_purchase.currency or "USD").upper() if latest_completed_purchase else "USD"
 
         return {
             "leads_delivered_7_days": int(leads_delivered_7_days),
@@ -761,10 +690,6 @@ class LeadService:
                 "sms_alerts_enabled": False,
                 "target_states": states,
                 "min_assets": None,
-                "daily_download_limit": (
-                    active_subscription.plan.daily_download_limit
-                    if active_subscription
-                    else None
-                ),
+                "daily_download_limit": None,
             },
         }
