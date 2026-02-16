@@ -12,6 +12,8 @@ from app.models.license import License
 from app.models.purchase import LeadCreditLedger, LeadPackage, LeadPurchase
 from app.models.subscription import Subscription, SubscriptionPlan
 from app.models.user import User
+from app.services.audit_service import AuditService
+from app.services.metrics_service import MetricsService
 from app.services.payment_service import PaymentService
 from app.db.session import SessionLocal
 
@@ -167,11 +169,39 @@ class SubscriptionService:
                 session["id"],
                 idempotency_key,
             )
+            MetricsService.increment(
+                "purchase_checkout_created_total",
+                tags={
+                    "provider": "stripe",
+                    "package_id": str(package.id),
+                },
+            )
+            AuditService.log_purchase_event(
+                actor_user_id=user.id,
+                action="purchase_initiated",
+                purchase_id=None,
+                amount_cents=int(package.price_cents or 0),
+                correlation_ids={
+                    "checkout_session_id": session.get("id"),
+                    "idempotency_key": idempotency_key,
+                },
+                meta_data={
+                    "package_id": package.id,
+                    "currency": str((package.currency or "USD")).upper(),
+                },
+            )
 
             return {"session_id": session["id"], "url": session["url"]}
 
         except stripe.error.StripeError as e:
             logger.error(f"Stripe checkout session creation failed: {e}")
+            MetricsService.increment(
+                "purchase_checkout_failed_total",
+                tags={
+                    "provider": "stripe",
+                    "error_type": type(e).__name__,
+                },
+            )
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="Stripe checkout session creation failed",
@@ -390,17 +420,17 @@ class SubscriptionService:
         purchase: LeadPurchase,
         credits_total: int,
         note: str,
-    ) -> None:
+    ) -> bool:
         if not settings.PURCHASE_WEBHOOK_CREDIT_GRANT_ENABLED:
             logger.warning(
                 "Credit grant deferred by feature flag for purchase_id=%s user_id=%s",
                 purchase.id,
                 purchase.user_id,
             )
-            return
+            return False
 
         if purchase.status != "completed":
-            return
+            return False
 
         existing_grant = (
             db.query(LeadCreditLedger)
@@ -411,7 +441,7 @@ class SubscriptionService:
             .first()
         )
         if existing_grant:
-            return
+            return False
 
         db.add(
             LeadCreditLedger(
@@ -424,6 +454,42 @@ class SubscriptionService:
         )
         purchase.credits_remaining = max(int(purchase.credits_remaining or 0), int(credits_total or 0))
         db.add(purchase)
+        return True
+
+    @staticmethod
+    def _record_credit_grant_latency_metric(
+        purchase: LeadPurchase,
+        *,
+        source_event: str,
+    ) -> None:
+        if not purchase.purchased_at:
+            return
+        latency_ms = max(
+            (datetime.now(timezone.utc) - purchase.purchased_at).total_seconds() * 1000.0,
+            0.0,
+        )
+        MetricsService.histogram(
+            "credit_grant_latency_ms",
+            latency_ms,
+            tags={
+                "source_event": source_event,
+            },
+        )
+
+    @staticmethod
+    def _build_purchase_correlation_ids(
+        *,
+        stripe_event_id: Optional[str],
+        checkout_session_id: Optional[str],
+        payment_intent_id: Optional[str],
+        purchase_id: Optional[int],
+    ) -> Dict[str, Any]:
+        return {
+            "stripe_event_id": stripe_event_id,
+            "checkout_session_id": checkout_session_id,
+            "payment_intent_id": payment_intent_id,
+            "purchase_id": purchase_id,
+        }
 
     @staticmethod
     def _mark_purchase_failed_by_payment_intent(
@@ -466,6 +532,7 @@ class SubscriptionService:
         checkout_session: Dict[str, Any],
         *,
         forced_status: Optional[str] = None,
+        stripe_event_id: Optional[str] = None,
     ) -> None:
         session_id = checkout_session.get("id")
         if not session_id:
@@ -518,6 +585,7 @@ class SubscriptionService:
                 .filter(LeadPurchase.stripe_payment_intent_id == payment_intent_id)
                 .first()
             )
+        previous_status = purchase.status if purchase else None
 
         if purchase and purchase.status == "completed" and purchase_status != "completed":
             # Keep fulfilled purchases immutable against out-of-order failure retries.
@@ -551,7 +619,7 @@ class SubscriptionService:
             db.add(purchase)
             db.flush()
 
-        SubscriptionService._grant_purchase_credits_if_needed(
+        grant_created = SubscriptionService._grant_purchase_credits_if_needed(
             db=db,
             purchase=purchase,
             credits_total=credits_total,
@@ -560,6 +628,39 @@ class SubscriptionService:
 
         db.add(purchase)
         db.commit()
+        correlation_ids = SubscriptionService._build_purchase_correlation_ids(
+            stripe_event_id=stripe_event_id,
+            checkout_session_id=purchase.stripe_checkout_session_id,
+            payment_intent_id=purchase.stripe_payment_intent_id,
+            purchase_id=purchase.id,
+        )
+        if purchase.status == "completed" and previous_status != "completed":
+            AuditService.log_purchase_event(
+                actor_user_id=purchase.user_id,
+                action="purchase_confirmed",
+                purchase_id=purchase.id,
+                amount_cents=int(purchase.amount_cents or 0),
+                correlation_ids=correlation_ids,
+                meta_data={
+                    "previous_status": previous_status,
+                    "new_status": purchase.status,
+                },
+            )
+        if grant_created:
+            SubscriptionService._record_credit_grant_latency_metric(
+                purchase,
+                source_event="checkout_session",
+            )
+            AuditService.log_purchase_event(
+                actor_user_id=purchase.user_id,
+                action="purchase_credits_granted",
+                purchase_id=purchase.id,
+                credits_delta=credits_total,
+                correlation_ids=correlation_ids,
+                meta_data={
+                    "grant_note": f"Checkout session {session_id}",
+                },
+            )
 
         logger.info(
             "Lead purchase fulfilled from checkout session: session_id=%s user_id=%s package_id=%s status=%s credits=%s",
@@ -658,6 +759,7 @@ class SubscriptionService:
                     SubscriptionService._create_or_update_purchase_from_checkout_session(
                         db=db,
                         checkout_session=session,
+                        stripe_event_id=event_id,
                     )
                 except Exception:
                     db.rollback()
@@ -670,6 +772,7 @@ class SubscriptionService:
                     db=db,
                     checkout_session=session,
                     forced_status="failed",
+                    stripe_event_id=event_id,
                 )
             except Exception:
                 db.rollback()
@@ -694,6 +797,7 @@ class SubscriptionService:
                 logger.info("Lead purchase already completed for payment_intent_id=%s", payment_intent_id)
                 return
 
+            previous_status = purchase.status
             if not settings.PURCHASE_WEBHOOK_CREDIT_GRANT_ENABLED:
                 if purchase.status != "pending":
                     purchase.status = "pending"
@@ -709,7 +813,7 @@ class SubscriptionService:
             purchase.credits_remaining = purchase.credits_total
             db.add(purchase)
 
-            SubscriptionService._grant_purchase_credits_if_needed(
+            grant_created = SubscriptionService._grant_purchase_credits_if_needed(
                 db=db,
                 purchase=purchase,
                 credits_total=purchase.credits_total,
@@ -717,6 +821,39 @@ class SubscriptionService:
             )
 
             db.commit()
+            correlation_ids = SubscriptionService._build_purchase_correlation_ids(
+                stripe_event_id=event_id,
+                checkout_session_id=purchase.stripe_checkout_session_id,
+                payment_intent_id=purchase.stripe_payment_intent_id,
+                purchase_id=purchase.id,
+            )
+            if previous_status != "completed":
+                AuditService.log_purchase_event(
+                    actor_user_id=purchase.user_id,
+                    action="purchase_confirmed",
+                    purchase_id=purchase.id,
+                    amount_cents=int(purchase.amount_cents or 0),
+                    correlation_ids=correlation_ids,
+                    meta_data={
+                        "previous_status": previous_status,
+                        "new_status": purchase.status,
+                    },
+                )
+            if grant_created:
+                SubscriptionService._record_credit_grant_latency_metric(
+                    purchase,
+                    source_event="payment_intent",
+                )
+                AuditService.log_purchase_event(
+                    actor_user_id=purchase.user_id,
+                    action="purchase_credits_granted",
+                    purchase_id=purchase.id,
+                    credits_delta=purchase.credits_total,
+                    correlation_ids=correlation_ids,
+                    meta_data={
+                        "grant_note": f"Payment intent {payment_intent_id}",
+                    },
+                )
             logger.info("Lead purchase marked completed for payment_intent_id=%s", payment_intent_id)
 
         elif event_type == "payment_intent.payment_failed":
@@ -725,6 +862,75 @@ class SubscriptionService:
                 payment_intent_id=data_object.get("id"),
                 source_event=event_type,
             )
+
+        elif event_type == "charge.refunded":
+            payment_intent = data_object.get("payment_intent")
+            if isinstance(payment_intent, dict):
+                payment_intent_id = payment_intent.get("id")
+            else:
+                payment_intent_id = payment_intent
+
+            if not payment_intent_id:
+                logger.warning("charge.refunded missing payment intent ID")
+                return
+
+            purchase = (
+                db.query(LeadPurchase)
+                .filter(LeadPurchase.stripe_payment_intent_id == payment_intent_id)
+                .first()
+            )
+            if not purchase:
+                logger.warning("No local lead purchase found for refunded payment_intent_id=%s", payment_intent_id)
+                return
+
+            previous_status = purchase.status
+            refundable_credits = max(int(purchase.credits_remaining or 0), 0)
+            existing_refund_adjustment = (
+                db.query(LeadCreditLedger)
+                .filter(
+                    LeadCreditLedger.purchase_id == purchase.id,
+                    LeadCreditLedger.movement_type == "refund_adjustment",
+                )
+                .first()
+            )
+
+            credits_reversed = 0
+            if refundable_credits > 0 and not existing_refund_adjustment:
+                db.add(
+                    LeadCreditLedger(
+                        user_id=purchase.user_id,
+                        purchase_id=purchase.id,
+                        movement_type="refund_adjustment",
+                        credits_delta=-refundable_credits,
+                        note=f"Stripe refund for payment_intent {payment_intent_id}",
+                    )
+                )
+                credits_reversed = refundable_credits
+
+            purchase.status = "refunded"
+            purchase.credits_remaining = 0
+            db.add(purchase)
+            db.commit()
+
+            if credits_reversed > 0 or previous_status != "refunded":
+                AuditService.log_purchase_event(
+                    actor_user_id=purchase.user_id,
+                    action="purchase_refund_adjusted",
+                    purchase_id=purchase.id,
+                    credits_delta=-credits_reversed,
+                    amount_cents=int(data_object.get("amount_refunded") or 0),
+                    correlation_ids=SubscriptionService._build_purchase_correlation_ids(
+                        stripe_event_id=event_id,
+                        checkout_session_id=purchase.stripe_checkout_session_id,
+                        payment_intent_id=purchase.stripe_payment_intent_id,
+                        purchase_id=purchase.id,
+                    ),
+                    meta_data={
+                        "previous_status": previous_status,
+                        "new_status": purchase.status,
+                        "refund_reason": data_object.get("reason"),
+                    },
+                )
 
         elif event_type == "customer.subscription.updated":
             stripe_subscription_id = data_object.get("id")
