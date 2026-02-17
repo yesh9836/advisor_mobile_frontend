@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.models.lead import LeadDownload
+from app.models.lead import LeadDownload, LeadOwnership
 from app.models.purchase import LeadCreditLedger, LeadPurchase
 
 
@@ -250,6 +250,82 @@ def test_download_delivered_csv_allows_redownload_after_credits_exhausted(
     assert delivered_download.status_code == 200, delivered_download.text
     assert "Previously delivered leads export." in delivered_download.text
     assert "555-CA-REDL-0001" in delivered_download.text
+
+
+@pytest.mark.integration
+def test_download_delivered_csv_deduplicates_old_leads_after_new_package_delivery(
+    client,
+    db,
+    user_factory,
+    lead_factory,
+    license_factory,
+    plan_factory,
+    purchase_factory,
+    auth_headers,
+):
+    advisor, plan, headers = _create_advisor_with_purchase_access(
+        user_factory,
+        license_factory,
+        plan_factory,
+        purchase_factory,
+        auth_headers,
+    )
+    first_purchase = (
+        db.query(LeadPurchase)
+        .filter(LeadPurchase.user_id == advisor.id, LeadPurchase.package_id == plan.id)
+        .order_by(LeadPurchase.id.asc())
+        .first()
+    )
+    assert first_purchase is not None
+
+    first_lead = lead_factory(state_code="CA", mobile_phone="555-OWN-REDL-1001")
+    db.add(
+        LeadOwnership(
+            user_id=advisor.id,
+            lead_id=first_lead.id,
+            purchase_id=first_purchase.id,
+        )
+    )
+    db.commit()
+
+    first_download = client.post("/api/v1/leads/download", headers=headers)
+    assert first_download.status_code == 200, first_download.text
+    assert "555-OWN-REDL-1001" in first_download.text
+
+    second_purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=2,
+        credits_remaining=2,
+        status="completed",
+    )
+    second_lead = lead_factory(state_code="CA", mobile_phone="555-OWN-REDL-1002")
+    db.add(
+        LeadOwnership(
+            user_id=advisor.id,
+            lead_id=second_lead.id,
+            purchase_id=second_purchase.id,
+        )
+    )
+    db.commit()
+
+    second_download = client.post("/api/v1/leads/download", headers=headers)
+    assert second_download.status_code == 200, second_download.text
+    assert "555-OWN-REDL-1001" in second_download.text
+    assert "555-OWN-REDL-1002" in second_download.text
+
+    download_rows = (
+        db.query(LeadDownload)
+        .filter(LeadDownload.user_id == advisor.id, LeadDownload.lead_id == first_lead.id)
+        .all()
+    )
+    assert len(download_rows) == 2
+
+    delivered_download = client.post("/api/v1/leads/download/delivered", headers=headers)
+    assert delivered_download.status_code == 200, delivered_download.text
+    assert "Previously delivered leads export." in delivered_download.text
+    assert delivered_download.text.count("555-OWN-REDL-1001") == 1
+    assert delivered_download.text.count("555-OWN-REDL-1002") == 1
 
 
 @pytest.mark.integration

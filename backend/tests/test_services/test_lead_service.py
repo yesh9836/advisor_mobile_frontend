@@ -490,6 +490,49 @@ def test_download_delivered_leads_csv_does_not_consume_credits(
 
 
 @pytest.mark.unit
+def test_download_delivered_leads_csv_deduplicates_same_lead(
+    db,
+    user_factory,
+    lead_factory,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LeadUnitDeliveredDedup123!",
+        email="lead.unit.delivered.dedup@example.com",
+    )
+    repeated = lead_factory(state_code="CA", mobile_phone="555-DELIVERED-DEDUP-0001")
+    second = lead_factory(state_code="CA", mobile_phone="555-DELIVERED-DEDUP-0002")
+
+    db.add(
+        LeadDownload(
+            user_id=advisor.id,
+            lead_id=repeated.id,
+            csv_batch_id="batch_delivered_dedup_a",
+        )
+    )
+    db.add(
+        LeadDownload(
+            user_id=advisor.id,
+            lead_id=repeated.id,
+            csv_batch_id="batch_delivered_dedup_b",
+        )
+    )
+    db.add(
+        LeadDownload(
+            user_id=advisor.id,
+            lead_id=second.id,
+            csv_batch_id="batch_delivered_dedup_b",
+        )
+    )
+    db.commit()
+
+    csv_text = "".join(LeadService.download_delivered_leads_csv(db=db, user=advisor))
+
+    assert csv_text.count("555-DELIVERED-DEDUP-0001") == 1
+    assert csv_text.count("555-DELIVERED-DEDUP-0002") == 1
+
+
+@pytest.mark.unit
 def test_get_available_leads_for_user_uses_owned_scope_when_present(
     db,
     user_factory,
