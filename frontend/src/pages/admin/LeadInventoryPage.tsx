@@ -40,8 +40,8 @@ const formatSourceLabel = (source: string | null): string => {
   return source.replace(/_/g, " ");
 };
 
-const statusBadgeStyle = (downloadCount: number) => {
-  if (downloadCount > 0) {
+const statusBadgeStyle = (isSold: boolean) => {
+  if (isSold) {
     return {
       border: "1px solid #fde68a",
       background: "#fffbeb",
@@ -392,48 +392,61 @@ const LeadInventoryPage = () => {
             <div style={{ color: "#475569" }}>No leads found for current filters.</div>
           )}
 
-          {!loading && items.map((lead) => (
-            <section
-              key={lead.id}
-              className="panel"
-              style={{
-                background: "#f8fafc",
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 12,
-                alignItems: "center",
-              }}
-            >
-              <div style={{ minWidth: 0 }}>
-                <div style={{ color: "#0b1b49", fontSize: 18, fontWeight: 700 }}>
-                  {formatLeadName(lead)}
-                </div>
-                <div style={{ marginTop: 4, color: "#475569", fontSize: 14 }}>
-                  {lead.state_code} • {lead.mobile_phone || "No phone"} • {formatSourceLabel(lead.source)}
-                </div>
-                <div style={{ marginTop: 4, color: "#64748b", fontSize: 13 }}>
-                  Created {formatLeadTimestamp(lead.created_at)}
-                </div>
-              </div>
+          {!loading && items.map((lead) => {
+            const isSold = lead.assigned_advisor_id !== null || lead.download_count > 0;
+            const assignedAdvisorLabel = lead.assigned_advisor_name
+              ? `${lead.assigned_advisor_name}${lead.assigned_advisor_email ? ` (${lead.assigned_advisor_email})` : ""}`
+              : null;
 
-              <div style={{ textAlign: "right" }}>
-                <span
-                  style={{
-                    borderRadius: 999,
-                    padding: "4px 10px",
-                    fontSize: 12,
-                    fontWeight: 700,
-                    ...statusBadgeStyle(lead.download_count),
-                  }}
-                >
-                  {lead.download_count > 0 ? "SOLD" : "UNSOLD"}
-                </span>
-                <div style={{ marginTop: 6, color: "#475569", fontSize: 13 }}>
-                  Downloads: {lead.download_count}
+            return (
+              <section
+                key={lead.id}
+                className="panel"
+                style={{
+                  background: "#f8fafc",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  alignItems: "center",
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ color: "#0b1b49", fontSize: 18, fontWeight: 700 }}>
+                    {formatLeadName(lead)}
+                  </div>
+                  <div style={{ marginTop: 4, color: "#475569", fontSize: 14 }}>
+                    {lead.state_code} • {lead.mobile_phone || "No phone"} • {formatSourceLabel(lead.source)}
+                  </div>
+                  <div style={{ marginTop: 4, color: "#64748b", fontSize: 13 }}>
+                    Created {formatLeadTimestamp(lead.created_at)}
+                  </div>
+                  <div style={{ marginTop: 4, color: "#64748b", fontSize: 13 }}>
+                    Assigned: {assignedAdvisorLabel ?? "Unassigned"}
+                  </div>
+                  <div style={{ marginTop: 4, color: "#64748b", fontSize: 13 }}>
+                    Purchase: {lead.purchase_reference ?? "N/A"}
+                  </div>
                 </div>
-              </div>
-            </section>
-          ))}
+
+                <div style={{ textAlign: "right" }}>
+                  <span
+                    style={{
+                      borderRadius: 999,
+                      padding: "4px 10px",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      ...statusBadgeStyle(isSold),
+                    }}
+                  >
+                    {isSold ? "SOLD" : "UNSOLD"}
+                  </span>
+                  <div style={{ marginTop: 6, color: "#475569", fontSize: 13 }}>
+                    Downloads: {lead.download_count}
+                  </div>
+                </div>
+              </section>
+            );
+          })}
 
           <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ color: "#475569", fontSize: 14 }}>
