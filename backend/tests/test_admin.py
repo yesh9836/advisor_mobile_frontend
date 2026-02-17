@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from app.models.audit_log import AuditLog
-from app.models.lead import LeadDownload
+from app.models.lead import LeadDownload, LeadOwnership
 from app.models.user import User
 
 
@@ -399,6 +399,8 @@ def test_admin_lead_inventory_filters_and_license_status_summary(
     auth_headers,
     lead_factory,
     license_factory,
+    plan_factory,
+    purchase_factory,
 ):
     _admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
     advisor = user_factory(
@@ -433,6 +435,24 @@ def test_admin_lead_inventory_filters_and_license_status_summary(
         last_name="West",
         mobile_phone="555-300-0003",
     )
+    plan = plan_factory(
+        daily_download_limit=5,
+        state_limit=1,
+        stripe_price_id="price_inventory_owned",
+    )
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        status="completed",
+        stripe_checkout_session_id="cs_inventory_owned",
+    )
+    db.add(
+        LeadOwnership(
+            user_id=advisor.id,
+            lead_id=lead_b.id,
+            purchase_id=purchase.id,
+        )
+    )
 
     db.add_all(
         [
@@ -458,6 +478,14 @@ def test_admin_lead_inventory_filters_and_license_status_summary(
     assert by_id[lead_a.id]["download_count"] == 0
     assert by_id[lead_b.id]["download_count"] == 1
     assert by_id[lead_c.id]["download_count"] == 0
+    assert by_id[lead_a.id]["assigned_advisor_id"] is None
+    assert by_id[lead_a.id]["assigned_advisor_name"] is None
+    assert by_id[lead_a.id]["purchase_reference"] is None
+    assert by_id[lead_b.id]["assigned_advisor_id"] == advisor.id
+    assert by_id[lead_b.id]["assigned_advisor_name"] == advisor.name
+    assert by_id[lead_b.id]["assigned_advisor_email"] == advisor.email
+    assert by_id[lead_b.id]["purchase_id"] == purchase.id
+    assert by_id[lead_b.id]["purchase_reference"] == "cs_inventory_owned"
 
     filtered_state = client.get(
         "/api/v1/admin/lead-inventory?page=1&size=20&state_code=CA",

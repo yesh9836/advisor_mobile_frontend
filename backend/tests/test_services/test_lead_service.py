@@ -222,7 +222,7 @@ def test_bulk_import_leads_rejects_duplicate_phones_in_payload(db):
 
 
 @pytest.mark.unit
-def test_lead_download_has_unique_user_lead_constraint(
+def test_lead_download_is_append_only_for_same_user_and_lead(
     db,
     user_factory,
     lead_factory,
@@ -238,13 +238,21 @@ def test_lead_download_has_unique_user_lead_constraint(
     db.commit()
 
     db.add(LeadDownload(user_id=advisor.id, lead_id=lead.id, csv_batch_id="batch_2"))
-    with pytest.raises(IntegrityError):
-        db.commit()
-    db.rollback()
+    db.commit()
+
+    rows = (
+        db.query(LeadDownload)
+        .filter(LeadDownload.user_id == advisor.id, LeadDownload.lead_id == lead.id)
+        .order_by(LeadDownload.id.asc())
+        .all()
+    )
+    assert len(rows) == 2
+    assert rows[0].csv_batch_id == "batch_1"
+    assert rows[1].csv_batch_id == "batch_2"
 
 
 @pytest.mark.unit
-def test_lead_download_has_global_unique_lead_owner_constraint(
+def test_lead_ownership_has_global_unique_lead_owner_constraint(
     db,
     user_factory,
     lead_factory,
@@ -261,10 +269,10 @@ def test_lead_download_has_global_unique_lead_owner_constraint(
     )
     lead = lead_factory(state_code="CA", mobile_phone="555-GLOBAL-UNIQ-0001")
 
-    db.add(LeadDownload(user_id=first_advisor.id, lead_id=lead.id, csv_batch_id="batch_first"))
+    db.add(LeadOwnership(user_id=first_advisor.id, lead_id=lead.id))
     db.commit()
 
-    db.add(LeadDownload(user_id=second_advisor.id, lead_id=lead.id, csv_batch_id="batch_second"))
+    db.add(LeadOwnership(user_id=second_advisor.id, lead_id=lead.id))
     with pytest.raises(IntegrityError):
         db.commit()
     db.rollback()
@@ -598,12 +606,14 @@ def test_download_leads_csv_exports_owned_leads_without_consuming_credits(
     second_csv = "".join(LeadService.download_leads_csv(db=db, user=advisor))
     assert "555-OWN-EXPORT-0001" in second_csv
     assert "555-OWN-EXPORT-0002" in second_csv
-    assert (
+    audit_rows = (
         db.query(LeadDownload)
         .filter(LeadDownload.user_id == advisor.id)
-        .count()
-        == 2
+        .order_by(LeadDownload.id.asc())
+        .all()
     )
+    assert len(audit_rows) == 4
+    assert len({row.csv_batch_id for row in audit_rows}) == 2
 
 
 @pytest.mark.unit

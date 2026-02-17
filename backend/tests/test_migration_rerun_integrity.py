@@ -112,6 +112,73 @@ def test_c1_global_unique_lead_downloads_upgrade_is_deterministic_and_rerunnable
 
 
 @pytest.mark.unit
+def test_f6_lead_download_audit_upgrade_is_rerunnable_and_allows_duplicate_audit_rows():
+    migration = _load_migration_module("f6a7b8c9d0e1_relax_lead_download_uniqueness_for_export_audit.py")
+    engine = sa.create_engine("sqlite+pysqlite:///:memory:")
+
+    metadata = sa.MetaData()
+    lead_downloads = sa.Table(
+        "lead_downloads",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+        sa.Column("user_id", sa.Integer, nullable=False),
+        sa.Column("lead_id", sa.Integer, nullable=False),
+        sa.Column("downloaded_at", sa.DateTime, nullable=False),
+        sa.UniqueConstraint("user_id", "lead_id", name="uq_lead_downloads_user_lead"),
+        sa.UniqueConstraint("lead_id", name="uq_lead_downloads_global_lead"),
+    )
+
+    with engine.begin() as connection:
+        metadata.create_all(connection)
+        connection.execute(
+            lead_downloads.insert(),
+            [
+                {
+                    "id": 1,
+                    "user_id": 101,
+                    "lead_id": 100,
+                    "downloaded_at": datetime(2026, 2, 10, 12, 0, tzinfo=timezone.utc),
+                },
+            ],
+        )
+
+        _run_migration(migration, "upgrade", connection)
+        _run_migration(migration, "upgrade", connection)
+
+        # Duplicate rows for the same user/lead are now valid for repeated export auditing.
+        connection.execute(
+            sa.text(
+                "INSERT INTO lead_downloads (id, user_id, lead_id, downloaded_at) "
+                "VALUES (2, 101, 100, '2026-02-10 12:10:00')"
+            )
+        )
+
+        duplicate_count = connection.execute(
+            sa.text(
+                "SELECT COUNT(*) AS total FROM lead_downloads "
+                "WHERE user_id = 101 AND lead_id = 100"
+            )
+        ).mappings().one()
+        assert duplicate_count["total"] == 2
+
+        inspector = sa.inspect(connection)
+        unique_names = {
+            constraint.get("name")
+            for constraint in inspector.get_unique_constraints("lead_downloads")
+            if constraint.get("name")
+        }
+        assert "uq_lead_downloads_user_lead" not in unique_names
+        assert "uq_lead_downloads_global_lead" not in unique_names
+
+        index_names = {
+            index.get("name")
+            for index in inspector.get_indexes("lead_downloads")
+            if index.get("name")
+        }
+        assert "ix_lead_downloads_user_lead" in index_names
+
+
+@pytest.mark.unit
 def test_d4_lead_packages_upgrade_rerun_preserves_backfill_and_fk_integrity():
     migration = _load_migration_module("d4e5f6a7b8c9_add_lead_packages_catalog.py")
     engine = sa.create_engine("sqlite+pysqlite:///:memory:")
