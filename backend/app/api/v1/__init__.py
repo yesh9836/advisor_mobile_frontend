@@ -4,7 +4,7 @@ API v1 router aggregation.
 
 from fastapi import APIRouter
 
-from app.api.v1 import admin, auth, leads, licenses, purchases, webhooks
+from app.api.v1 import admin, auth, delivery_settings, leads, licenses, purchases, webhooks
 
 api_router = APIRouter()
 
@@ -13,4 +13,5 @@ api_router.include_router(licenses.router)
 api_router.include_router(purchases.router)
 api_router.include_router(webhooks.router)
 api_router.include_router(leads.router)
+api_router.include_router(delivery_settings.router)
 api_router.include_router(admin.router)
