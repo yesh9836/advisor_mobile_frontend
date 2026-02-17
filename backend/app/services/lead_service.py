@@ -4,7 +4,7 @@ from typing import Dict, List, Literal, Optional, Tuple
 from uuid import uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, false, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -77,6 +77,17 @@ class LeadService:
             .scalar()
         )
         return int(remaining or 0)
+
+    @staticmethod
+    def _can_user_view_unsold_inventory(
+        db: Session,
+        user_id: int,
+        states: Optional[List[str]] = None,
+    ) -> bool:
+        if LeadService._get_user_remaining_credits(db, user_id) <= 0:
+            return False
+        scoped_states = states if states is not None else LeadService._get_user_allowed_states_for_new_leads(db, user_id)
+        return bool(scoped_states)
 
     @staticmethod
     def _record_credit_denial_metrics(
@@ -481,12 +492,15 @@ class LeadService:
             delivered_condition = Lead.id.in_(downloaded_subquery)
         else:
             states = LeadService._get_user_allowed_states_for_new_leads(db, user.id)
-            available_condition = and_(
-                Lead.state_code.in_(states),
-                ~Lead.id.in_(downloaded_subquery),
-                ~Lead.id.in_(select(LeadDownload.lead_id)),
-                ~Lead.id.in_(select(LeadOwnership.lead_id)),
-            )
+            if LeadService._can_user_view_unsold_inventory(db=db, user_id=user.id, states=states):
+                available_condition = and_(
+                    Lead.state_code.in_(states),
+                    ~Lead.id.in_(downloaded_subquery),
+                    ~Lead.id.in_(select(LeadDownload.lead_id)),
+                    ~Lead.id.in_(select(LeadOwnership.lead_id)),
+                )
+            else:
+                available_condition = false()
             delivered_condition = Lead.id.in_(downloaded_subquery)
 
         if outcome_status != "all":
