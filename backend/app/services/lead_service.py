@@ -679,11 +679,24 @@ class LeadService:
 
     @staticmethod
     def download_delivered_leads_csv(db: Session, user: User) -> str:
+        latest_downloads = (
+            db.query(
+                LeadDownload.lead_id.label("lead_id"),
+                LeadDownload.downloaded_at.label("downloaded_at"),
+                LeadDownload.id.label("download_id"),
+                func.row_number().over(
+                    partition_by=LeadDownload.lead_id,
+                    order_by=(LeadDownload.downloaded_at.desc(), LeadDownload.id.desc()),
+                ).label("row_rank"),
+            )
+            .filter(LeadDownload.user_id == user.id)
+            .subquery()
+        )
         delivered_leads = (
             db.query(Lead)
-            .join(LeadDownload, LeadDownload.lead_id == Lead.id)
-            .filter(LeadDownload.user_id == user.id)
-            .order_by(LeadDownload.downloaded_at.desc(), LeadDownload.id.desc())
+            .join(latest_downloads, latest_downloads.c.lead_id == Lead.id)
+            .filter(latest_downloads.c.row_rank == 1)
+            .order_by(latest_downloads.c.downloaded_at.desc(), latest_downloads.c.download_id.desc())
             .all()
         )
         if not delivered_leads:
