@@ -276,3 +276,50 @@ def test_d4_lead_packages_upgrade_rerun_preserves_backfill_and_fk_integrity():
         referred_tables = {fk.get("referred_table") for fk in purchase_fks}
         assert "lead_packages" in referred_tables
         assert "subscription_plans" not in referred_tables
+
+
+@pytest.mark.unit
+def test_a7_delivery_settings_upgrade_is_rerunnable_and_backfills_advisors_with_off_defaults():
+    migration = _load_migration_module("a7c3d9e1f2b4_add_advisor_delivery_settings.py")
+    engine = sa.create_engine("sqlite+pysqlite:///:memory:")
+
+    metadata = sa.MetaData()
+    users = sa.Table(
+        "users",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+        sa.Column("role", sa.String(20), nullable=False),
+    )
+
+    with engine.begin() as connection:
+        metadata.create_all(connection)
+        connection.execute(
+            users.insert(),
+            [
+                {"id": 1, "role": "advisor"},
+                {"id": 2, "role": "admin"},
+                {"id": 3, "role": "advisor"},
+            ],
+        )
+
+        _run_migration(migration, "upgrade", connection)
+        _run_migration(migration, "upgrade", connection)
+
+        rows = connection.execute(
+            sa.text(
+                "SELECT user_id, email_alerts_enabled, sms_alerts_enabled, version "
+                "FROM advisor_delivery_settings ORDER BY user_id ASC"
+            )
+        ).mappings().all()
+        assert rows == [
+            {"user_id": 1, "email_alerts_enabled": 0, "sms_alerts_enabled": 0, "version": 1},
+            {"user_id": 3, "email_alerts_enabled": 0, "sms_alerts_enabled": 0, "version": 1},
+        ]
+
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                sa.text(
+                    "INSERT INTO advisor_delivery_settings (user_id, email_alerts_enabled, sms_alerts_enabled, version) "
+                    "VALUES (1, 1, 1, 1)"
+                )
+            )
