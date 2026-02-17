@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import {
+  getMyDeliverySettings,
+  updateMyDeliverySettings,
+  type DeliverySettingsResponse,
+  type DeliverySettingsUpdatePayload,
+} from "@/api/delivery-settings";
 import { getLeadDashboardSummary, getLeads } from "@/api/leads";
 import type {
   Lead,
@@ -20,6 +26,18 @@ interface RecentLeadItem {
   headline: string;
   assets: string;
   dateTime: string;
+}
+
+interface DeliverySettingsEditorState {
+  email_alerts_enabled: boolean;
+  sms_alerts_enabled: boolean;
+  version: number | null;
+  warnings: string[];
+}
+
+interface SettingsFeedback {
+  kind: "success" | "error";
+  message: string;
 }
 
 const toDisplayStage = (
@@ -95,6 +113,29 @@ const stageClassName = (stage: LeadStage): string => {
   return "badge badge-set";
 };
 
+const toEditorState = (
+  settings: DeliverySettingsResponse,
+): DeliverySettingsEditorState => ({
+  email_alerts_enabled: settings.email_alerts_enabled,
+  sms_alerts_enabled: settings.sms_alerts_enabled,
+  version: settings.version,
+  warnings: settings.warnings ?? [],
+});
+
+const toFallbackEditorState = (
+  summary: LeadDashboardSummary | null,
+): DeliverySettingsEditorState | null => {
+  if (!summary?.settings) {
+    return null;
+  }
+  return {
+    email_alerts_enabled: summary.settings.email_alerts_enabled,
+    sms_alerts_enabled: summary.settings.sms_alerts_enabled,
+    version: null,
+    warnings: [],
+  };
+};
+
 const DashboardPage = () => {
   const navigate = useNavigate();
 
@@ -102,6 +143,15 @@ const DashboardPage = () => {
   const [summary, setSummary] = useState<LeadDashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isSettingsEditorOpen, setIsSettingsEditorOpen] = useState(false);
+  const [settingsEditorLoading, setSettingsEditorLoading] = useState(false);
+  const [settingsPendingField, setSettingsPendingField] = useState<
+    "email" | "sms" | null
+  >(null);
+  const [settingsFeedback, setSettingsFeedback] =
+    useState<SettingsFeedback | null>(null);
+  const [editorSettings, setEditorSettings] =
+    useState<DeliverySettingsEditorState | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -129,6 +179,105 @@ const DashboardPage = () => {
 
     void load();
   }, []);
+
+  const handleOpenSettingsEditor = async () => {
+    setIsSettingsEditorOpen(true);
+    setSettingsFeedback(null);
+    setSettingsEditorLoading(true);
+
+    try {
+      const response = await getMyDeliverySettings();
+      setEditorSettings(toEditorState(response));
+    } catch (loadError) {
+      setSettingsFeedback({
+        kind: "error",
+        message: getApiErrorMessage(
+          loadError,
+          "Unable to load delivery settings.",
+        ),
+      });
+      setEditorSettings((current) => current ?? toFallbackEditorState(summary));
+    } finally {
+      setSettingsEditorLoading(false);
+    }
+  };
+
+  const handleCloseSettingsEditor = () => {
+    if (settingsPendingField !== null) {
+      return;
+    }
+    setIsSettingsEditorOpen(false);
+    setSettingsFeedback(null);
+  };
+
+  const handleInstantToggleUpdate = async (
+    field: "email_alerts_enabled" | "sms_alerts_enabled",
+  ) => {
+    if (!editorSettings || settingsPendingField !== null) {
+      return;
+    }
+
+    const previous = editorSettings;
+    const nextValue = !previous[field];
+    const pendingField = field === "email_alerts_enabled" ? "email" : "sms";
+    const label = field === "email_alerts_enabled" ? "Email alerts" : "SMS alerts";
+
+    setEditorSettings({
+      ...previous,
+      [field]: nextValue,
+    });
+    setSettingsFeedback(null);
+    setSettingsPendingField(pendingField);
+
+    try {
+      const payload: DeliverySettingsUpdatePayload =
+        field === "email_alerts_enabled"
+          ? { email_alerts_enabled: nextValue }
+          : { sms_alerts_enabled: nextValue };
+      if (previous.version !== null) {
+        payload.expected_version = previous.version;
+      }
+      const response = await updateMyDeliverySettings(payload);
+      const updatedState = toEditorState(response);
+      const updatedValue = field === "email_alerts_enabled"
+        ? updatedState.email_alerts_enabled
+        : updatedState.sms_alerts_enabled;
+      setEditorSettings(updatedState);
+      setSettingsFeedback({
+        kind: "success",
+        message: `${label} ${updatedValue ? "enabled" : "disabled"}.`,
+      });
+      try {
+        const refreshedSummary = await getLeadDashboardSummary();
+        setSummary(refreshedSummary);
+      } catch {
+        setSummary((current) => {
+          if (!current) {
+            return current;
+          }
+          return {
+            ...current,
+            settings: {
+              ...current.settings,
+              email_alerts_enabled: updatedState.email_alerts_enabled,
+              sms_alerts_enabled: updatedState.sms_alerts_enabled,
+            },
+          };
+        });
+      }
+    } catch (updateError) {
+      setEditorSettings(previous);
+      setSettingsFeedback({
+        kind: "error",
+        message: getApiErrorMessage(
+          updateError,
+          "Unable to update delivery settings.",
+        ),
+      });
+    } finally {
+      setSettingsPendingField(null);
+    }
+  };
 
   const settings = summary?.settings;
 
@@ -239,7 +388,7 @@ const DashboardPage = () => {
               Delivery Settings
             </h2>
             <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
-              Read-only snapshot from account configuration.
+              Manage your notification preferences for lead delivery.
             </p>
           </div>
 
@@ -250,11 +399,15 @@ const DashboardPage = () => {
             <div style={{ marginTop: 8, color: "#334155" }}>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span>Email alerts</span>
-                <strong>{settings?.email_alerts_enabled ? "On" : "Off"}</strong>
+                <strong data-testid="delivery-email-status">
+                  {settings?.email_alerts_enabled ? "On" : "Off"}
+                </strong>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span>SMS alerts</span>
-                <strong>{settings?.sms_alerts_enabled ? "On" : "Off"}</strong>
+                <strong data-testid="delivery-sms-status">
+                  {settings?.sms_alerts_enabled ? "On" : "Off"}
+                </strong>
               </div>
             </div>
           </section>
@@ -282,9 +435,74 @@ const DashboardPage = () => {
             </div>
           </section>
 
-          <button type="button" className="btn btn-primary" disabled>
-            Edit Settings (Coming Soon)
+          {settingsFeedback && (
+            <div className={settingsFeedback.kind === "error" ? "alert" : "success"}>
+              {settingsFeedback.message}
+            </div>
+          )}
+
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() =>
+              isSettingsEditorOpen
+                ? handleCloseSettingsEditor()
+                : void handleOpenSettingsEditor()
+            }
+            disabled={settingsPendingField !== null}
+          >
+            {isSettingsEditorOpen ? "Close Settings" : "Edit Settings"}
           </button>
+
+          {isSettingsEditorOpen && (
+            <section className="panel stack" style={{ padding: 12, background: "#f8fafc" }}>
+              <h3 style={{ margin: 0, fontSize: 16, color: "#0b1b49" }}>
+                Notification Preferences
+              </h3>
+              {settingsEditorLoading ? (
+                <div className="metric-note">Loading settings...</div>
+              ) : (
+                <>
+                  <div className="settings-toggle-row">
+                    <label htmlFor="email-alerts-toggle">Email alerts</label>
+                    <input
+                      id="email-alerts-toggle"
+                      type="checkbox"
+                      checked={editorSettings?.email_alerts_enabled ?? false}
+                      onChange={() =>
+                        void handleInstantToggleUpdate("email_alerts_enabled")
+                      }
+                      disabled={
+                        !editorSettings || settingsPendingField !== null
+                      }
+                    />
+                  </div>
+                  <div className="settings-toggle-row">
+                    <label htmlFor="sms-alerts-toggle">SMS alerts</label>
+                    <input
+                      id="sms-alerts-toggle"
+                      type="checkbox"
+                      checked={editorSettings?.sms_alerts_enabled ?? false}
+                      onChange={() =>
+                        void handleInstantToggleUpdate("sms_alerts_enabled")
+                      }
+                      disabled={
+                        !editorSettings || settingsPendingField !== null
+                      }
+                    />
+                  </div>
+                  {settingsPendingField !== null && (
+                    <div className="metric-note">Saving changes...</div>
+                  )}
+                  {(editorSettings?.warnings?.length ?? 0) > 0 && (
+                    <div className="alert">
+                      {editorSettings?.warnings.map((warning) => warning).join(" ")}
+                    </div>
+                  )}
+                </>
+              )}
+            </section>
+          )}
         </aside>
       </section>
     </div>
