@@ -89,6 +89,11 @@ export interface AdminLeadInventoryItem {
   source: string | null;
   created_at: string;
   download_count: number;
+  assigned_advisor_id: number | null;
+  assigned_advisor_name: string | null;
+  assigned_advisor_email: string | null;
+  purchase_id: number | null;
+  purchase_reference: string | null;
 }
 
 export interface PaginatedLeadInventory {
