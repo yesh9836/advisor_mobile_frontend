@@ -3,7 +3,11 @@ from datetime import timedelta
 import pytest
 
 from app.core.config import settings
-from app.core.security import create_access_token
+from app.core.security import create_access_token, hash_refresh_token
+from app.db.timezone import utcnow
+from app.models.auth_session import RefreshTokenSession
+from app.schemas.auth import UserLogin
+from app.services.auth_service import AuthService
 
 
 @pytest.mark.integration
@@ -243,6 +247,103 @@ def test_refresh_rotates_token_and_detects_reuse(client):
         cookies={settings.AUTH_ACCESS_COOKIE_NAME: old_access},
     )
     assert old_access_after_family_revoke.status_code == 401
+
+
+@pytest.mark.integration
+def test_refresh_consume_guard_allows_single_consumer(session_factory, user_factory):
+    email = "refresh.concurrent@example.com"
+    password = "RefreshConcurrent123!"
+    user = user_factory(email=email, password=password, name="Refresh Concurrent")
+
+    bootstrap_db = session_factory()
+    try:
+        issued = AuthService.login_and_issue_tokens(
+            bootstrap_db,
+            UserLogin(email=email, password=password),
+        )
+        source_session = (
+            bootstrap_db.query(RefreshTokenSession)
+            .filter(RefreshTokenSession.token_hash == hash_refresh_token(issued.refresh_token))
+            .first()
+        )
+        assert source_session is not None
+        source_session_id = source_session.id
+    finally:
+        bootstrap_db.close()
+
+    consumer_a = session_factory()
+    try:
+        first_consume = AuthService._consume_refresh_session(
+            consumer_a,
+            session_id=source_session_id,
+            consumed_at=utcnow(),
+            reason="rotated",
+        )
+        consumer_a.commit()
+    finally:
+        consumer_a.close()
+
+    consumer_b = session_factory()
+    try:
+        second_consume = AuthService._consume_refresh_session(
+            consumer_b,
+            session_id=source_session_id,
+            consumed_at=utcnow(),
+            reason="rotated",
+        )
+        consumer_b.commit()
+    finally:
+        consumer_b.close()
+
+    assert first_consume is True
+    assert second_consume is False
+
+    verify_db = session_factory()
+    try:
+        original_session = (
+            verify_db.query(RefreshTokenSession)
+            .filter(RefreshTokenSession.token_hash == hash_refresh_token(issued.refresh_token))
+            .first()
+        )
+        assert original_session
+        assert original_session.user_id == user.id
+        assert original_session.revoked_at is not None
+        assert original_session.revoked_reason == "rotated"
+    finally:
+        verify_db.close()
+
+
+@pytest.mark.integration
+def test_refresh_guard_failure_is_treated_as_reuse(client, monkeypatch):
+    payload = {
+        "email": "refresh.guard.failure@example.com",
+        "password": "RefreshGuardFailure123!",
+        "name": "Refresh Guard Failure",
+        "phone": "555-1212",
+    }
+    register = client.post("/api/v1/auth/register", json=payload)
+    assert register.status_code == 201, register.text
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": payload["email"], "password": payload["password"]},
+    )
+    assert login.status_code == 204, login.text
+    csrf = client.cookies.get(settings.AUTH_CSRF_COOKIE_NAME)
+    assert csrf
+
+    monkeypatch.setattr(
+        AuthService,
+        "_consume_refresh_session",
+        staticmethod(lambda *args, **kwargs: False),
+    )
+
+    refresh = client.post(
+        "/api/v1/auth/refresh",
+        headers={settings.AUTH_CSRF_HEADER_NAME: csrf},
+    )
+    assert refresh.status_code == 401
+    assert refresh.json()["detail"] == "Refresh token reuse detected"
 
 
 @pytest.mark.integration
