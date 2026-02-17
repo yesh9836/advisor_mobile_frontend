@@ -14,6 +14,7 @@ from app.models.purchase import LeadCreditLedger, LeadPackage, LeadPurchase
 from app.models.user import User
 from app.schemas.lead import LeadCreate, LeadOutcomeUpdateRequest
 from app.services.audit_service import AuditService
+from app.services.delivery_settings_service import DeliverySettingsService
 from app.services.metrics_service import MetricsService
 from app.utils.csv_generator import generate_leads_csv_stream
 
@@ -852,6 +853,15 @@ class LeadService:
         now = datetime.now(timezone.utc)
         seven_days_ago = now - timedelta(days=7)
         states = LeadService._get_user_allowed_states_for_new_leads(db, user.id)
+        email_alerts_enabled = False
+        sms_alerts_enabled = False
+        if user.role == "advisor":
+            delivery_settings = DeliverySettingsService.get_or_create_for_user(
+                db=db,
+                user_id=user.id,
+            )
+            email_alerts_enabled = bool(delivery_settings.email_alerts_enabled)
+            sms_alerts_enabled = bool(delivery_settings.sms_alerts_enabled)
 
         leads_delivered_7_days = 0
         appointments_set_7_days = 0
@@ -905,8 +915,8 @@ class LeadService:
             "cost_per_appointment": cost_per_appointment,
             "currency": currency,
             "settings": {
-                "email_alerts_enabled": True,
-                "sms_alerts_enabled": False,
+                "email_alerts_enabled": email_alerts_enabled,
+                "sms_alerts_enabled": sms_alerts_enabled,
                 "target_states": states,
                 "min_assets": None,
                 "daily_download_limit": None,
