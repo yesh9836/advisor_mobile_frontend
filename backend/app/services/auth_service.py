@@ -3,7 +3,7 @@ Authentication service containing business logic for user registration and authe
 """
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import NamedTuple, Optional
 from uuid import uuid4
 
@@ -187,6 +187,44 @@ class AuthService:
                 session.revoked_reason = reason
 
     @staticmethod
+    def _get_refresh_session_for_rotation(
+        db: Session,
+        *,
+        token_hash: str,
+    ) -> RefreshTokenSession | None:
+        return (
+            db.query(RefreshTokenSession)
+            .filter(RefreshTokenSession.token_hash == token_hash)
+            .with_for_update()
+            .first()
+        )
+
+    @staticmethod
+    def _consume_refresh_session(
+        db: Session,
+        *,
+        session_id: int,
+        consumed_at: datetime,
+        reason: str,
+    ) -> bool:
+        updated_rows = (
+            db.query(RefreshTokenSession)
+            .filter(
+                RefreshTokenSession.id == session_id,
+                RefreshTokenSession.revoked_at.is_(None),
+            )
+            .update(
+                {
+                    RefreshTokenSession.last_used_at: consumed_at,
+                    RefreshTokenSession.revoked_at: consumed_at,
+                    RefreshTokenSession.revoked_reason: reason,
+                },
+                synchronize_session=False,
+            )
+        )
+        return updated_rows == 1
+
+    @staticmethod
     def login_and_issue_tokens(
         db: Session,
         credentials: UserLogin,
@@ -241,10 +279,9 @@ class AuthService:
         token_hash = hash_refresh_token(refresh_token)
         now = utcnow()
         try:
-            session = (
-                db.query(RefreshTokenSession)
-                .filter(RefreshTokenSession.token_hash == token_hash)
-                .first()
+            session = AuthService._get_refresh_session_for_rotation(
+                db,
+                token_hash=token_hash,
             )
             if not session:
                 raise HTTPException(
@@ -273,17 +310,48 @@ class AuthService:
                 )
 
             if session.expires_at <= now:
-                session.revoked_at = now
-                session.revoked_reason = "expired"
+                consumed = AuthService._consume_refresh_session(
+                    db,
+                    session_id=session.id,
+                    consumed_at=now,
+                    reason="expired",
+                )
+                if not consumed:
+                    AuthService._revoke_family(
+                        db,
+                        user_id=session.user_id,
+                        family_id=session.family_id,
+                        reason="reused_token_detected",
+                    )
+                    db.commit()
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Refresh token reuse detected",
+                    )
                 db.commit()
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Refresh token expired",
                 )
 
-            session.last_used_at = now
-            session.revoked_at = now
-            session.revoked_reason = "rotated"
+            consumed = AuthService._consume_refresh_session(
+                db,
+                session_id=session.id,
+                consumed_at=now,
+                reason="rotated",
+            )
+            if not consumed:
+                AuthService._revoke_family(
+                    db,
+                    user_id=session.user_id,
+                    family_id=session.family_id,
+                    reason="reused_token_detected",
+                )
+                db.commit()
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Refresh token reuse detected",
+                )
 
             access_token = AuthService._build_access_token(
                 user,
