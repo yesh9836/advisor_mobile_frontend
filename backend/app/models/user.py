@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from .purchase import LeadCreditLedger, LeadPurchase
     from .subscription import Subscription
     from .lead import LeadDownload, LeadOutcome, LeadOwnership
+    from .delivery_settings import AdvisorDeliverySettings
     from .audit_log import AuditLog
     from .auth_session import RefreshTokenSession
 
@@ -134,6 +135,12 @@ class User(Base):
     lead_outcomes: Mapped[List["LeadOutcome"]] = relationship(
         "LeadOutcome",
         back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    delivery_settings: Mapped[Optional["AdvisorDeliverySettings"]] = relationship(
+        "AdvisorDeliverySettings",
+        back_populates="user",
+        uselist=False,
         cascade="all, delete-orphan",
     )
 
