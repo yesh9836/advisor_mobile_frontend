@@ -253,6 +253,74 @@ def test_download_delivered_csv_allows_redownload_after_credits_exhausted(
 
 
 @pytest.mark.integration
+def test_list_leads_hides_unsold_inventory_when_purchase_credits_exhausted(
+    client,
+    db,
+    user_factory,
+    lead_factory,
+    license_factory,
+    plan_factory,
+    purchase_factory,
+    auth_headers,
+):
+    advisor, plan, headers = _create_advisor_with_purchase_access(
+        user_factory,
+        license_factory,
+        plan_factory,
+        purchase_factory,
+        auth_headers,
+    )
+    purchase = (
+        db.query(LeadPurchase)
+        .filter(LeadPurchase.user_id == advisor.id, LeadPurchase.package_id == plan.id)
+        .order_by(LeadPurchase.id.desc())
+        .first()
+    )
+    assert purchase is not None
+    purchase.credits_total = 1
+    purchase.credits_remaining = 1
+    db.add(purchase)
+    db.commit()
+
+    delivered_lead = lead_factory(
+        state_code="CA",
+        mobile_phone="555-CA-LIST-EXH-0001",
+        first_name="Delivered",
+        last_name="Only",
+    )
+    first_download = client.post("/api/v1/leads/download", headers=headers)
+    assert first_download.status_code == 200, first_download.text
+
+    lead_factory(
+        state_code="CA",
+        mobile_phone="555-CA-LIST-EXH-0002",
+        first_name="Unsold",
+        last_name="Hidden",
+    )
+
+    all_response = client.get("/api/v1/leads/?delivery_status=all", headers=headers)
+    assert all_response.status_code == 200, all_response.text
+    all_payload = all_response.json()
+    assert all_payload["total"] == 1
+    assert len(all_payload["items"]) == 1
+    assert all_payload["items"][0]["id"] == delivered_lead.id
+
+    available_response = client.get("/api/v1/leads/?delivery_status=available", headers=headers)
+    assert available_response.status_code == 200, available_response.text
+    available_payload = available_response.json()
+    assert available_payload["total"] == 0
+    assert available_payload["items"] == []
+
+    delivered_response = client.get("/api/v1/leads/?delivery_status=delivered", headers=headers)
+    assert delivered_response.status_code == 200, delivered_response.text
+    delivered_payload = delivered_response.json()
+    assert delivered_payload["total"] == 1
+    assert len(delivered_payload["items"]) == 1
+    assert delivered_payload["items"][0]["id"] == delivered_lead.id
+    assert delivered_payload["items"][0]["is_downloaded"] is True
+
+
+@pytest.mark.integration
 def test_global_single_sale_blocks_second_advisor_from_same_lead(
     client,
     db,

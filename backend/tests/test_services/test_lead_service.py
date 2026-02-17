@@ -125,6 +125,42 @@ def test_get_available_leads_for_user_returns_empty_for_no_matching_state(
 
 
 @pytest.mark.unit
+def test_get_available_leads_for_user_hides_unsold_inventory_without_remaining_credits(
+    db,
+    user_factory,
+    plan_factory,
+    license_factory,
+    purchase_factory,
+    lead_factory,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LeadUnitNoCreditList123!",
+        email="lead.unit.no.credit.list@example.com",
+    )
+    plan = plan_factory(state_limit=1, stripe_price_id="price_list_no_credits")
+    license_factory(user_id=advisor.id, state="CA", status="verified")
+    purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=2,
+        credits_remaining=0,
+        status="completed",
+    )
+    lead_factory(state_code="CA", mobile_phone="555-NOCREDIT-9001")
+
+    data = LeadService.get_available_leads_for_user(
+        db=db,
+        user=advisor,
+        page=1,
+        size=20,
+        delivery_status="available",
+    )
+    assert data["items"] == []
+    assert data["total"] == 0
+
+
+@pytest.mark.unit
 def test_get_available_leads_for_user_applies_search_filter(
     db,
     user_factory,
