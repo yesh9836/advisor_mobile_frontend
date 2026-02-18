@@ -23,9 +23,7 @@ const formatMoney = (value: number, currency: string): string => {
   });
 };
 
-const normalizeFeatures = (
-  features: PurchasePackage["features"],
-): string[] => {
+const normalizeFeatures = (features: PurchasePackage["features"]): string[] => {
   if (Array.isArray(features)) {
     return features.map((item) => String(item));
   }
@@ -51,7 +49,10 @@ const toDisplayPlan = (packageOption: PurchasePackage): DisplayPlan => {
     key: `package-${packageOption.id}`,
     title: packageOption.name || "Package",
     subtitle: stateLabel,
-    priceLabel: formatMoney(packageOption.price_cents ?? 0, packageOption.currency ?? "USD"),
+    priceLabel: formatMoney(
+      packageOption.price_cents ?? 0,
+      packageOption.currency ?? "USD",
+    ),
     leadLine: `${leadsLabel} • instant inbox delivery`,
     features: normalizeFeatures(packageOption.features),
     packageId: packageOption.id,
@@ -127,9 +128,7 @@ const SubscriptionPage = () => {
     <div className="page">
       <div>
         <h1>Buy Leads</h1>
-        <p className="page-subtitle">
-          Choose a package. Checkout is powered by Stripe.
-        </p>
+        <p className="page-subtitle">Choose a package.</p>
       </div>
 
       {checkoutNotice && (
@@ -151,8 +150,8 @@ const SubscriptionPage = () => {
               No Packages Available
             </h2>
             <p style={{ margin: 0, color: "#475569" }}>
-              Package values from DB are unavailable. Showing 0 until packages are
-              configured.
+              Package values from DB are unavailable. Showing 0 until packages
+              are configured.
             </p>
             <div className="panel" style={{ background: "#fafcff" }}>
               <div
@@ -219,9 +218,7 @@ const SubscriptionPage = () => {
                 onClick={() => void handleCheckout(entry)}
                 disabled={checkoutKey === entry.key}
               >
-                {checkoutKey === entry.key
-                  ? "Opening Checkout..."
-                  : "Checkout"}
+                {checkoutKey === entry.key ? "Opening Checkout..." : "Checkout"}
               </button>
 
               <button type="button" className="btn btn-secondary">
