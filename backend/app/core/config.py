@@ -90,7 +90,6 @@ class Settings(BaseSettings):
     # One-time purchase rollout controls
     ONE_TIME_PURCHASES_ENABLED: bool = True
     PURCHASE_WEBHOOK_CREDIT_GRANT_ENABLED: bool = True
-    SUBSCRIPTION_COMPAT_ENDPOINTS_ENABLED: bool = True
     ONE_TIME_PURCHASES_ROLLOUT_USER_IDS: list[int] = []
     ONE_TIME_PURCHASES_ROLLOUT_EMAILS: list[str] = []
 
