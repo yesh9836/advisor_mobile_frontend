@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title=settings.APP_NAME,
-    description="Subscription-based platform for financial advisors to receive retirement planning leads",
+    description="One-time lead purchase platform for financial advisors to receive retirement planning leads",
     version="1.0.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
