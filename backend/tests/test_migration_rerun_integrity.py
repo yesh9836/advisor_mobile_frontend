@@ -323,3 +323,101 @@ def test_a7_delivery_settings_upgrade_is_rerunnable_and_backfills_advisors_with_
                     "VALUES (1, 1, 1, 1)"
                 )
             )
+
+
+@pytest.mark.unit
+def test_b8_drop_legacy_subscription_tables_upgrade_is_rerunnable():
+    migration = _load_migration_module("b8e1f2a3c4d5_drop_legacy_subscription_tables.py")
+    engine = sa.create_engine("sqlite+pysqlite:///:memory:")
+
+    metadata = sa.MetaData()
+    users = sa.Table(
+        "users",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+    )
+    subscription_plans = sa.Table(
+        "subscription_plans",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+        sa.Column("name", sa.String(120), nullable=False),
+        sa.Column("price_cents", sa.Integer, nullable=False),
+        sa.Column("currency", sa.String(3), nullable=False),
+        sa.Column("state_limit", sa.Integer, nullable=True),
+        sa.Column("daily_download_limit", sa.Integer, nullable=False),
+        sa.Column("features", sa.JSON, nullable=True),
+        sa.Column("created_at", sa.DateTime, nullable=False),
+        sa.Column("stripe_price_id", sa.String(100), nullable=False),
+    )
+    subscriptions = sa.Table(
+        "subscriptions",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+        sa.Column("user_id", sa.Integer, nullable=False),
+        sa.Column("plan_id", sa.Integer, nullable=False),
+        sa.Column("stripe_subscription_id", sa.String(100), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], onupdate="CASCADE", ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(["plan_id"], ["subscription_plans.id"], onupdate="CASCADE", ondelete="RESTRICT"),
+    )
+    lead_purchases = sa.Table(
+        "lead_purchases",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+        sa.Column("package_id", sa.Integer, nullable=False),
+        sa.ForeignKeyConstraint(
+            ["package_id"],
+            ["subscription_plans.id"],
+            name="fk_lead_purchases_package_id_subscription_plans",
+            onupdate="CASCADE",
+            ondelete="RESTRICT",
+        ),
+    )
+
+    with engine.begin() as connection:
+        connection.execute(sa.text("PRAGMA foreign_keys = ON"))
+        metadata.create_all(connection)
+        connection.execute(users.insert(), [{"id": 1}])
+        connection.execute(
+            subscription_plans.insert(),
+            [
+                {
+                    "id": 1,
+                    "name": "Starter",
+                    "price_cents": 10000,
+                    "currency": "USD",
+                    "state_limit": 1,
+                    "daily_download_limit": 10,
+                    "features": {"credits_total": 10},
+                    "created_at": datetime(2026, 2, 18, 12, 0, tzinfo=timezone.utc),
+                    "stripe_price_id": "price_starter_drop_legacy",
+                },
+            ],
+        )
+        connection.execute(
+            subscriptions.insert(),
+            [
+                {
+                    "id": 1,
+                    "user_id": 1,
+                    "plan_id": 1,
+                    "stripe_subscription_id": "sub_drop_legacy_1",
+                },
+            ],
+        )
+        connection.execute(
+            lead_purchases.insert(),
+            [
+                {
+                    "id": 1,
+                    "package_id": 1,
+                },
+            ],
+        )
+
+        _run_migration(migration, "upgrade", connection)
+        _run_migration(migration, "upgrade", connection)
+
+        inspector = sa.inspect(connection)
+        table_names = set(inspector.get_table_names())
+        assert "subscription_plans" not in table_names
+        assert "subscriptions" not in table_names

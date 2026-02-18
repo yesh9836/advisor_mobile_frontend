@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 import types
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Generator
 from uuid import uuid4
@@ -53,15 +53,6 @@ def _install_stripe_stub() -> None:
         def retrieve(*args, **kwargs):
             return {}
 
-    class _Subscription:
-        @staticmethod
-        def retrieve(*args, **kwargs):
-            raise NotImplementedError("stripe.Subscription.retrieve must be mocked in tests")
-
-        @staticmethod
-        def modify(*args, **kwargs):
-            raise NotImplementedError("stripe.Subscription.modify must be mocked in tests")
-
     class _PaymentMethod:
         @staticmethod
         def retrieve(*args, **kwargs):
@@ -79,7 +70,6 @@ def _install_stripe_stub() -> None:
     stripe.Webhook = _Webhook
     stripe.checkout = _Checkout
     stripe.Customer = _Customer
-    stripe.Subscription = _Subscription
     stripe.PaymentMethod = _PaymentMethod
     stripe.Invoice = _Invoice
     stripe.api_key = None
@@ -98,7 +88,6 @@ from app.models import Base
 from app.models.lead import Lead
 from app.models.license import License
 from app.models.purchase import LeadPackage, LeadPurchase
-from app.models.subscription import Subscription, SubscriptionPlan
 from app.models.user import User
 from app.services import audit_service, subscription_service
 
@@ -217,7 +206,7 @@ def user_factory(db: Session) -> Callable[..., User]:
 
 
 @pytest.fixture
-def plan_factory(db: Session) -> Callable[..., SubscriptionPlan]:
+def plan_factory(db: Session) -> Callable[..., LeadPackage]:
     def _create_plan(
         *,
         name: str = "Starter",
@@ -225,8 +214,8 @@ def plan_factory(db: Session) -> Callable[..., SubscriptionPlan]:
         state_limit: int | None = 1,
         daily_download_limit: int = 50,
         stripe_price_id: str | None = None,
-    ) -> SubscriptionPlan:
-        plan = SubscriptionPlan(
+    ) -> LeadPackage:
+        package = LeadPackage(
             name=f"{name}-{uuid4().hex[:6]}",
             price_cents=price_cents,
             currency="USD",
@@ -235,25 +224,10 @@ def plan_factory(db: Session) -> Callable[..., SubscriptionPlan]:
             features=["one", "two"],
             stripe_price_id=stripe_price_id or f"price_{uuid4().hex[:10]}",
         )
-        db.add(plan)
-        db.commit()
-        db.refresh(plan)
-
-        package = LeadPackage(
-            id=plan.id,
-            name=plan.name,
-            price_cents=plan.price_cents,
-            currency=plan.currency,
-            stripe_price_id=plan.stripe_price_id,
-            state_limit=plan.state_limit,
-            daily_download_limit=plan.daily_download_limit,
-            features=plan.features,
-            created_at=plan.created_at,
-        )
         db.add(package)
         db.commit()
-
-        return plan
+        db.refresh(package)
+        return package
 
     return _create_plan
 
@@ -282,33 +256,6 @@ def license_factory(db: Session) -> Callable[..., License]:
         return license_row
 
     return _create_license
-
-
-@pytest.fixture
-def subscription_factory(db: Session) -> Callable[..., Subscription]:
-    def _create_subscription(
-        *,
-        user_id: int,
-        plan_id: int,
-        status: str = "active",
-        period_end_days: int = 30,
-        stripe_subscription_id: str | None = None,
-    ) -> Subscription:
-        now = datetime.now(timezone.utc)
-        subscription_row = Subscription(
-            user_id=user_id,
-            plan_id=plan_id,
-            stripe_subscription_id=stripe_subscription_id or f"sub_{uuid4().hex[:12]}",
-            status=status,
-            current_period_start=now - timedelta(days=1),
-            current_period_end=now + timedelta(days=period_end_days),
-        )
-        db.add(subscription_row)
-        db.commit()
-        db.refresh(subscription_row)
-        return subscription_row
-
-    return _create_subscription
 
 
 @pytest.fixture

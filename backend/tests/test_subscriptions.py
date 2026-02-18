@@ -6,7 +6,6 @@ import stripe
 from app.models.audit_log import AuditLog
 from app.models.lead import LeadOwnership
 from app.models.purchase import LeadCreditLedger, LeadPurchase
-from app.models.subscription import Subscription
 from app.services.subscription_service import StripeWebhookProcessingError
 
 
@@ -261,48 +260,6 @@ def test_checkout_failure_emits_metric(
     )
     assert response.status_code == 502
     assert any(name == "purchase_checkout_failed_total" for name, _, _ in metric_calls)
-
-
-@pytest.mark.integration
-def test_checkout_allows_purchase_with_existing_trialing_subscription(
-    client,
-    user_factory,
-    license_factory,
-    plan_factory,
-    subscription_factory,
-    auth_headers,
-    monkeypatch,
-):
-    advisor, headers = _create_advisor_with_verified_license(
-        user_factory,
-        license_factory,
-        auth_headers,
-    )
-    existing_plan = plan_factory(stripe_price_id="price_existing_trialing_plan")
-    target_plan = plan_factory(stripe_price_id="price_target_trialing_plan")
-    _ = subscription_factory(
-        user_id=advisor.id,
-        plan_id=existing_plan.id,
-        status="trialing",
-        stripe_subscription_id="sub_trialing_existing",
-    )
-
-    monkeypatch.setattr(
-        "app.services.payment_service.PaymentService.create_or_get_stripe_customer",
-        lambda db, user: "cus_trialing",
-    )
-    monkeypatch.setattr(
-        "app.services.subscription_service.stripe.checkout.Session.create",
-        lambda **kwargs: {"id": "cs_trialing_ok", "url": "https://checkout.stripe.test/trialing-ok"},
-    )
-
-    response = client.post(
-        "/api/v1/purchases/checkout",
-        headers=headers,
-        json={"package_id": target_plan.id},
-    )
-    assert response.status_code == 200, response.text
-    assert response.json()["session_id"] == "cs_trialing_ok"
 
 
 @pytest.mark.integration
@@ -1237,35 +1194,25 @@ def test_webhook_checkout_completed_missing_plan_returns_500(
 
 
 @pytest.mark.integration
-def test_webhook_invoice_payment_succeeded_stripe_error_returns_500(
+def test_webhook_subscription_lifecycle_event_is_ignored(
     client,
-    db,
     user_factory,
-    plan_factory,
-    subscription_factory,
     monkeypatch,
 ):
-    advisor = user_factory(
+    _advisor = user_factory(
         role="advisor",
-        password="AdvisorWebhookInvoice123!",
-        email="advisor.webhook.invoice@example.com",
-        name="Webhook Invoice Advisor",
-    )
-    plan = plan_factory(stripe_price_id="price_webhook_invoice")
-    sub = subscription_factory(
-        user_id=advisor.id,
-        plan_id=plan.id,
-        status="past_due",
-        stripe_subscription_id="sub_invoice_succeeded_error",
+        password="AdvisorWebhookIgnored123!",
+        email="advisor.webhook.ignored@example.com",
+        name="Webhook Ignored Advisor",
     )
 
     event = {
-        "id": "evt_invoice_payment_succeeded_error",
-        "type": "invoice.payment_succeeded",
+        "id": "evt_subscription_updated_ignored",
+        "type": "customer.subscription.updated",
         "data": {
             "object": {
-                "id": "in_test_invoice",
-                "subscription": "sub_invoice_succeeded_error",
+                "id": "sub_ignored_123",
+                "status": "active",
             }
         },
     }
@@ -1275,30 +1222,13 @@ def test_webhook_invoice_payment_succeeded_stripe_error_returns_500(
         lambda payload, sig_header, secret: event,
     )
 
-    def _raise_transient_retrieve_error(stripe_subscription_id):
-        raise stripe.error.StripeError("transient stripe api error")
-
-    monkeypatch.setattr(
-        "app.services.subscription_service.stripe.Subscription.retrieve",
-        _raise_transient_retrieve_error,
-    )
-
     response = client.post(
         "/api/v1/webhooks/stripe",
         headers={"stripe-signature": "sig_test"},
         json={"mock": "payload"},
     )
-    assert response.status_code == 500
-    assert response.json()["detail"] == "Webhook processing failed"
-
-    db.expire_all()
-    refreshed = (
-        db.query(Subscription)
-        .filter(Subscription.stripe_subscription_id == sub.stripe_subscription_id)
-        .first()
-    )
-    assert refreshed is not None
-    assert refreshed.status == "past_due"
+    assert response.status_code == 200, response.text
+    assert response.json() == {"status": "ok"}
 
 
 @pytest.mark.integration
