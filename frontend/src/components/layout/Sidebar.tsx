@@ -1,6 +1,7 @@
-import type { ReactNode } from "react";
-import { NavLink } from "react-router-dom";
+import { useEffect, useState, type ReactNode } from "react";
+import { NavLink, useNavigate } from "react-router-dom";
 
+import { getMyDeliverySettings } from "@/api/delivery-settings";
 import { useAuth } from "@/context/AuthContext";
 
 interface SidebarProps {
@@ -14,6 +15,13 @@ interface SidebarItem {
   icon: ReactNode;
   end?: boolean;
 }
+
+interface DeliverySettingsChangeDetail {
+  email_alerts_enabled: boolean;
+  sms_alerts_enabled: boolean;
+}
+
+const DELIVERY_SETTINGS_CHANGED_EVENT = "delivery-settings-changed";
 
 const DashboardIcon = () => (
   <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -95,7 +103,10 @@ const AnalyticsIcon = () => (
 
 const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const isAdmin = user?.role === "admin";
+  const [showConfigureNotificationsCta, setShowConfigureNotificationsCta] =
+    useState(false);
 
   const advisorItems: SidebarItem[] = [
     { to: "/dashboard", label: "Dashboard", icon: <DashboardIcon />, end: true },
@@ -117,6 +128,62 @@ const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
 
   const items = isAdmin ? adminItems : advisorItems;
 
+  useEffect(() => {
+    if (isAdmin) {
+      setShowConfigureNotificationsCta(false);
+      return;
+    }
+
+    let isMounted = true;
+
+    const handleDeliverySettingsChanged = (event: Event) => {
+      const customEvent = event as CustomEvent<DeliverySettingsChangeDetail>;
+      const detail = customEvent.detail;
+      if (!detail) {
+        return;
+      }
+      const shouldShowCta =
+        !detail.email_alerts_enabled && !detail.sms_alerts_enabled;
+      setShowConfigureNotificationsCta(shouldShowCta);
+    };
+
+    window.addEventListener(
+      DELIVERY_SETTINGS_CHANGED_EVENT,
+      handleDeliverySettingsChanged,
+    );
+
+    const loadDeliverySettings = async () => {
+      try {
+        const settings = await getMyDeliverySettings();
+        if (!isMounted) {
+          return;
+        }
+        const shouldShowCta =
+          !settings.email_alerts_enabled && !settings.sms_alerts_enabled;
+        setShowConfigureNotificationsCta(shouldShowCta);
+      } catch {
+        if (isMounted) {
+          setShowConfigureNotificationsCta(false);
+        }
+      }
+    };
+
+    void loadDeliverySettings();
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener(
+        DELIVERY_SETTINGS_CHANGED_EVENT,
+        handleDeliverySettingsChanged,
+      );
+    };
+  }, [isAdmin]);
+
+  const handleConfigureNotifications = () => {
+    onClose();
+    navigate("/dashboard?openDeliverySettings=1");
+  };
+
   return (
     <aside className={`app-sidebar ${isOpen ? "open" : ""}`} aria-label="Sidebar navigation">
       <div className="nav-panel">
@@ -134,12 +201,14 @@ const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
         ))}
       </div>
 
-      {!isAdmin && (
+      {!isAdmin && showConfigureNotificationsCta && (
         <section className="next-step">
           <p className="next-step-kicker">NEXT STEP</p>
           <h3>Enable live delivery</h3>
           <p>Turn on SMS + Email notifications so new leads arrive instantly.</p>
-          <button type="button">Configure Notifications</button>
+          <button type="button" onClick={handleConfigureNotifications}>
+            Configure Notifications
+          </button>
         </section>
       )}
     </aside>
