@@ -10,7 +10,6 @@ from sqlalchemy import and_, func
 from app.core.config import settings
 from app.models.license import License
 from app.models.purchase import LeadCreditLedger, LeadPackage, LeadPurchase
-from app.models.subscription import Subscription, SubscriptionPlan
 from app.models.user import User
 from app.services.audit_service import AuditService
 from app.services.lead_service import LeadService
@@ -33,7 +32,7 @@ def _to_datetime(timestamp: Optional[int]) -> Optional[datetime]:
 
 
 class SubscriptionService:
-    """Service class for subscription management and Stripe webhooks."""
+    """Service class for one-time purchases and Stripe webhooks."""
 
     @staticmethod
     def _is_purchase_checkout_enabled_for_user(user: User) -> bool:
@@ -56,7 +55,7 @@ class SubscriptionService:
     @staticmethod
     def _resolve_package_credits(package: LeadPackage) -> int:
         """
-        Resolve package credits from plan metadata.
+        Resolve package credits from package metadata.
 
         For first release migration compatibility, we treat `daily_download_limit`
         as the default package credit amount when explicit feature metadata is absent.
@@ -91,11 +90,6 @@ class SubscriptionService:
     def get_available_packages(db: Session) -> List[LeadPackage]:
         """Return all available one-time lead packages."""
         return db.query(LeadPackage).order_by(LeadPackage.price_cents.asc()).all()
-
-    @staticmethod
-    def get_available_plans(db: Session) -> List[LeadPackage]:
-        """Backward-compatible alias for package listing."""
-        return SubscriptionService.get_available_packages(db=db)
 
     @staticmethod
     def create_purchase_checkout_session(db: Session, user: User, package_id: int) -> Dict[str, str]:
@@ -207,15 +201,6 @@ class SubscriptionService:
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="Stripe checkout session creation failed",
             )
-
-    @staticmethod
-    def create_checkout_session(db: Session, user: User, plan_id: int) -> Dict[str, str]:
-        """Backward-compatible wrapper for package checkout creation."""
-        return SubscriptionService.create_purchase_checkout_session(
-            db=db,
-            user=user,
-            package_id=plan_id,
-        )
 
     @staticmethod
     def get_billing_summary(db: Session, user: User) -> Dict[str, Any]:
@@ -698,7 +683,7 @@ class SubscriptionService:
     @staticmethod
     def handle_webhook_event(db: Session, event: Dict[str, Any]) -> None:
         """
-        Handle Stripe webhook events for subscription lifecycle.
+        Handle Stripe webhook events for one-time purchase lifecycle.
         """
         PaymentService._init_stripe()
 
@@ -710,83 +695,23 @@ class SubscriptionService:
 
         if event_type in {"checkout.session.completed", "checkout.session.async_payment_succeeded"}:
             session = data_object
-            stripe_subscription_id = session.get("subscription")
-
-            # Backward-compatible handling for legacy subscription checkouts.
-            if stripe_subscription_id:
-                try:
-                    stripe_subscription = stripe.Subscription.retrieve(
-                        stripe_subscription_id,
-                        expand=["items.data.price", "customer"],
-                    )
-                except stripe.error.StripeError as e:
-                    message = (
-                        f"Failed to retrieve Stripe subscription "
-                        f"for stripe_subscription_id={stripe_subscription_id}: {e}"
-                    )
-                    logger.error(message)
-                    raise StripeWebhookProcessingError(message) from e
-
-                metadata = stripe_subscription.get("metadata", {}) or {}
-                user_id = (
-                    metadata.get("user_id")
-                    or session.get("metadata", {}).get("user_id")
-                    or session.get("client_reference_id")
+            mode = str(session.get("mode") or "").lower()
+            if mode == "subscription" or session.get("subscription"):
+                logger.info(
+                    "Ignoring retired subscription checkout event: type=%s id=%s",
+                    event_type,
+                    event_id,
                 )
-                plan_id = metadata.get("plan_id") or session.get("metadata", {}).get("plan_id")
-
-                if not user_id or not plan_id:
-                    message = (
-                        "Missing user_id or plan_id metadata on subscription "
-                        f"stripe_subscription_id={stripe_subscription_id}"
-                    )
-                    logger.error(message)
-                    raise StripeWebhookProcessingError(message)
-
-                existing = (
-                    db.query(Subscription)
-                    .filter(Subscription.stripe_subscription_id == stripe_subscription_id)
-                    .first()
+                return
+            try:
+                SubscriptionService._create_or_update_purchase_from_checkout_session(
+                    db=db,
+                    checkout_session=session,
+                    stripe_event_id=event_id,
                 )
-                if existing:
-                    logger.info(
-                        "Subscription already exists for stripe_subscription_id=%s",
-                        stripe_subscription_id,
-                    )
-                    return
-
-                plan = db.query(SubscriptionPlan).filter(SubscriptionPlan.id == int(plan_id)).first()
-                if not plan:
-                    message = f"Plan not found for plan_id={plan_id}"
-                    logger.error(message)
-                    raise StripeWebhookProcessingError(message)
-
-                try:
-                    subscription = Subscription(
-                        user_id=int(user_id),
-                        plan_id=int(plan_id),
-                        stripe_subscription_id=stripe_subscription_id,
-                        status=stripe_subscription.get("status", "active"),
-                        current_period_start=_to_datetime(stripe_subscription.get("current_period_start")),
-                        current_period_end=_to_datetime(stripe_subscription.get("current_period_end")),
-                    )
-                    db.add(subscription)
-                    db.commit()
-                    logger.info("Subscription created: stripe_subscription_id=%s", stripe_subscription_id)
-                except Exception as e:
-                    db.rollback()
-                    logger.error("Failed to create subscription record: %s", e)
-                    raise e
-            else:
-                try:
-                    SubscriptionService._create_or_update_purchase_from_checkout_session(
-                        db=db,
-                        checkout_session=session,
-                        stripe_event_id=event_id,
-                    )
-                except Exception:
-                    db.rollback()
-                    raise
+            except Exception:
+                db.rollback()
+                raise
 
         elif event_type == "checkout.session.async_payment_failed":
             session = data_object
@@ -971,180 +896,17 @@ class SubscriptionService:
                     },
                 )
 
-        elif event_type == "customer.subscription.updated":
-            stripe_subscription_id = data_object.get("id")
-            if not stripe_subscription_id:
-                logger.warning("customer.subscription.updated missing subscription ID")
-                return
-
-            subscription = (
-                db.query(Subscription)
-                .filter(Subscription.stripe_subscription_id == stripe_subscription_id)
-                .first()
+        elif event_type in {
+            "customer.subscription.updated",
+            "customer.subscription.deleted",
+            "invoice.payment_succeeded",
+            "invoice.payment_failed",
+        }:
+            logger.info(
+                "Ignoring retired Stripe subscription lifecycle event: type=%s id=%s",
+                event_type,
+                event_id,
             )
-            if not subscription:
-                logger.warning(f"No local subscription found for {stripe_subscription_id}")
-                return
-
-            try:
-                subscription.status = data_object.get("status", subscription.status)
-                subscription.current_period_start = _to_datetime(data_object.get("current_period_start"))
-                subscription.current_period_end = _to_datetime(data_object.get("current_period_end"))
-
-                db.add(subscription)
-                db.commit()
-
-                logger.info(f"Subscription updated: stripe_subscription_id={stripe_subscription_id}")
-
-            except Exception as e:
-                db.rollback()
-                logger.error(f"Failed to update subscription: {e}")
-                raise e
-
-        elif event_type == "customer.subscription.deleted":
-            stripe_subscription_id = data_object.get("id")
-            if not stripe_subscription_id:
-                logger.warning("customer.subscription.deleted missing subscription ID")
-                return
-
-            subscription = (
-                db.query(Subscription)
-                .filter(Subscription.stripe_subscription_id == stripe_subscription_id)
-                .first()
-            )
-            if not subscription:
-                logger.warning(f"No local subscription found for {stripe_subscription_id}")
-                return
-
-            try:
-                subscription.status = "canceled"
-                subscription.current_period_end = _to_datetime(data_object.get("current_period_end"))
-
-                db.add(subscription)
-                db.commit()
-
-                logger.info(f"Subscription canceled: stripe_subscription_id={stripe_subscription_id}")
-
-            except Exception as e:
-                db.rollback()
-                logger.error(f"Failed to cancel subscription: {e}")
-                raise e
-
-        elif event_type == "invoice.payment_succeeded":
-            stripe_subscription_id = data_object.get("subscription")
-            if not stripe_subscription_id:
-                logger.warning("invoice.payment_succeeded missing subscription ID")
-                return
-
-            subscription = (
-                db.query(Subscription)
-                .filter(Subscription.stripe_subscription_id == stripe_subscription_id)
-                .first()
-            )
-            if not subscription:
-                logger.warning(f"No local subscription found for {stripe_subscription_id}")
-                return
-
-            try:
-                stripe_subscription = stripe.Subscription.retrieve(stripe_subscription_id)
-            except stripe.error.StripeError as e:
-                message = (
-                    "Failed to retrieve Stripe subscription during invoice.payment_succeeded "
-                    f"for stripe_subscription_id={stripe_subscription_id}: {e}"
-                )
-                logger.error(message)
-                raise StripeWebhookProcessingError(message) from e
-
-            try:
-                subscription.status = "active"
-                subscription.current_period_end = _to_datetime(stripe_subscription.get("current_period_end"))
-
-                db.add(subscription)
-                db.commit()
-
-                logger.info(f"Payment succeeded: stripe_subscription_id={stripe_subscription_id}")
-
-            except Exception as e:
-                db.rollback()
-                logger.error(f"Failed to update subscription after payment success: {e}")
-                raise e
-
-        elif event_type == "invoice.payment_failed":
-            stripe_subscription_id = data_object.get("subscription")
-            if not stripe_subscription_id:
-                logger.warning("invoice.payment_failed missing subscription ID")
-                return
-
-            subscription = (
-                db.query(Subscription)
-                .filter(Subscription.stripe_subscription_id == stripe_subscription_id)
-                .first()
-            )
-            if not subscription:
-                logger.warning(f"No local subscription found for {stripe_subscription_id}")
-                return
-
-            try:
-                subscription.status = "past_due"
-
-                db.add(subscription)
-                db.commit()
-
-                logger.info(f"Payment failed: stripe_subscription_id={stripe_subscription_id}")
-
-            except Exception as e:
-                db.rollback()
-                logger.error(f"Failed to update subscription after payment failure: {e}")
-                raise e
 
         else:
             logger.info(f"Unhandled Stripe event type: {event_type}")
-
-    @staticmethod
-    def cancel_subscription(db: Session, user: User) -> Subscription:
-        """
-        Cancel user's subscription at period end in Stripe and update local record.
-        """
-        PaymentService._init_stripe()
-
-        subscription = (
-            db.query(Subscription)
-            .filter(Subscription.user_id == user.id)
-            .order_by(Subscription.created_at.desc())
-            .first()
-        )
-        if not subscription:
-            raise HTTPException(status_code=404, detail="No subscription found")
-
-        try:
-            stripe_subscription = stripe.Subscription.modify(
-                subscription.stripe_subscription_id,
-                cancel_at_period_end=True,
-            )
-        except stripe.error.StripeError as e:
-            logger.error(f"Stripe subscription cancel failed: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Stripe cancellation failed",
-            )
-
-        try:
-            subscription.status = stripe_subscription.get("status", subscription.status)
-            subscription.current_period_end = _to_datetime(stripe_subscription.get("current_period_end"))
-            db.add(subscription)
-            db.commit()
-            db.refresh(subscription)
-
-            logger.info(
-                f"Subscription marked for cancel at period end: "
-                f"stripe_subscription_id={subscription.stripe_subscription_id}"
-            )
-            return subscription
-
-        except Exception as e:
-            db.rollback()
-            logger.error(f"Failed to update local subscription after cancel: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to cancel subscription locally",
-            )
