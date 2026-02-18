@@ -6,13 +6,13 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_active_user, get_db
 from app.models.user import User
 from app.schemas.purchase import (
+    BillingSummaryResponse,
     PaginatedPurchaseOrders,
     PurchaseBalanceResponse,
     PurchaseCheckoutResponse,
     PurchaseHistoryResponse,
     PurchasePackageResponse,
 )
-from app.schemas.subscription import BillingSummaryResponse
 from app.services.subscription_service import SubscriptionService
 
 router = APIRouter(prefix="/purchases", tags=["purchases"])
