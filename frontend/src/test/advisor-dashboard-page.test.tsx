@@ -42,9 +42,9 @@ const summaryWithSettings = (emailEnabled: boolean, smsEnabled: boolean) => ({
   },
 });
 
-const renderRoute = () => {
+const renderRoute = (route = "/dashboard") => {
   render(
-    <MemoryRouter initialEntries={["/dashboard"]}>
+    <MemoryRouter initialEntries={[route]}>
       <Routes>
         <Route path="/dashboard" element={<DashboardPage />} />
       </Routes>
@@ -149,5 +149,45 @@ describe("Advisor Dashboard delivery settings editor", () => {
     expect(screen.getByText("Update failed")).toBeInTheDocument();
     expect(screen.getByTestId("delivery-email-status")).toHaveTextContent("Off");
     expect(getLeadDashboardSummaryMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens settings editor automatically when redirected with openDeliverySettings query", async () => {
+    getLeadDashboardSummaryMock.mockResolvedValue(summaryWithSettings(false, false));
+    getMyDeliverySettingsMock.mockResolvedValue({
+      email_alerts_enabled: false,
+      sms_alerts_enabled: false,
+      version: 3,
+      updated_at: "2026-02-18T16:30:00Z",
+      warnings: [],
+    });
+    updateMyDeliverySettingsMock.mockResolvedValue({
+      email_alerts_enabled: false,
+      sms_alerts_enabled: false,
+      version: 3,
+      updated_at: "2026-02-18T16:30:00Z",
+      warnings: [],
+    });
+
+    renderRoute("/dashboard?openDeliverySettings=1");
+
+    const closeSettingsButton = await screen.findByRole("button", {
+      name: "Close Settings",
+    });
+    const emailToggle = await screen.findByLabelText("Email alerts");
+    const smsToggle = await screen.findByLabelText("SMS alerts");
+    expect(emailToggle).not.toBeChecked();
+    expect(smsToggle).not.toBeChecked();
+    expect(getMyDeliverySettingsMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(closeSettingsButton);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Edit Settings" }),
+      ).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(screen.queryByLabelText("Email alerts")).not.toBeInTheDocument();
+    });
   });
 });
