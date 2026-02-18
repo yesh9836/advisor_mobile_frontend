@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import {
   getMyDeliverySettings,
@@ -39,6 +39,13 @@ interface SettingsFeedback {
   kind: "success" | "error";
   message: string;
 }
+
+interface DeliverySettingsChangeDetail {
+  email_alerts_enabled: boolean;
+  sms_alerts_enabled: boolean;
+}
+
+const DELIVERY_SETTINGS_CHANGED_EVENT = "delivery-settings-changed";
 
 const toDisplayStage = (
   status: LeadOutcomeStatus | null | undefined,
@@ -136,8 +143,20 @@ const toFallbackEditorState = (
   };
 };
 
+const emitDeliverySettingsChanged = (
+  detail: DeliverySettingsChangeDetail,
+) => {
+  window.dispatchEvent(
+    new CustomEvent<DeliverySettingsChangeDetail>(
+      DELIVERY_SETTINGS_CHANGED_EVENT,
+      { detail },
+    ),
+  );
+};
+
 const DashboardPage = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [recentLeads, setRecentLeads] = useState<RecentLeadItem[]>([]);
   const [summary, setSummary] = useState<LeadDashboardSummary | null>(null);
@@ -152,6 +171,7 @@ const DashboardPage = () => {
     useState<SettingsFeedback | null>(null);
   const [editorSettings, setEditorSettings] =
     useState<DeliverySettingsEditorState | null>(null);
+  const [hasAutoOpenedFromQuery, setHasAutoOpenedFromQuery] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -180,10 +200,11 @@ const DashboardPage = () => {
     void load();
   }, []);
 
-  const handleOpenSettingsEditor = async () => {
+  const handleOpenSettingsEditor = useCallback(async () => {
     setIsSettingsEditorOpen(true);
     setSettingsFeedback(null);
     setSettingsEditorLoading(true);
+    setEditorSettings(null);
 
     try {
       const response = await getMyDeliverySettings();
@@ -200,7 +221,16 @@ const DashboardPage = () => {
     } finally {
       setSettingsEditorLoading(false);
     }
-  };
+  }, [summary]);
+
+  const clearOpenSettingsQuery = useCallback(() => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (!nextParams.has("openDeliverySettings")) {
+      return;
+    }
+    nextParams.delete("openDeliverySettings");
+    setSearchParams(nextParams, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const handleCloseSettingsEditor = () => {
     if (settingsPendingField !== null) {
@@ -208,7 +238,36 @@ const DashboardPage = () => {
     }
     setIsSettingsEditorOpen(false);
     setSettingsFeedback(null);
+    clearOpenSettingsQuery();
   };
+
+  const shouldOpenSettingsFromQuery =
+    searchParams.get("openDeliverySettings") === "1";
+
+  useEffect(() => {
+    if (
+      !shouldOpenSettingsFromQuery
+      || isSettingsEditorOpen
+      || hasAutoOpenedFromQuery
+    ) {
+      return;
+    }
+
+    setHasAutoOpenedFromQuery(true);
+
+    const openFromQuery = async () => {
+      await handleOpenSettingsEditor();
+      clearOpenSettingsQuery();
+    };
+
+    void openFromQuery();
+  }, [
+    clearOpenSettingsQuery,
+    hasAutoOpenedFromQuery,
+    handleOpenSettingsEditor,
+    isSettingsEditorOpen,
+    shouldOpenSettingsFromQuery,
+  ]);
 
   const handleInstantToggleUpdate = async (
     field: "email_alerts_enabled" | "sms_alerts_enabled",
@@ -222,9 +281,14 @@ const DashboardPage = () => {
     const pendingField = field === "email_alerts_enabled" ? "email" : "sms";
     const label = field === "email_alerts_enabled" ? "Email alerts" : "SMS alerts";
 
-    setEditorSettings({
+    const optimisticState = {
       ...previous,
       [field]: nextValue,
+    };
+    setEditorSettings(optimisticState);
+    emitDeliverySettingsChanged({
+      email_alerts_enabled: optimisticState.email_alerts_enabled,
+      sms_alerts_enabled: optimisticState.sms_alerts_enabled,
     });
     setSettingsFeedback(null);
     setSettingsPendingField(pendingField);
@@ -243,6 +307,10 @@ const DashboardPage = () => {
         ? updatedState.email_alerts_enabled
         : updatedState.sms_alerts_enabled;
       setEditorSettings(updatedState);
+      emitDeliverySettingsChanged({
+        email_alerts_enabled: updatedState.email_alerts_enabled,
+        sms_alerts_enabled: updatedState.sms_alerts_enabled,
+      });
       setSettingsFeedback({
         kind: "success",
         message: `${label} ${updatedValue ? "enabled" : "disabled"}.`,
@@ -267,6 +335,10 @@ const DashboardPage = () => {
       }
     } catch (updateError) {
       setEditorSettings(previous);
+      emitDeliverySettingsChanged({
+        email_alerts_enabled: previous.email_alerts_enabled,
+        sms_alerts_enabled: previous.sms_alerts_enabled,
+      });
       setSettingsFeedback({
         kind: "error",
         message: getApiErrorMessage(
