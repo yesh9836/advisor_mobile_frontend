@@ -1,6 +1,7 @@
 import apiClient from "@/api/client";
 import type { BillingSummary } from "@/types/subscription";
 import type {
+  FirstPurchaseAddonOfferEligibility,
   PaginatedPurchaseOrders,
   PurchaseBalance,
   PurchaseCheckoutSession,
@@ -52,5 +53,19 @@ export const getPurchaseOrders = async (
   const response = await apiClient.get<PaginatedPurchaseOrders>("/purchases/orders", {
     params,
   });
+  return response.data;
+};
+
+export const getFirstPurchaseOfferEligibility = async (
+  checkoutSessionId: string,
+): Promise<FirstPurchaseAddonOfferEligibility> => {
+  const response = await apiClient.get<FirstPurchaseAddonOfferEligibility>(
+    "/purchases/first-purchase-offer",
+    {
+      params: {
+        checkout_session_id: checkoutSessionId,
+      },
+    },
+  );
   return response.data;
 };

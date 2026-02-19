@@ -18,6 +18,10 @@ import type {
 } from "@/types/admin";
 import type { Lead } from "@/types/lead";
 import type {
+  FirstPurchaseAddonOfferConfig,
+  FirstPurchaseAddonOfferUpdatePayload,
+} from "@/types/purchase";
+import type {
   AdminLicenseDecisionRow,
   License,
   LicenseWithUser,
@@ -86,6 +90,23 @@ const parseFilename = (
 
 export const getDashboardStats = async (): Promise<DashboardStats> => {
   const response = await apiClient.get<DashboardStats>("/admin/dashboard");
+  return response.data;
+};
+
+export const getFirstPurchaseOfferConfig = async (): Promise<FirstPurchaseAddonOfferConfig> => {
+  const response = await apiClient.get<FirstPurchaseAddonOfferConfig>(
+    "/admin/first-purchase-offer",
+  );
+  return response.data;
+};
+
+export const updateFirstPurchaseOfferConfig = async (
+  payload: FirstPurchaseAddonOfferUpdatePayload,
+): Promise<FirstPurchaseAddonOfferConfig> => {
+  const response = await apiClient.put<FirstPurchaseAddonOfferConfig>(
+    "/admin/first-purchase-offer",
+    payload,
+  );
   return response.data;
 };
 
