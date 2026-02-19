@@ -364,6 +364,49 @@ class StripeWebhookInbox(Base):
     )
 
 
+class StripeReconciliationCheckpoint(Base):
+    """Durable checkpoint for Stripe reconciliation backfill scans."""
+
+    __tablename__ = "stripe_reconciliation_checkpoints"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+    )
+    source: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    last_event_created: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+        index=True,
+    )
+    last_event_id: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        nullable=False,
+        default=utcnow,
+        server_default=text("CURRENT_TIMESTAMP"),
+        index=True,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        nullable=False,
+        default=utcnow,
+        onupdate=utcnow,
+        server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"),
+    )
+
+
 class FirstPurchaseAddonOffer(Base):
     """Singleton-style config for first completed purchase upsell behavior."""
 
