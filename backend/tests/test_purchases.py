@@ -23,6 +23,27 @@ def _create_advisor_with_verified_license(user_factory, license_factory, auth_he
     return advisor, headers
 
 
+def _enable_first_purchase_offer(client, admin_headers, trigger_package_id: int) -> int:
+    update_response = client.put(
+        "/api/v1/admin/first-purchase-offer",
+        headers=admin_headers,
+        json={
+            "is_enabled": True,
+            "trigger_package_id": trigger_package_id,
+            "offer_credits_total": 5,
+            "offer_price_cents": 6400,
+            "offer_currency": "USD",
+            "headline": "First order bonus",
+            "message": "Upgrade and receive more credits.",
+            "cta_label": "Upgrade now",
+        },
+    )
+    assert update_response.status_code == 200, update_response.text
+    offer_package_id = update_response.json().get("offer_package_id")
+    assert offer_package_id is not None
+    return int(offer_package_id)
+
+
 @pytest.mark.integration
 def test_purchase_packages_return_sorted_by_price(client, plan_factory):
     plan_factory(name="PackageA", price_cents=10000, stripe_price_id="price_package_a")
@@ -342,6 +363,159 @@ def test_first_purchase_offer_eligibility_depends_on_first_completed_purchase(
     )
     assert after_second_purchase.status_code == 200, after_second_purchase.text
     assert after_second_purchase.json() == {"eligible": False, "offer": None}
+
+
+@pytest.mark.integration
+def test_purchase_checkout_rejects_direct_managed_offer_when_not_eligible(
+    client,
+    user_factory,
+    license_factory,
+    auth_headers,
+    plan_factory,
+):
+    admin = user_factory(
+        role="admin",
+        password="AdminOfferCheckout123!",
+        email=f"admin.offer.checkout.{uuid4().hex[:8]}@example.com",
+        name="Offer Admin Checkout",
+    )
+    admin_headers = auth_headers(admin.email, "AdminOfferCheckout123!")
+
+    advisor, advisor_headers = _create_advisor_with_verified_license(
+        user_factory,
+        license_factory,
+        auth_headers,
+    )
+    _ = advisor
+
+    trigger_package = plan_factory(
+        name="OfferCheckoutTrigger",
+        price_cents=11000,
+        daily_download_limit=10,
+    )
+    offer_package_id = _enable_first_purchase_offer(client, admin_headers, trigger_package.id)
+
+    checkout_response = client.post(
+        "/api/v1/purchases/checkout",
+        headers=advisor_headers,
+        json={"package_id": offer_package_id},
+    )
+    assert checkout_response.status_code == 403, checkout_response.text
+    assert checkout_response.json()["detail"] == "Package is not available for this account"
+
+
+@pytest.mark.integration
+def test_purchase_checkout_allows_managed_offer_for_first_eligible_purchase(
+    client,
+    user_factory,
+    license_factory,
+    auth_headers,
+    plan_factory,
+    purchase_factory,
+    monkeypatch,
+):
+    admin = user_factory(
+        role="admin",
+        password="AdminOfferCheckoutAllow123!",
+        email=f"admin.offer.allow.{uuid4().hex[:8]}@example.com",
+        name="Offer Admin Checkout Allow",
+    )
+    admin_headers = auth_headers(admin.email, "AdminOfferCheckoutAllow123!")
+
+    advisor, advisor_headers = _create_advisor_with_verified_license(
+        user_factory,
+        license_factory,
+        auth_headers,
+    )
+
+    trigger_package = plan_factory(
+        name="OfferCheckoutAllowTrigger",
+        price_cents=11000,
+        daily_download_limit=10,
+    )
+    offer_package_id = _enable_first_purchase_offer(client, admin_headers, trigger_package.id)
+
+    purchase_factory(
+        user_id=advisor.id,
+        package_id=trigger_package.id,
+        status="completed",
+        credits_total=trigger_package.daily_download_limit,
+        stripe_checkout_session_id="cs_offer_checkout_trigger_completed",
+    )
+
+    monkeypatch.setattr(
+        "app.services.payment_service.PaymentService.create_or_get_stripe_customer",
+        lambda db, user: "cus_offer_checkout_allow",
+    )
+    monkeypatch.setattr(
+        "app.services.subscription_service.stripe.checkout.Session.create",
+        lambda **kwargs: {
+            "id": "cs_offer_checkout_allowed",
+            "url": "https://checkout.stripe.test/offer-checkout-allowed",
+        },
+    )
+
+    checkout_response = client.post(
+        "/api/v1/purchases/checkout",
+        headers=advisor_headers,
+        json={"package_id": offer_package_id},
+    )
+    assert checkout_response.status_code == 200, checkout_response.text
+    assert checkout_response.json()["session_id"] == "cs_offer_checkout_allowed"
+
+
+@pytest.mark.integration
+def test_purchase_checkout_rejects_managed_offer_after_second_completed_purchase(
+    client,
+    user_factory,
+    license_factory,
+    auth_headers,
+    plan_factory,
+    purchase_factory,
+):
+    admin = user_factory(
+        role="admin",
+        password="AdminOfferCheckoutReplay123!",
+        email=f"admin.offer.replay.{uuid4().hex[:8]}@example.com",
+        name="Offer Admin Checkout Replay",
+    )
+    admin_headers = auth_headers(admin.email, "AdminOfferCheckoutReplay123!")
+
+    advisor, advisor_headers = _create_advisor_with_verified_license(
+        user_factory,
+        license_factory,
+        auth_headers,
+    )
+
+    trigger_package = plan_factory(
+        name="OfferCheckoutReplayTrigger",
+        price_cents=11000,
+        daily_download_limit=10,
+    )
+    offer_package_id = _enable_first_purchase_offer(client, admin_headers, trigger_package.id)
+
+    purchase_factory(
+        user_id=advisor.id,
+        package_id=trigger_package.id,
+        status="completed",
+        credits_total=trigger_package.daily_download_limit,
+        stripe_checkout_session_id="cs_offer_checkout_replay_trigger",
+    )
+    purchase_factory(
+        user_id=advisor.id,
+        package_id=offer_package_id,
+        status="completed",
+        credits_total=5,
+        stripe_checkout_session_id="cs_offer_checkout_replay_addon",
+    )
+
+    checkout_response = client.post(
+        "/api/v1/purchases/checkout",
+        headers=advisor_headers,
+        json={"package_id": offer_package_id},
+    )
+    assert checkout_response.status_code == 403, checkout_response.text
+    assert checkout_response.json()["detail"] == "Package is not available for this account"
 
 
 @pytest.mark.integration
