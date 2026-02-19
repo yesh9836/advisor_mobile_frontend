@@ -875,6 +875,46 @@ class SubscriptionService:
         }
 
     @staticmethod
+    def _compute_target_refunded_credits(
+        *,
+        credits_total: int,
+        amount_cents: int,
+        refunded_amount_cents: int,
+    ) -> int:
+        normalized_total = max(int(credits_total or 0), 0)
+        normalized_amount = max(int(amount_cents or 0), 0)
+        normalized_refunded = max(int(refunded_amount_cents or 0), 0)
+        if normalized_total == 0 or normalized_amount == 0 or normalized_refunded == 0:
+            return 0
+        if normalized_refunded >= normalized_amount:
+            return normalized_total
+        return min((normalized_total * normalized_refunded) // normalized_amount, normalized_total)
+
+    @staticmethod
+    def _sum_reversed_refund_credits(
+        db: Session,
+        *,
+        purchase_id: int,
+    ) -> int:
+        total_delta = (
+            db.query(func.coalesce(func.sum(LeadCreditLedger.credits_delta), 0))
+            .filter(
+                LeadCreditLedger.purchase_id == purchase_id,
+                LeadCreditLedger.movement_type == "refund_adjustment",
+            )
+            .scalar()
+        )
+        return max(-int(total_delta or 0), 0)
+
+    @staticmethod
+    def _build_refund_adjustment_idempotency_key(
+        *,
+        purchase_id: int,
+        refunded_amount_cents: int,
+    ) -> str:
+        return f"refund_adjustment:{int(purchase_id)}:{max(int(refunded_amount_cents or 0), 0)}"
+
+    @staticmethod
     def _mark_purchase_failed_by_payment_intent(
         db: Session,
         payment_intent_id: Optional[str],
@@ -1359,41 +1399,67 @@ class SubscriptionService:
                     return
 
                 previous_status = purchase.status
+                refunded_amount_cents = max(int(data_object.get("amount_refunded") or 0), 0)
+                target_refunded_credits = SubscriptionService._compute_target_refunded_credits(
+                    credits_total=int(purchase.credits_total or 0),
+                    amount_cents=int(purchase.amount_cents or 0),
+                    refunded_amount_cents=refunded_amount_cents,
+                )
+                already_reversed_credits = SubscriptionService._sum_reversed_refund_credits(
+                    db=db,
+                    purchase_id=int(purchase.id),
+                )
                 refundable_credits = max(int(purchase.credits_remaining or 0), 0)
-                existing_refund_adjustment = (
-                    db.query(LeadCreditLedger)
-                    .filter(
-                        LeadCreditLedger.purchase_id == purchase.id,
-                        LeadCreditLedger.movement_type == "refund_adjustment",
-                    )
-                    .first()
+                credits_to_reverse = min(
+                    max(target_refunded_credits - already_reversed_credits, 0),
+                    refundable_credits,
                 )
 
                 credits_reversed = 0
-                if refundable_credits > 0 and not existing_refund_adjustment:
-                    db.add(
-                        LeadCreditLedger(
-                            user_id=purchase.user_id,
-                            purchase_id=purchase.id,
-                            movement_type="refund_adjustment",
-                            credits_delta=-refundable_credits,
-                            note=f"Stripe refund for payment_intent {payment_intent_id}",
-                        )
+                if credits_to_reverse > 0:
+                    refund_idempotency_key = SubscriptionService._build_refund_adjustment_idempotency_key(
+                        purchase_id=int(purchase.id),
+                        refunded_amount_cents=refunded_amount_cents,
                     )
-                    credits_reversed = refundable_credits
+                    try:
+                        with db.begin_nested():
+                            db.add(
+                                LeadCreditLedger(
+                                    user_id=purchase.user_id,
+                                    purchase_id=purchase.id,
+                                    movement_type="refund_adjustment",
+                                    credits_delta=-credits_to_reverse,
+                                    note=(
+                                        f"Stripe refund for payment_intent {payment_intent_id} "
+                                        f"(amount_refunded={refunded_amount_cents})"
+                                    ),
+                                    idempotency_key=refund_idempotency_key,
+                                )
+                            )
+                            db.flush()
+                    except IntegrityError:
+                        logger.info(
+                            "Duplicate refund adjustment ignored for purchase_id=%s idempotency_key=%s",
+                            purchase.id,
+                            refund_idempotency_key,
+                        )
+                    else:
+                        credits_reversed = credits_to_reverse
 
-                purchase.status = "refunded"
-                purchase.credits_remaining = 0
+                purchase.credits_remaining = max(refundable_credits - credits_reversed, 0)
+                is_full_refund = refunded_amount_cents >= max(int(purchase.amount_cents or 0), 0) > 0
+                if is_full_refund:
+                    purchase.status = "refunded"
                 db.add(purchase)
                 db.commit()
 
-                if credits_reversed > 0 or previous_status != "refunded":
+                if credits_reversed > 0 or purchase.status != previous_status:
                     AuditService.log_purchase_event(
                         actor_user_id=purchase.user_id,
                         action="purchase_refund_adjusted",
                         purchase_id=purchase.id,
                         credits_delta=-credits_reversed,
-                        amount_cents=int(data_object.get("amount_refunded") or 0),
+                        amount_cents=refunded_amount_cents,
                         correlation_ids=SubscriptionService._build_purchase_correlation_ids(
                             stripe_event_id=event_id,
                             checkout_session_id=purchase.stripe_checkout_session_id,
@@ -1403,6 +1469,10 @@ class SubscriptionService:
                         meta_data={
                             "previous_status": previous_status,
                             "new_status": purchase.status,
+                            "target_refunded_credits": target_refunded_credits,
+                            "already_reversed_credits": already_reversed_credits,
+                            "credits_reversed": credits_reversed,
+                            "amount_refunded_cents": refunded_amount_cents,
                             "refund_reason": data_object.get("reason"),
                         },
                     )
