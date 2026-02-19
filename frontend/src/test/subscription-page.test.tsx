@@ -12,6 +12,10 @@ vi.mock("@/api/purchases", () => ({
   }),
 }));
 
+vi.mock("@/api/licenses", () => ({
+  getMyLicenses: vi.fn().mockResolvedValue([]),
+}));
+
 const renderRoute = (route: string) => {
   render(
     <MemoryRouter initialEntries={[route]}>
@@ -71,5 +75,118 @@ describe("SubscriptionPage checkout return messaging", () => {
       screen.getByText("Checkout canceled. No charge was made."),
     ).toBeInTheDocument();
     expect(await screen.findByText("No Packages Available")).toBeInTheDocument();
+  });
+});
+
+describe("SubscriptionPage license gate", () => {
+  it("shows explicit no-license message and blocks checkout", async () => {
+    const { getPackages } = await import("@/api/purchases");
+    vi.mocked(getPackages).mockResolvedValueOnce([
+      {
+        id: 1,
+        name: "Starter",
+        price_cents: 20000,
+        currency: "USD",
+        stripe_price_id: "price_starter",
+        state_limit: 1,
+        daily_download_limit: 10,
+        features: ["10 leads"],
+        created_at: "2026-02-19T00:00:00Z",
+      },
+    ]);
+
+    renderRoute("/subscription");
+
+    expect(
+      await screen.findByText("Submit a license from your profile to unlock lead checkout."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open Profile" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "License Verification Required" }),
+    ).toBeDisabled();
+  });
+
+  it("blocks checkout while license is pending review", async () => {
+    const { getPackages } = await import("@/api/purchases");
+    const { getMyLicenses } = await import("@/api/licenses");
+    vi.mocked(getPackages).mockResolvedValueOnce([
+      {
+        id: 1,
+        name: "Starter",
+        price_cents: 20000,
+        currency: "USD",
+        stripe_price_id: "price_starter",
+        state_limit: 1,
+        daily_download_limit: 10,
+        features: ["10 leads"],
+        created_at: "2026-02-19T00:00:00Z",
+      },
+    ]);
+    vi.mocked(getMyLicenses).mockResolvedValueOnce([
+      {
+        id: 99,
+        user_id: 1,
+        state: "CA",
+        license_number: "CA-PENDING-001",
+        license_type: "Series 65",
+        has_document: true,
+        verification_status: "pending",
+        verified_at: null,
+        verified_by: null,
+        rejection_reason: null,
+        created_at: "2026-02-19T00:00:00Z",
+      },
+    ]);
+
+    renderRoute("/subscription");
+
+    expect(
+      await screen.findByText(
+        "Your license is pending admin review. Checkout unlocks after approval.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "License Verification Required" }),
+    ).toBeDisabled();
+  });
+
+  it("enables checkout when advisor has a verified license", async () => {
+    const { getPackages } = await import("@/api/purchases");
+    const { getMyLicenses } = await import("@/api/licenses");
+    vi.mocked(getPackages).mockResolvedValueOnce([
+      {
+        id: 1,
+        name: "Starter",
+        price_cents: 20000,
+        currency: "USD",
+        stripe_price_id: "price_starter",
+        state_limit: 1,
+        daily_download_limit: 10,
+        features: ["10 leads"],
+        created_at: "2026-02-19T00:00:00Z",
+      },
+    ]);
+    vi.mocked(getMyLicenses).mockResolvedValueOnce([
+      {
+        id: 100,
+        user_id: 1,
+        state: "CA",
+        license_number: "CA-VERIFIED-001",
+        license_type: "Series 65",
+        has_document: true,
+        verification_status: "verified",
+        verified_at: "2026-02-19T00:00:00Z",
+        verified_by: 5,
+        rejection_reason: null,
+        created_at: "2026-02-19T00:00:00Z",
+      },
+    ]);
+
+    renderRoute("/subscription");
+
+    expect(await screen.findByRole("button", { name: "Checkout" })).toBeEnabled();
+    expect(
+      screen.queryByText("Submit a license from your profile to unlock lead checkout."),
+    ).not.toBeInTheDocument();
   });
 });
