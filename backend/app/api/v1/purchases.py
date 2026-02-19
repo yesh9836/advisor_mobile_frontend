@@ -7,12 +7,14 @@ from app.api.deps import get_current_active_user, get_db
 from app.models.user import User
 from app.schemas.purchase import (
     BillingSummaryResponse,
+    FirstPurchaseAddonOfferEligibilityResponse,
     PaginatedPurchaseOrders,
     PurchaseBalanceResponse,
     PurchaseCheckoutResponse,
     PurchaseHistoryResponse,
     PurchasePackageResponse,
 )
+from app.services.first_purchase_offer_service import FirstPurchaseOfferService
 from app.services.subscription_service import SubscriptionService
 
 router = APIRouter(prefix="/purchases", tags=["purchases"])
@@ -109,3 +111,20 @@ def get_billing_summary(
 ) -> BillingSummaryResponse:
     data = SubscriptionService.get_billing_summary(db=db, user=current_user)
     return BillingSummaryResponse(**data)
+
+
+@router.get(
+    "/first-purchase-offer",
+    response_model=FirstPurchaseAddonOfferEligibilityResponse,
+    summary="Check first-purchase add-on offer eligibility for a completed checkout",
+)
+def get_first_purchase_offer(
+    checkout_session_id: str = Query(..., min_length=1),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+) -> FirstPurchaseAddonOfferEligibilityResponse:
+    return FirstPurchaseOfferService.get_advisor_offer_eligibility(
+        db=db,
+        user=current_user,
+        checkout_session_id=checkout_session_id.strip(),
+    )
