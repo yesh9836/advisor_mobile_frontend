@@ -5,7 +5,7 @@ import stripe
 
 from app.models.audit_log import AuditLog
 from app.models.lead import LeadOwnership
-from app.models.purchase import LeadCreditLedger, LeadPurchase
+from app.models.purchase import LeadCreditLedger, LeadPurchase, ProcessedStripeEvent
 from app.services.subscription_service import StripeWebhookProcessingError
 
 
@@ -810,6 +810,12 @@ def test_webhook_duplicate_delivery_same_event_id_grants_credit_once(
         json={"mock": "payload"},
     )
     assert second_response.status_code == 200, second_response.text
+    assert (
+        db.query(ProcessedStripeEvent)
+        .filter(ProcessedStripeEvent.stripe_event_id == "evt_same_event_replayed")
+        .count()
+        == 1
+    )
 
     purchases = (
         db.query(LeadPurchase)
@@ -820,15 +826,17 @@ def test_webhook_duplicate_delivery_same_event_id_grants_credit_once(
     purchase = purchases[0]
     assert purchase.status == "completed"
     assert purchase.credits_remaining == plan.daily_download_limit
-    assert (
+    grant_rows = (
         db.query(LeadCreditLedger)
         .filter(
             LeadCreditLedger.purchase_id == purchase.id,
             LeadCreditLedger.movement_type == "purchase_grant",
         )
-        .count()
-        == 1
     )
+    assert grant_rows.count() == 1
+    grant = grant_rows.first()
+    assert grant is not None
+    assert grant.idempotency_key == f"purchase_grant:{purchase.id}"
     ownership_rows = (
         db.query(LeadOwnership)
         .filter(LeadOwnership.purchase_id == purchase.id, LeadOwnership.user_id == advisor.id)
@@ -892,6 +900,12 @@ def test_webhook_different_event_ids_same_payment_intent_grants_credit_once(
         json={"mock": "payload"},
     )
     assert second_response.status_code == 200, second_response.text
+    assert (
+        db.query(ProcessedStripeEvent)
+        .filter(ProcessedStripeEvent.stripe_event_id.in_(["evt_semantic_dup_1", "evt_semantic_dup_2"]))
+        .count()
+        == 2
+    )
 
     purchases = (
         db.query(LeadPurchase)
@@ -902,15 +916,17 @@ def test_webhook_different_event_ids_same_payment_intent_grants_credit_once(
     purchase = purchases[0]
     assert purchase.stripe_checkout_session_id == "cs_semantic_dup_1"
     assert purchase.status == "completed"
-    assert (
+    grant_rows = (
         db.query(LeadCreditLedger)
         .filter(
             LeadCreditLedger.purchase_id == purchase.id,
             LeadCreditLedger.movement_type == "purchase_grant",
         )
-        .count()
-        == 1
     )
+    assert grant_rows.count() == 1
+    grant = grant_rows.first()
+    assert grant is not None
+    assert grant.idempotency_key == f"purchase_grant:{purchase.id}"
 
 
 @pytest.mark.integration
@@ -1136,7 +1152,7 @@ def test_webhook_payment_intent_succeeded_defers_credit_grant_when_toggle_disabl
         status="pending",
     )
 
-    event = {
+    deferred_event = {
         "id": "evt_pi_succeeded_deferred",
         "type": "payment_intent.succeeded",
         "data": {
@@ -1149,7 +1165,7 @@ def test_webhook_payment_intent_succeeded_defers_credit_grant_when_toggle_disabl
     monkeypatch.setattr("app.services.subscription_service.settings.PURCHASE_WEBHOOK_CREDIT_GRANT_ENABLED", False)
     monkeypatch.setattr(
         "app.api.v1.webhooks.stripe.Webhook.construct_event",
-        lambda payload, sig_header, secret: event,
+        lambda payload, sig_header, secret: deferred_event,
     )
     deferred_response = client.post(
         "/api/v1/webhooks/stripe",
@@ -1173,10 +1189,15 @@ def test_webhook_payment_intent_succeeded_defers_credit_grant_when_toggle_disabl
         == 0
     )
 
+    fulfilled_event = {
+        "id": "evt_pi_succeeded_deferred_retry",
+        "type": "payment_intent.succeeded",
+        "data": deferred_event["data"],
+    }
     monkeypatch.setattr("app.services.subscription_service.settings.PURCHASE_WEBHOOK_CREDIT_GRANT_ENABLED", True)
     monkeypatch.setattr(
         "app.api.v1.webhooks.stripe.Webhook.construct_event",
-        lambda payload, sig_header, secret: event,
+        lambda payload, sig_header, secret: fulfilled_event,
     )
     fulfilled_response = client.post(
         "/api/v1/webhooks/stripe",
