@@ -121,6 +121,26 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: Optional[str] = None
     SMTP_FROM_EMAIL: Optional[str] = None
     SMTP_FROM_NAME: Optional[str] = None
+    SENDGRID_API_KEY: Optional[str] = None
+
+    # Notifications
+    NOTIFICATIONS_ENABLED: bool = False
+    NOTIFICATION_EMAIL_ENABLED: bool = True
+    NOTIFICATION_SMS_ENABLED: bool = True
+    NOTIFICATION_EMAIL_PROVIDER: str = "smtp"  # smtp | sendgrid | noop
+    NOTIFICATION_SMS_PROVIDER: str = "noop"  # twilio | noop
+    NOTIFICATION_FROM_EMAIL: Optional[str] = None
+    NOTIFICATION_FROM_NAME: Optional[str] = None
+    NOTIFICATION_OUTBOX_BATCH_SIZE: int = 100
+    NOTIFICATION_OUTBOX_MAX_ATTEMPTS: int = 5
+    NOTIFICATION_RETRY_BASE_SECONDS: int = 30
+    NOTIFICATION_RETRY_MAX_SECONDS: int = 1800
+
+    # Twilio SMS
+    TWILIO_ACCOUNT_SID: Optional[str] = None
+    TWILIO_AUTH_TOKEN: Optional[str] = None
+    TWILIO_MESSAGING_SERVICE_SID: Optional[str] = None
+    TWILIO_FROM_NUMBER: Optional[str] = None
 
     # WordPress (for one-time import)
     WP_DB_HOST: Optional[str] = None
@@ -234,6 +254,10 @@ class Settings(BaseSettings):
         "REFRESH_TOKEN_EXPIRE_DAYS",
         "PASSWORD_RESET_TOKEN_EXPIRE_MINUTES",
         "PASSWORD_RESET_REQUESTS_PER_HOUR",
+        "NOTIFICATION_OUTBOX_BATCH_SIZE",
+        "NOTIFICATION_OUTBOX_MAX_ATTEMPTS",
+        "NOTIFICATION_RETRY_BASE_SECONDS",
+        "NOTIFICATION_RETRY_MAX_SECONDS",
         mode="after",
     )
     @classmethod
@@ -270,6 +294,22 @@ class Settings(BaseSettings):
                 raise ValueError("ONE_TIME_PURCHASES_ROLLOUT_USER_IDS must contain positive user IDs")
             if parsed not in normalized:
                 normalized.append(parsed)
+        return normalized
+
+    @field_validator("NOTIFICATION_EMAIL_PROVIDER", mode="after")
+    @classmethod
+    def validate_notification_email_provider(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"smtp", "sendgrid", "noop"}:
+            raise ValueError("NOTIFICATION_EMAIL_PROVIDER must be one of: smtp, sendgrid, noop")
+        return normalized
+
+    @field_validator("NOTIFICATION_SMS_PROVIDER", mode="after")
+    @classmethod
+    def validate_notification_sms_provider(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"twilio", "noop"}:
+            raise ValueError("NOTIFICATION_SMS_PROVIDER must be one of: twilio, noop")
         return normalized
 
     @field_validator("ONE_TIME_PURCHASES_ROLLOUT_EMAILS", mode="after")
