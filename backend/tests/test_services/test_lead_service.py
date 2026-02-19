@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
@@ -799,6 +801,231 @@ def test_reconcile_pending_purchase_assignments_prioritizes_oldest_purchase(
         .count()
         == 0
     )
+
+
+@pytest.mark.unit
+def test_reconcile_pending_purchase_assignments_fair_share_respects_registration_rank(
+    db,
+    user_factory,
+    plan_factory,
+    license_factory,
+    purchase_factory,
+    lead_factory,
+):
+    higher_rank_advisor = user_factory(
+        role="advisor",
+        password="LeadUnitFairShareRankHigh123!",
+        email="lead.unit.fairshare.rank.high@example.com",
+    )
+    lower_rank_advisor = user_factory(
+        role="advisor",
+        password="LeadUnitFairShareRankLow123!",
+        email="lead.unit.fairshare.rank.low@example.com",
+    )
+    rank_anchor = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    higher_rank_advisor.created_at = rank_anchor
+    lower_rank_advisor.created_at = rank_anchor + timedelta(minutes=1)
+    db.add_all([higher_rank_advisor, lower_rank_advisor])
+    db.commit()
+
+    plan = plan_factory(
+        daily_download_limit=5,
+        state_limit=1,
+        stripe_price_id="price_fair_share_rank",
+    )
+    license_factory(user_id=higher_rank_advisor.id, state="CA", status="verified")
+    license_factory(user_id=lower_rank_advisor.id, state="CA", status="verified")
+    higher_rank_purchase = purchase_factory(
+        user_id=higher_rank_advisor.id,
+        package_id=plan.id,
+        credits_total=2,
+        credits_remaining=2,
+        status="completed",
+    )
+    lower_rank_purchase = purchase_factory(
+        user_id=lower_rank_advisor.id,
+        package_id=plan.id,
+        credits_total=2,
+        credits_remaining=2,
+        status="completed",
+    )
+
+    lead_factory(state_code="CA", mobile_phone="555-RECON-FAIR-RANK-0001")
+    lead_factory(state_code="CA", mobile_phone="555-RECON-FAIR-RANK-0002")
+    lead_factory(state_code="CA", mobile_phone="555-RECON-FAIR-RANK-0003")
+
+    summary = LeadService.reconcile_pending_purchase_assignments(
+        db=db,
+        state_codes=["CA"],
+        source_event="test_reconcile_fair_share_rank",
+    )
+
+    higher_rank_assigned = (
+        db.query(LeadOwnership)
+        .filter(LeadOwnership.purchase_id == higher_rank_purchase.id)
+        .count()
+    )
+    lower_rank_assigned = (
+        db.query(LeadOwnership)
+        .filter(LeadOwnership.purchase_id == lower_rank_purchase.id)
+        .count()
+    )
+    assert summary["newly_assigned_count"] == 3
+    assert summary["updated_purchases"] == 2
+    assert higher_rank_assigned == 2
+    assert lower_rank_assigned == 1
+    assert summary["remaining_unfulfilled_count"] == 1
+
+
+@pytest.mark.unit
+def test_reconcile_pending_purchase_assignments_makes_purchases_whole_across_ingests(
+    db,
+    user_factory,
+    plan_factory,
+    license_factory,
+    purchase_factory,
+    lead_factory,
+):
+    advisors = [
+        user_factory(
+            role="advisor",
+            password=f"LeadUnitFairWhole{i}123!",
+            email=f"lead.unit.fair.whole.{i}@example.com",
+        )
+        for i in range(3)
+    ]
+    rank_anchor = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    for index, advisor in enumerate(advisors):
+        advisor.created_at = rank_anchor + timedelta(minutes=index)
+    db.add_all(advisors)
+    db.commit()
+
+    plan = plan_factory(
+        daily_download_limit=25,
+        state_limit=1,
+        stripe_price_id="price_fair_share_make_whole",
+    )
+    purchases = []
+    for advisor in advisors:
+        license_factory(user_id=advisor.id, state="CA", status="verified")
+        purchases.append(
+            purchase_factory(
+                user_id=advisor.id,
+                package_id=plan.id,
+                credits_total=10,
+                credits_remaining=10,
+                status="completed",
+            )
+        )
+
+    for index in range(10):
+        lead_factory(state_code="CA", mobile_phone=f"555-RECON-FAIR-WHOLE-A-{index:04d}")
+
+    first_summary = LeadService.reconcile_pending_purchase_assignments(
+        db=db,
+        state_codes=["CA"],
+        source_event="test_reconcile_fair_share_first_ingest",
+    )
+
+    first_counts = [
+        db.query(LeadOwnership).filter(LeadOwnership.purchase_id == purchase.id).count()
+        for purchase in purchases
+    ]
+    assert first_summary["newly_assigned_count"] == 10
+    assert first_counts == [4, 3, 3]
+    assert first_summary["remaining_unfulfilled_count"] == 20
+
+    for index in range(20):
+        lead_factory(state_code="CA", mobile_phone=f"555-RECON-FAIR-WHOLE-B-{index:04d}")
+
+    second_summary = LeadService.reconcile_pending_purchase_assignments(
+        db=db,
+        state_codes=["CA"],
+        source_event="test_reconcile_fair_share_second_ingest",
+    )
+
+    second_counts = [
+        db.query(LeadOwnership).filter(LeadOwnership.purchase_id == purchase.id).count()
+        for purchase in purchases
+    ]
+    assert second_summary["newly_assigned_count"] == 20
+    assert second_counts == [10, 10, 10]
+    assert second_summary["remaining_unfulfilled_count"] == 0
+
+
+@pytest.mark.unit
+def test_reconcile_pending_purchase_assignments_uses_user_id_tiebreak_for_same_registration_time(
+    db,
+    user_factory,
+    plan_factory,
+    license_factory,
+    purchase_factory,
+    lead_factory,
+):
+    advisor_a = user_factory(
+        role="advisor",
+        password="LeadUnitTieBreakA123!",
+        email="lead.unit.tiebreak.a@example.com",
+    )
+    advisor_b = user_factory(
+        role="advisor",
+        password="LeadUnitTieBreakB123!",
+        email="lead.unit.tiebreak.b@example.com",
+    )
+    shared_created_at = datetime(2025, 2, 1, tzinfo=timezone.utc)
+    advisor_a.created_at = shared_created_at
+    advisor_b.created_at = shared_created_at
+    db.add_all([advisor_a, advisor_b])
+    db.commit()
+
+    plan = plan_factory(
+        daily_download_limit=5,
+        state_limit=1,
+        stripe_price_id="price_fair_share_tiebreak",
+    )
+    license_factory(user_id=advisor_a.id, state="CA", status="verified")
+    license_factory(user_id=advisor_b.id, state="CA", status="verified")
+    purchase_a = purchase_factory(
+        user_id=advisor_a.id,
+        package_id=plan.id,
+        credits_total=1,
+        credits_remaining=1,
+        status="completed",
+    )
+    purchase_b = purchase_factory(
+        user_id=advisor_b.id,
+        package_id=plan.id,
+        credits_total=1,
+        credits_remaining=1,
+        status="completed",
+    )
+    lead_factory(state_code="CA", mobile_phone="555-RECON-TIEBREAK-0001")
+
+    summary = LeadService.reconcile_pending_purchase_assignments(
+        db=db,
+        state_codes=["CA"],
+        source_event="test_reconcile_tiebreak",
+    )
+
+    assigned_to_a = (
+        db.query(LeadOwnership)
+        .filter(LeadOwnership.purchase_id == purchase_a.id)
+        .count()
+    )
+    assigned_to_b = (
+        db.query(LeadOwnership)
+        .filter(LeadOwnership.purchase_id == purchase_b.id)
+        .count()
+    )
+    if advisor_a.id < advisor_b.id:
+        assert assigned_to_a == 1
+        assert assigned_to_b == 0
+    else:
+        assert assigned_to_a == 0
+        assert assigned_to_b == 1
+    assert summary["newly_assigned_count"] == 1
+    assert summary["updated_purchases"] == 1
+    assert summary["remaining_unfulfilled_count"] == 1
 
 
 @pytest.mark.unit
