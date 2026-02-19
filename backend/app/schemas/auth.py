@@ -58,3 +58,22 @@ class TokenData(BaseModel):
     model_config = {
         "populate_by_name": True,
     }
+
+
+class PasswordResetRequest(BaseModel):
+    """Schema for forgot-password request."""
+
+    email: EmailStr
+
+
+class PasswordResetRequestResponse(BaseModel):
+    """Generic response for password reset requests."""
+
+    message: str
+
+
+class PasswordResetConfirm(BaseModel):
+    """Schema for reset-password confirmation."""
+
+    token: str = Field(..., min_length=16, max_length=512)
+    new_password: str = Field(..., min_length=8, description="Password must be at least 8 characters")
