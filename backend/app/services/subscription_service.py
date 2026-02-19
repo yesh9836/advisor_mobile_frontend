@@ -5,13 +5,13 @@ from typing import Any, Dict, List, Optional
 import stripe
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
 from app.models.lead import LeadOwnership
 from app.models.license import License
-from app.models.purchase import LeadCreditLedger, LeadPackage, LeadPurchase
+from app.models.purchase import LeadCreditLedger, LeadPackage, LeadPurchase, ProcessedStripeEvent
 from app.models.user import User
 from app.services.audit_service import AuditService
 from app.services.lead_service import LeadService
@@ -658,6 +658,48 @@ class SubscriptionService:
         return None
 
     @staticmethod
+    def _build_purchase_grant_idempotency_key(*, purchase_id: int) -> str:
+        return f"purchase_grant:{int(purchase_id)}"
+
+    @staticmethod
+    def _record_processed_stripe_event(
+        db: Session,
+        *,
+        stripe_event_id: Optional[str],
+        event_type: Optional[str],
+    ) -> bool:
+        normalized_event_id = str(stripe_event_id or "").strip()
+        if not normalized_event_id:
+            raise StripeWebhookProcessingError("Stripe webhook missing event ID")
+
+        db.add(
+            ProcessedStripeEvent(
+                stripe_event_id=normalized_event_id,
+                event_type=str(event_type or "unknown"),
+            )
+        )
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            duplicate = (
+                db.query(ProcessedStripeEvent.id)
+                .filter(ProcessedStripeEvent.stripe_event_id == normalized_event_id)
+                .first()
+            )
+            if duplicate:
+                logger.info("Ignoring duplicate Stripe webhook event_id=%s", normalized_event_id)
+                return False
+            raise
+
+        return True
+
+    @staticmethod
+    def _commit_if_transaction_active(db: Session) -> None:
+        if db.in_transaction():
+            db.commit()
+
+    @staticmethod
     def _grant_purchase_credits_if_needed(
         db: Session,
         purchase: LeadPurchase,
@@ -675,26 +717,49 @@ class SubscriptionService:
         if purchase.status != "completed":
             return False
 
+        purchase_id = int(purchase.id or 0)
+        if purchase_id <= 0:
+            return False
+        grant_idempotency_key = SubscriptionService._build_purchase_grant_idempotency_key(
+            purchase_id=purchase_id
+        )
         existing_grant = (
             db.query(LeadCreditLedger)
             .filter(
-                LeadCreditLedger.purchase_id == purchase.id,
-                LeadCreditLedger.movement_type == "purchase_grant",
+                or_(
+                    LeadCreditLedger.idempotency_key == grant_idempotency_key,
+                    and_(
+                        LeadCreditLedger.purchase_id == purchase.id,
+                        LeadCreditLedger.movement_type == "purchase_grant",
+                    ),
+                )
             )
             .first()
         )
         if existing_grant:
             return False
 
-        db.add(
-            LeadCreditLedger(
-                user_id=purchase.user_id,
-                purchase_id=purchase.id,
-                movement_type="purchase_grant",
-                credits_delta=credits_total,
-                note=note,
+        try:
+            with db.begin_nested():
+                db.add(
+                    LeadCreditLedger(
+                        user_id=purchase.user_id,
+                        purchase_id=purchase.id,
+                        movement_type="purchase_grant",
+                        credits_delta=credits_total,
+                        note=note,
+                        idempotency_key=grant_idempotency_key,
+                    )
+                )
+                db.flush()
+        except IntegrityError:
+            logger.info(
+                "Purchase credit grant already recorded: purchase_id=%s idempotency_key=%s",
+                purchase.id,
+                grant_idempotency_key,
             )
-        )
+            return False
+
         purchase.credits_remaining = max(int(purchase.credits_remaining or 0), int(credits_total or 0))
         db.add(purchase)
         return True
@@ -990,6 +1055,12 @@ class SubscriptionService:
         data_object = event.get("data", {}).get("object", {})
 
         logger.info(f"Stripe webhook received: type={event_type} id={event_id}")
+        if not SubscriptionService._record_processed_stripe_event(
+            db=db,
+            stripe_event_id=event_id,
+            event_type=event_type,
+        ):
+            return
 
         if event_type in {"checkout.session.completed", "checkout.session.async_payment_succeeded"}:
             session = data_object
@@ -1000,6 +1071,7 @@ class SubscriptionService:
                     event_type,
                     event_id,
                 )
+                SubscriptionService._commit_if_transaction_active(db)
                 return
             try:
                 SubscriptionService._create_or_update_purchase_from_checkout_session(
@@ -1028,6 +1100,7 @@ class SubscriptionService:
             payment_intent_id = data_object.get("id")
             if not payment_intent_id:
                 logger.warning("payment_intent.succeeded missing payment intent ID")
+                SubscriptionService._commit_if_transaction_active(db)
                 return
 
             purchase = (
@@ -1037,10 +1110,12 @@ class SubscriptionService:
             )
             if not purchase:
                 logger.warning("No local lead purchase found for payment_intent_id=%s", payment_intent_id)
+                SubscriptionService._commit_if_transaction_active(db)
                 return
 
             if purchase.status == "completed":
                 logger.info("Lead purchase already completed for payment_intent_id=%s", payment_intent_id)
+                SubscriptionService._commit_if_transaction_active(db)
                 return
 
             previous_status = purchase.status
@@ -1053,6 +1128,7 @@ class SubscriptionService:
                 payment_intent_id=payment_intent_id,
             )
             if resolved_status != requested_status:
+                SubscriptionService._commit_if_transaction_active(db)
                 return
 
             if not settings.PURCHASE_WEBHOOK_CREDIT_GRANT_ENABLED:
@@ -1064,6 +1140,7 @@ class SubscriptionService:
                     "Deferring payment_intent fulfillment for payment_intent_id=%s due to feature flag",
                     payment_intent_id,
                 )
+                SubscriptionService._commit_if_transaction_active(db)
                 return
 
             purchase.status = "completed"
@@ -1162,6 +1239,7 @@ class SubscriptionService:
 
             if not payment_intent_id:
                 logger.warning("charge.refunded missing payment intent ID")
+                SubscriptionService._commit_if_transaction_active(db)
                 return
 
             purchase = (
@@ -1171,6 +1249,7 @@ class SubscriptionService:
             )
             if not purchase:
                 logger.warning("No local lead purchase found for refunded payment_intent_id=%s", payment_intent_id)
+                SubscriptionService._commit_if_transaction_active(db)
                 return
 
             previous_status = purchase.status
@@ -1236,3 +1315,5 @@ class SubscriptionService:
 
         else:
             logger.info(f"Unhandled Stripe event type: {event_type}")
+
+        SubscriptionService._commit_if_transaction_active(db)
