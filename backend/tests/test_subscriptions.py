@@ -1404,6 +1404,78 @@ def test_webhook_checkout_completed_replay_does_not_reactivate_refunded_purchase
 
 
 @pytest.mark.integration
+def test_webhook_checkout_completed_replay_preserves_consumed_credits(
+    client,
+    db,
+    user_factory,
+    plan_factory,
+    purchase_factory,
+    monkeypatch,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="AdvisorWebhookConsumedReplay123!",
+        email="advisor.webhook.consumed.replay@example.com",
+        name="Webhook Consumed Replay Advisor",
+    )
+    plan = plan_factory(stripe_price_id="price_checkout_consumed_replay")
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=4,
+        credits_remaining=1,
+        status="completed",
+        stripe_checkout_session_id="cs_checkout_consumed_replay_1",
+        stripe_payment_intent_id="pi_checkout_consumed_replay_1",
+    )
+    db.add(
+        LeadCreditLedger(
+            user_id=advisor.id,
+            purchase_id=purchase.id,
+            movement_type="purchase_grant",
+            credits_delta=4,
+            idempotency_key=f"purchase_grant:{purchase.id}",
+            note="Seeded grant for replay idempotency",
+        )
+    )
+    db.commit()
+
+    replay_event = _build_purchase_webhook_event(
+        event_id="evt_checkout_consumed_replay_guard_1",
+        event_type="checkout.session.completed",
+        session_id="cs_checkout_consumed_replay_1",
+        payment_intent_id="pi_checkout_consumed_replay_1",
+        user_id=advisor.id,
+        package_id=plan.id,
+        amount_cents=plan.price_cents,
+    )
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: replay_event,
+    )
+
+    response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert response.status_code == 200, response.text
+
+    db.refresh(purchase)
+    assert purchase.status == "completed"
+    assert purchase.credits_remaining == 1
+    assert (
+        db.query(LeadCreditLedger)
+        .filter(
+            LeadCreditLedger.purchase_id == purchase.id,
+            LeadCreditLedger.movement_type == "purchase_grant",
+        )
+        .count()
+        == 1
+    )
+
+
+@pytest.mark.integration
 def test_webhook_payment_intent_succeeded_replay_does_not_reactivate_refunded_purchase(
     client,
     db,

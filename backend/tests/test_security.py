@@ -189,6 +189,24 @@ def test_rate_limit_ignores_spoofed_forwarded_for_by_default(client, monkeypatch
     assert second.status_code == 429
 
 
+@pytest.mark.integration
+def test_rate_limit_exempts_stripe_webhook_path(client, monkeypatch):
+    monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", True)
+    monkeypatch.setattr(settings, "RATE_LIMIT_PER_MINUTE", 1)
+    monkeypatch.setattr(settings, "RATE_LIMIT_WINDOW_SECONDS", 60)
+
+    headers = {"X-Forwarded-For": "203.0.113.61"}
+
+    first = client.post("/api/v1/webhooks/stripe", headers=headers, content=b"{}")
+    second = client.post("/api/v1/webhooks/stripe", headers=headers, content=b"{}")
+    third = client.post("/api/v1/webhooks/stripe", headers=headers, content=b"{}")
+
+    assert first.status_code == 400
+    assert second.status_code == 400
+    assert third.status_code == 400
+    assert third.headers.get("retry-after") is None
+
+
 @pytest.mark.unit
 def test_get_client_identifier_uses_forwarded_for_only_for_trusted_proxy(monkeypatch):
     monkeypatch.setattr(settings, "RATE_LIMIT_TRUST_PROXY_HEADERS", True)
