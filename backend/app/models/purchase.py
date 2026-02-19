@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, List, Optional
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     Enum as SQLEnum,
     ForeignKey,
     Integer,
@@ -195,3 +196,74 @@ class LeadCreditLedger(Base):
 
     user: Mapped["User"] = relationship("User", back_populates="lead_credit_ledger_entries")
     purchase: Mapped[Optional["LeadPurchase"]] = relationship("LeadPurchase", back_populates="credit_ledger_entries")
+
+
+class FirstPurchaseAddonOffer(Base):
+    """Singleton-style config for first completed purchase upsell behavior."""
+
+    __tablename__ = "first_purchase_addon_offers"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+    )
+    is_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("0"),
+        index=True,
+    )
+    trigger_package_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("lead_packages.id", onupdate="CASCADE", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    offer_package_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("lead_packages.id", onupdate="CASCADE", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    offer_credits_total: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    offer_price_cents: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    offer_currency: Mapped[str] = mapped_column(
+        String(3),
+        nullable=False,
+        default="USD",
+        server_default=text("'USD'"),
+    )
+    headline: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cta_label: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    starts_at: Mapped[Optional[datetime]] = mapped_column(
+        UTCDateTime(),
+        nullable=True,
+        index=True,
+    )
+    ends_at: Mapped[Optional[datetime]] = mapped_column(
+        UTCDateTime(),
+        nullable=True,
+        index=True,
+    )
+    updated_by: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("users.id", onupdate="CASCADE", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        nullable=False,
+        default=utcnow,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        nullable=False,
+        default=utcnow,
+        onupdate=utcnow,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )

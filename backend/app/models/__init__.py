@@ -1,6 +1,6 @@
 from .base import Base, TimestampMixin
 from .user import User
-from .purchase import LeadCreditLedger, LeadPackage, LeadPurchase
+from .purchase import FirstPurchaseAddonOffer, LeadCreditLedger, LeadPackage, LeadPurchase
 from .license import License
 from .license_resubmission import LicenseResubmission
 from .lead import Lead, LeadDownload, LeadOutcome, LeadOwnership
@@ -15,6 +15,7 @@ __all__ = [
     "LeadPackage",
     "LeadPurchase",
     "LeadCreditLedger",
+    "FirstPurchaseAddonOffer",
     "License",
     "LicenseResubmission",
     "Lead",
