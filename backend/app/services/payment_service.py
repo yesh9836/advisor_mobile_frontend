@@ -57,6 +57,14 @@ class PaymentService:
 
         stripe.api_key = settings.STRIPE_SECRET_KEY
         stripe.api_version = settings.STRIPE_API_VERSION
+        stripe.max_network_retries = max(int(settings.STRIPE_MAX_NETWORK_RETRIES or 0), 0)
+
+        timeout_seconds = max(float(settings.STRIPE_REQUEST_TIMEOUT_SECONDS or 0), 1.0)
+        requests_client = getattr(getattr(stripe, "http_client", None), "RequestsClient", None)
+        if requests_client is not None:
+            stripe.default_http_client = requests_client(timeout=timeout_seconds)
+        else:
+            logger.warning("Stripe RequestsClient unavailable; timeout policy not applied")
         cls._initialized = True
         logger.info("Stripe client initialized")
 
