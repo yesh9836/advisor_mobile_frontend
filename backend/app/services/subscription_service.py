@@ -918,9 +918,10 @@ class SubscriptionService:
                 checkout_session_id=session_id,
                 payment_intent_id=payment_intent_id,
             )
-            if previous_status_normalized == "completed" and requested_status != "completed":
-                # Keep fulfilled purchases immutable against out-of-order failure retries.
-                credits_remaining = max(int(purchase.credits_remaining or 0), int(credits_total or 0))
+            if previous_status_normalized == "completed" and purchase_status == "completed":
+                # Success lifecycle replays must not resurrect spent credits.
+                # Consumption/refund flows are the only allowed decrement paths.
+                credits_remaining = max(int(purchase.credits_remaining or 0), 0)
             elif (
                 previous_status_normalized in SubscriptionService._IMMUTABLE_PURCHASE_STATUSES
                 and purchase_status == previous_status_normalized
