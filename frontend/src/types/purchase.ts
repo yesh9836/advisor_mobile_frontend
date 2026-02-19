@@ -30,6 +30,14 @@ export interface PurchaseOrderItem {
   credits_total: number;
   credits_remaining: number;
   status: string;
+  assigned_count: number;
+  unfulfilled_count: number;
+  fulfillment_status:
+    | "fulfilled"
+    | "partially_fulfilled"
+    | "pending_inventory"
+    | "pending"
+    | "not_completed";
   purchased_at: string;
   stripe_checkout_session_id: string;
   stripe_payment_intent_id: string | null;
