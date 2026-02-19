@@ -8,7 +8,11 @@ from fastapi import APIRouter, HTTPException, Request, status
 
 from app.core.config import settings
 from app.services.metrics_service import MetricsService
-from app.services.subscription_service import StripeWebhookProcessingError, SubscriptionService
+from app.services.subscription_service import (
+    StripeWebhookNonRetryableError,
+    StripeWebhookProcessingError,
+    SubscriptionService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +55,21 @@ async def stripe_webhook(
             SubscriptionService.handle_webhook_event_threadsafe,
             event=event,
         )
+    except StripeWebhookNonRetryableError as exc:
+        logger.warning(
+            "Stripe webhook non-retryable event acknowledged: type=%s id=%s reason=%s",
+            event.get("type"),
+            event.get("id"),
+            exc.reason,
+        )
+        MetricsService.increment(
+            "purchase_webhook_acknowledged_non_retryable_total",
+            tags={
+                "event_type": event_type,
+                "reason": exc.reason,
+            },
+        )
+        return {"status": "ok"}
     except StripeWebhookProcessingError as exc:
         logger.error(
             "Stripe webhook processing failed: type=%s id=%s error=%s",
