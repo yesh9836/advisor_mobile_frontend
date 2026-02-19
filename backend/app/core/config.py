@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 10
     REFRESH_TOKEN_EXPIRE_DAYS: int = 14
+    PASSWORD_RESET_TOKEN_EXPIRE_MINUTES: int = 30
+    PASSWORD_RESET_REQUESTS_PER_HOUR: int = 3
 
     # Auth cookies
     AUTH_ACCESS_COOKIE_NAME: str = "access_token"
@@ -230,6 +232,8 @@ class Settings(BaseSettings):
         "LICENSE_RESUBMISSION_WINDOW_DAYS",
         "ACCESS_TOKEN_EXPIRE_MINUTES",
         "REFRESH_TOKEN_EXPIRE_DAYS",
+        "PASSWORD_RESET_TOKEN_EXPIRE_MINUTES",
+        "PASSWORD_RESET_REQUESTS_PER_HOUR",
         mode="after",
     )
     @classmethod
