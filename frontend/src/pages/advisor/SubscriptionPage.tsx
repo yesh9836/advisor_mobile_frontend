@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
+import { getMyLicenses } from "@/api/licenses";
 import { createCheckout, getPackages, getPurchaseHistory } from "@/api/purchases";
 import type { PurchaseOrderItem, PurchasePackage } from "@/types/purchase";
 import { getApiErrorMessage } from "@/utils/api-error";
@@ -71,15 +72,85 @@ const buildCheckoutFulfillmentNotice = (
 };
 
 const SubscriptionPage = () => {
+  const navigate = useNavigate();
   const [plans, setPlans] = useState<DisplayPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [checkoutKey, setCheckoutKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
+  const [licenseGateLoading, setLicenseGateLoading] = useState(true);
+  const [hasVerifiedLicense, setHasVerifiedLicense] = useState(false);
+  const [licenseGateMessage, setLicenseGateMessage] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
 
   const checkoutState = searchParams.get("checkout");
   const checkoutSessionId = searchParams.get("session_id");
+  const checkoutBlocked = licenseGateLoading || !hasVerifiedLicense;
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadLicenseGate = async () => {
+      setLicenseGateLoading(true);
+      try {
+        const licenses = await getMyLicenses();
+        if (!mounted) return;
+
+        const verified = licenses.some(
+          (license) => license.verification_status === "verified",
+        );
+        setHasVerifiedLicense(verified);
+        if (verified) {
+          setLicenseGateMessage(null);
+          return;
+        }
+
+        const hasPendingLicense = licenses.some(
+          (license) => license.verification_status === "pending",
+        );
+        const hasRejectedLicense = licenses.some(
+          (license) => license.verification_status === "rejected",
+        );
+
+        if (licenses.length === 0) {
+          setLicenseGateMessage(
+            "Submit a license from your profile to unlock lead checkout.",
+          );
+          return;
+        }
+        if (hasPendingLicense) {
+          setLicenseGateMessage(
+            "Your license is pending admin review. Checkout unlocks after approval.",
+          );
+          return;
+        }
+        if (hasRejectedLicense) {
+          setLicenseGateMessage(
+            "Your license was rejected. Resubmit from your profile to unlock checkout.",
+          );
+          return;
+        }
+
+        setLicenseGateMessage("A verified license is required before checkout.");
+      } catch {
+        if (!mounted) return;
+        setHasVerifiedLicense(false);
+        setLicenseGateMessage(
+          "Unable to confirm your license status right now. Open profile to review your licenses.",
+        );
+      } finally {
+        if (mounted) {
+          setLicenseGateLoading(false);
+        }
+      }
+    };
+
+    void loadLicenseGate();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -175,6 +246,24 @@ const SubscriptionPage = () => {
         <p className="page-subtitle">Choose a package.</p>
       </div>
 
+      {licenseGateLoading ? (
+        <div className="panel">
+          <div className="metric-note">Checking license verification...</div>
+        </div>
+      ) : !hasVerifiedLicense ? (
+        <div className="alert">
+          <div>{licenseGateMessage ?? "A verified license is required before checkout."}</div>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ marginTop: 12 }}
+            onClick={() => navigate("/profile")}
+          >
+            Open Profile
+          </button>
+        </div>
+      ) : null}
+
       {checkoutNotice && (
         <div className={checkoutState === "success" ? "success" : "alert"}>
           {checkoutNotice}
@@ -260,9 +349,13 @@ const SubscriptionPage = () => {
                 type="button"
                 className="btn btn-primary"
                 onClick={() => void handleCheckout(entry)}
-                disabled={checkoutKey === entry.key}
+                disabled={checkoutKey === entry.key || checkoutBlocked}
               >
-                {checkoutKey === entry.key ? "Opening Checkout..." : "Checkout"}
+                {checkoutKey === entry.key
+                  ? "Opening Checkout..."
+                  : checkoutBlocked
+                    ? "License Verification Required"
+                    : "Checkout"}
               </button>
 
               <button type="button" className="btn btn-secondary">
