@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 
 class PurchasePackageResponse(BaseModel):
@@ -81,3 +81,64 @@ class BillingInvoiceResponse(BaseModel):
 class BillingSummaryResponse(BaseModel):
     payment_method: Optional[BillingPaymentMethodResponse] = None
     invoices: List[BillingInvoiceResponse]
+
+
+class FirstPurchaseAddonOfferUpdateRequest(BaseModel):
+    is_enabled: bool
+    trigger_package_id: Optional[int] = Field(default=None, ge=1)
+    offer_credits_total: Optional[int] = Field(default=None, ge=1, le=1000000)
+    offer_price_cents: Optional[int] = Field(default=None, ge=1)
+    offer_currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
+    headline: Optional[str] = Field(default=None, max_length=120)
+    message: Optional[str] = Field(default=None, max_length=400)
+    cta_label: Optional[str] = Field(default=None, max_length=80)
+    starts_at: Optional[datetime] = None
+    ends_at: Optional[datetime] = None
+
+    @field_validator("headline", "message", "cta_label", "offer_currency")
+    @classmethod
+    def normalize_text_fields(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        clean = value.strip()
+        if not clean:
+            return None
+        if len(clean) == 3 and clean.isalpha():
+            return clean.upper()
+        return clean
+
+
+class FirstPurchaseAddonOfferConfigResponse(BaseModel):
+    id: Optional[int] = None
+    is_enabled: bool
+    trigger_package_id: Optional[int] = None
+    trigger_package_name: Optional[str] = None
+    offer_package_id: Optional[int] = None
+    offer_package_name: Optional[str] = None
+    offer_price_cents: Optional[int] = None
+    offer_currency: Optional[str] = None
+    offer_credits_total: Optional[int] = None
+    headline: Optional[str] = None
+    message: Optional[str] = None
+    cta_label: Optional[str] = None
+    starts_at: Optional[datetime] = None
+    ends_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    updated_by: Optional[int] = None
+
+
+class FirstPurchaseAddonOfferAdvisorResponse(BaseModel):
+    trigger_package_id: int
+    offer_package_id: int
+    offer_package_name: str
+    offer_price_cents: int
+    offer_currency: str
+    offer_credits_total: int
+    headline: str
+    message: str
+    cta_label: str
+
+
+class FirstPurchaseAddonOfferEligibilityResponse(BaseModel):
+    eligible: bool
+    offer: Optional[FirstPurchaseAddonOfferAdvisorResponse] = None
