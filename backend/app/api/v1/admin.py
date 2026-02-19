@@ -21,7 +21,12 @@ from app.schemas.admin import (
     UserDetails,
     UserListFilters,
 )
+from app.schemas.purchase import (
+    FirstPurchaseAddonOfferConfigResponse,
+    FirstPurchaseAddonOfferUpdateRequest,
+)
 from app.services.admin_service import AdminService
+from app.services.first_purchase_offer_service import FirstPurchaseOfferService
 
 logger = logging.getLogger(__name__)
 
@@ -183,3 +188,33 @@ def sync_wordpress(
     db: Session = Depends(get_db),
 ) -> ImportStats:
     return AdminService.sync_wordpress(db=db, admin_id=current_admin.id)
+
+
+@router.get(
+    "/first-purchase-offer",
+    response_model=FirstPurchaseAddonOfferConfigResponse,
+    summary="Get first-purchase add-on offer config",
+)
+def get_first_purchase_offer_config(
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> FirstPurchaseAddonOfferConfigResponse:
+    _ = current_admin
+    return FirstPurchaseOfferService.get_offer_config(db=db)
+
+
+@router.put(
+    "/first-purchase-offer",
+    response_model=FirstPurchaseAddonOfferConfigResponse,
+    summary="Upsert first-purchase add-on offer config",
+)
+def upsert_first_purchase_offer_config(
+    payload: FirstPurchaseAddonOfferUpdateRequest,
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> FirstPurchaseAddonOfferConfigResponse:
+    return FirstPurchaseOfferService.update_offer_config(
+        db=db,
+        admin_user=current_admin,
+        payload=payload,
+    )
