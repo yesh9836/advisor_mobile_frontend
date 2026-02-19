@@ -691,6 +691,70 @@ def test_webhook_checkout_completed_emits_metrics_and_purchase_audit_events(
 
 
 @pytest.mark.integration
+def test_webhook_fast_ack_enqueues_without_running_sync_processing(
+    client,
+    monkeypatch,
+):
+    event = {
+        "id": "evt_fast_ack_enqueue",
+        "type": "checkout.session.completed",
+        "data": {"object": {"id": "cs_fast_ack"}},
+    }
+    seen = {}
+
+    monkeypatch.setattr("app.api.v1.webhooks.settings.STRIPE_WEBHOOK_FAST_ACK_ENABLED", True)
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: event,
+    )
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.StripeWebhookInboxService.enqueue_event_threadsafe",
+        lambda event: seen.setdefault("event_id", event["id"]) is not None,
+    )
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.SubscriptionService.handle_webhook_event_threadsafe",
+        lambda event: (_ for _ in ()).throw(AssertionError("sync processing should not run")),
+    )
+
+    response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert response.status_code == 200, response.text
+    assert seen.get("event_id") == "evt_fast_ack_enqueue"
+
+
+@pytest.mark.integration
+def test_webhook_fast_ack_returns_500_when_enqueue_fails(
+    client,
+    monkeypatch,
+):
+    event = {
+        "id": "evt_fast_ack_failure",
+        "type": "checkout.session.completed",
+        "data": {"object": {"id": "cs_fast_ack_failure"}},
+    }
+
+    monkeypatch.setattr("app.api.v1.webhooks.settings.STRIPE_WEBHOOK_FAST_ACK_ENABLED", True)
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: event,
+    )
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.StripeWebhookInboxService.enqueue_event_threadsafe",
+        lambda event: (_ for _ in ()).throw(StripeWebhookProcessingError("inbox down")),
+    )
+
+    response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert response.status_code == 500
+
+
+@pytest.mark.integration
 def test_webhook_retry_metric_emitted_on_retryable_processing_error(
     client,
     monkeypatch,

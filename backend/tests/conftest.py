@@ -149,6 +149,7 @@ def test_settings(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(settings, "SECRET_KEY", "test-secret-key")
     monkeypatch.setattr(settings, "STRIPE_SECRET_KEY", "sk_test_local")
     monkeypatch.setattr(settings, "STRIPE_WEBHOOK_SECRET", "whsec_test")
+    monkeypatch.setattr(settings, "STRIPE_WEBHOOK_FAST_ACK_ENABLED", False)
     monkeypatch.setattr(settings, "FRONTEND_URL", "http://localhost:5173")
 
 
