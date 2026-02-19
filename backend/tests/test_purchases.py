@@ -100,14 +100,13 @@ def test_purchase_checkout_uses_idempotency_key_and_metadata(
     assert response.status_code == 200, response.text
     assert response.json()["session_id"] == "cs_purchase_checkout"
     assert captured_checkout_kwargs["mode"] == "payment"
-    assert captured_checkout_kwargs["metadata"] == {
-        "user_id": str(advisor.id),
-        "package_id": str(plan.id),
-    }
-    assert captured_checkout_kwargs["payment_intent_data"]["metadata"] == {
-        "user_id": str(advisor.id),
-        "package_id": str(plan.id),
-    }
+    checkout_metadata = captured_checkout_kwargs["metadata"]
+    assert checkout_metadata["user_id"] == str(advisor.id)
+    assert checkout_metadata["package_id"] == str(plan.id)
+    assert checkout_metadata["purchase_amount_cents"] == str(int(plan.price_cents or 0))
+    assert checkout_metadata["purchase_currency"] == str((plan.currency or "USD")).upper()
+    assert checkout_metadata["purchase_credits_total"] == str(int(plan.daily_download_limit or 0))
+    assert captured_checkout_kwargs["payment_intent_data"]["metadata"] == checkout_metadata
     assert captured_checkout_kwargs["idempotency_key"].startswith(
         f"checkout-create:{advisor.id}:{plan.id}:"
     )

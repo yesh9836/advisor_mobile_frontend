@@ -36,7 +36,17 @@ def _build_purchase_webhook_event(
     package_id: int,
     amount_cents: int,
     payment_status: str = "paid",
+    snapshot_amount_cents: int | None = None,
+    snapshot_currency: str | None = None,
+    snapshot_credits_total: int | None = None,
 ):
+    metadata = {"user_id": str(user_id), "package_id": str(package_id)}
+    if snapshot_amount_cents is not None:
+        metadata["purchase_amount_cents"] = str(snapshot_amount_cents)
+    if snapshot_currency is not None:
+        metadata["purchase_currency"] = str(snapshot_currency).upper()
+    if snapshot_credits_total is not None:
+        metadata["purchase_credits_total"] = str(snapshot_credits_total)
     return {
         "id": event_id,
         "type": event_type,
@@ -49,7 +59,7 @@ def _build_purchase_webhook_event(
                 "amount_total": amount_cents,
                 "currency": "usd",
                 "created": int(datetime.now(timezone.utc).timestamp()),
-                "metadata": {"user_id": str(user_id), "package_id": str(package_id)},
+                "metadata": metadata,
             }
         },
     }
@@ -101,6 +111,7 @@ def test_checkout_requires_verified_license(
 @pytest.mark.integration
 def test_checkout_success_returns_session(
     client,
+    db,
     user_factory,
     license_factory,
     plan_factory,
@@ -151,14 +162,27 @@ def test_checkout_success_returns_session(
     assert "/advisor/subscription/" not in captured_checkout_kwargs["success_url"]
     assert "/advisor/subscription/" not in captured_checkout_kwargs["cancel_url"]
     assert captured_checkout_kwargs["mode"] == "payment"
-    assert captured_checkout_kwargs["metadata"] == {
-        "user_id": str(advisor.id),
-        "package_id": str(plan.id),
-    }
-    assert captured_checkout_kwargs["payment_intent_data"]["metadata"] == {
-        "user_id": str(advisor.id),
-        "package_id": str(plan.id),
-    }
+    checkout_metadata = captured_checkout_kwargs["metadata"]
+    assert checkout_metadata["user_id"] == str(advisor.id)
+    assert checkout_metadata["package_id"] == str(plan.id)
+    assert checkout_metadata["purchase_amount_cents"] == str(int(plan.price_cents or 0))
+    assert checkout_metadata["purchase_currency"] == str((plan.currency or "USD")).upper()
+    assert checkout_metadata["purchase_credits_total"] == str(int(plan.daily_download_limit or 0))
+    assert captured_checkout_kwargs["payment_intent_data"]["metadata"] == checkout_metadata
+
+    pending_purchase = (
+        db.query(LeadPurchase)
+        .filter(LeadPurchase.stripe_checkout_session_id == "cs_test_checkout")
+        .first()
+    )
+    assert pending_purchase is not None
+    assert pending_purchase.status == "pending"
+    assert pending_purchase.user_id == advisor.id
+    assert pending_purchase.package_id == plan.id
+    assert pending_purchase.amount_cents == int(plan.price_cents or 0)
+    assert pending_purchase.currency == str((plan.currency or "USD")).upper()
+    assert pending_purchase.credits_total == int(plan.daily_download_limit or 0)
+    assert pending_purchase.credits_remaining == 0
 
 
 @pytest.mark.integration
@@ -214,7 +238,7 @@ def test_checkout_success_emits_metric_and_purchase_initiated_audit(
         .first()
     )
     assert audit_event is not None
-    assert audit_event.entity_id is None
+    assert audit_event.entity_id is not None
     assert (audit_event.meta_data or {}).get("package_id") == plan.id
     assert (audit_event.meta_data or {}).get("correlation_ids", {}).get("checkout_session_id") == "cs_checkout_metrics"
 
@@ -346,6 +370,182 @@ def test_webhook_checkout_completed_creates_purchase_and_credit_grant(
     )
     assert len(ownership_rows) == 2
     assert {row.lead_id for row in ownership_rows} == {ca_one.id, ca_two.id}
+
+
+@pytest.mark.integration
+def test_webhook_checkout_completed_uses_pending_purchase_snapshot_when_package_mutates(
+    client,
+    db,
+    user_factory,
+    license_factory,
+    plan_factory,
+    auth_headers,
+    monkeypatch,
+):
+    advisor, headers = _create_advisor_with_verified_license(
+        user_factory,
+        license_factory,
+        auth_headers,
+    )
+    plan = plan_factory(
+        stripe_price_id="price_webhook_snapshot_pending",
+        price_cents=5000,
+        daily_download_limit=3,
+    )
+    captured_checkout_kwargs = {}
+
+    def _mock_checkout_create(**kwargs):
+        captured_checkout_kwargs.update(kwargs)
+        return {
+            "id": "cs_snapshot_pending",
+            "url": "https://checkout.stripe.test/snapshot-pending",
+            "payment_intent": "pi_snapshot_pending",
+        }
+
+    monkeypatch.setattr(
+        "app.services.payment_service.PaymentService.create_or_get_stripe_customer",
+        lambda db, user: "cus_snapshot_pending",
+    )
+    monkeypatch.setattr(
+        "app.services.subscription_service.stripe.checkout.Session.create",
+        _mock_checkout_create,
+    )
+
+    checkout_response = client.post(
+        "/api/v1/purchases/checkout",
+        headers=headers,
+        json={"package_id": plan.id},
+    )
+    assert checkout_response.status_code == 200, checkout_response.text
+
+    purchase = (
+        db.query(LeadPurchase)
+        .filter(LeadPurchase.stripe_checkout_session_id == "cs_snapshot_pending")
+        .first()
+    )
+    assert purchase is not None
+    assert purchase.status == "pending"
+    original_amount = int(purchase.amount_cents)
+    original_currency = str(purchase.currency)
+    original_credits = int(purchase.credits_total)
+
+    plan.price_cents = 9900
+    plan.currency = "EUR"
+    plan.daily_download_limit = 77
+    plan.features = {"credits_total": 77}
+    db.add(plan)
+    db.commit()
+
+    event = _build_purchase_webhook_event(
+        event_id="evt_snapshot_pending",
+        event_type="checkout.session.completed",
+        session_id="cs_snapshot_pending",
+        payment_intent_id="pi_snapshot_pending",
+        user_id=advisor.id,
+        package_id=plan.id,
+        amount_cents=9999,
+        snapshot_amount_cents=original_amount,
+        snapshot_currency=original_currency,
+        snapshot_credits_total=original_credits,
+    )
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: event,
+    )
+
+    response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert response.status_code == 200, response.text
+
+    db.refresh(purchase)
+    assert purchase.status == "completed"
+    assert purchase.amount_cents == original_amount
+    assert purchase.currency == original_currency
+    assert purchase.credits_total == original_credits
+    assert purchase.credits_remaining == original_credits
+
+    grant_entry = (
+        db.query(LeadCreditLedger)
+        .filter(
+            LeadCreditLedger.purchase_id == purchase.id,
+            LeadCreditLedger.movement_type == "purchase_grant",
+        )
+        .first()
+    )
+    assert grant_entry is not None
+    assert grant_entry.credits_delta == original_credits
+
+
+@pytest.mark.integration
+def test_webhook_checkout_completed_uses_metadata_snapshot_when_pending_row_missing(
+    client,
+    db,
+    user_factory,
+    license_factory,
+    plan_factory,
+    auth_headers,
+    monkeypatch,
+):
+    advisor, _headers = _create_advisor_with_verified_license(
+        user_factory,
+        license_factory,
+        auth_headers,
+    )
+    plan = plan_factory(
+        stripe_price_id="price_webhook_snapshot_metadata",
+        price_cents=4200,
+        daily_download_limit=4,
+    )
+
+    original_amount = int(plan.price_cents or 0)
+    original_currency = str((plan.currency or "USD")).upper()
+    original_credits = int(plan.daily_download_limit or 0)
+
+    plan.price_cents = 8400
+    plan.currency = "CAD"
+    plan.daily_download_limit = 40
+    plan.features = {"credits_total": 40}
+    db.add(plan)
+    db.commit()
+
+    event = _build_purchase_webhook_event(
+        event_id="evt_snapshot_metadata",
+        event_type="checkout.session.completed",
+        session_id="cs_snapshot_metadata",
+        payment_intent_id="pi_snapshot_metadata",
+        user_id=advisor.id,
+        package_id=plan.id,
+        amount_cents=9999,
+        snapshot_amount_cents=original_amount,
+        snapshot_currency=original_currency,
+        snapshot_credits_total=original_credits,
+    )
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: event,
+    )
+
+    response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert response.status_code == 200, response.text
+
+    purchase = (
+        db.query(LeadPurchase)
+        .filter(LeadPurchase.stripe_checkout_session_id == "cs_snapshot_metadata")
+        .first()
+    )
+    assert purchase is not None
+    assert purchase.status == "completed"
+    assert purchase.amount_cents == original_amount
+    assert purchase.currency == original_currency
+    assert purchase.credits_total == original_credits
+    assert purchase.credits_remaining == original_credits
 
 
 @pytest.mark.integration
