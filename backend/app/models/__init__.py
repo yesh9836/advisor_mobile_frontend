@@ -7,6 +7,7 @@ from .lead import Lead, LeadDownload, LeadOutcome, LeadOwnership
 from .delivery_settings import AdvisorDeliverySettings
 from .audit_log import AuditLog
 from .auth_session import RefreshTokenSession
+from .password_reset import PasswordResetToken
 
 __all__ = [
     "Base",
@@ -25,4 +26,5 @@ __all__ = [
     "AdvisorDeliverySettings",
     "AuditLog",
     "RefreshTokenSession",
+    "PasswordResetToken",
 ]

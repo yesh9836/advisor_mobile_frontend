@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from .delivery_settings import AdvisorDeliverySettings
     from .audit_log import AuditLog
     from .auth_session import RefreshTokenSession
+    from .password_reset import PasswordResetToken
 
 class User(Base):
     """
@@ -145,6 +146,11 @@ class User(Base):
 
     refresh_sessions: Mapped[List["RefreshTokenSession"]] = relationship(
         "RefreshTokenSession",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    password_reset_tokens: Mapped[List["PasswordResetToken"]] = relationship(
+        "PasswordResetToken",
         back_populates="user",
         cascade="all, delete-orphan",
     )
