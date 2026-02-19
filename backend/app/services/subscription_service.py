@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, func
 
 from app.core.config import settings
+from app.models.lead import LeadOwnership
 from app.models.license import License
 from app.models.purchase import LeadCreditLedger, LeadPackage, LeadPurchase
 from app.models.user import User
@@ -310,6 +311,83 @@ class SubscriptionService:
         return SubscriptionService.get_credit_summary(db=db, user=user)
 
     @staticmethod
+    def _get_assigned_counts_by_purchase_id(
+        db: Session,
+        purchase_ids: List[int],
+    ) -> Dict[int, int]:
+        if not purchase_ids:
+            return {}
+
+        rows = (
+            db.query(
+                LeadOwnership.purchase_id,
+                func.count(LeadOwnership.id),
+            )
+            .filter(LeadOwnership.purchase_id.in_(purchase_ids))
+            .group_by(LeadOwnership.purchase_id)
+            .all()
+        )
+        return {
+            int(purchase_id): int(assigned_count)
+            for purchase_id, assigned_count in rows
+            if purchase_id is not None
+        }
+
+    @staticmethod
+    def _derive_fulfillment_status(
+        *,
+        purchase_status: str,
+        credits_total: int,
+        assigned_count: int,
+        unfulfilled_count: int,
+    ) -> str:
+        normalized_status = str(purchase_status or "").lower()
+        if normalized_status != "completed":
+            if normalized_status == "pending":
+                return "pending"
+            return "not_completed"
+
+        if credits_total <= 0 or unfulfilled_count <= 0:
+            return "fulfilled"
+        if assigned_count <= 0:
+            return "pending_inventory"
+        return "partially_fulfilled"
+
+    @staticmethod
+    def _build_purchase_item(
+        purchase: LeadPurchase,
+        package: Optional[LeadPackage],
+        assigned_count: int,
+    ) -> Dict[str, Any]:
+        credits_total = int(purchase.credits_total or 0)
+        unfulfilled_count = max(credits_total - max(int(assigned_count), 0), 0)
+        return {
+            "id": int(purchase.id),
+            "order_reference": (
+                purchase.stripe_checkout_session_id
+                or purchase.stripe_payment_intent_id
+                or f"purchase-{purchase.id}"
+            ),
+            "package_name": package.name if package else None,
+            "amount_cents": int(purchase.amount_cents),
+            "currency": str((purchase.currency or "USD")).upper(),
+            "credits_total": credits_total,
+            "credits_remaining": int(purchase.credits_remaining),
+            "status": str(purchase.status),
+            "assigned_count": max(int(assigned_count), 0),
+            "unfulfilled_count": unfulfilled_count,
+            "fulfillment_status": SubscriptionService._derive_fulfillment_status(
+                purchase_status=str(purchase.status),
+                credits_total=credits_total,
+                assigned_count=max(int(assigned_count), 0),
+                unfulfilled_count=unfulfilled_count,
+            ),
+            "purchased_at": purchase.purchased_at,
+            "stripe_checkout_session_id": purchase.stripe_checkout_session_id,
+            "stripe_payment_intent_id": purchase.stripe_payment_intent_id,
+        }
+
+    @staticmethod
     def get_purchase_orders(
         db: Session,
         user: User,
@@ -333,27 +411,19 @@ class SubscriptionService:
             .limit(size)
             .all()
         )
-        items: List[Dict[str, Any]] = []
-        for purchase, package in rows:
-            items.append(
-                {
-                    "id": int(purchase.id),
-                    "order_reference": (
-                        purchase.stripe_checkout_session_id
-                        or purchase.stripe_payment_intent_id
-                        or f"purchase-{purchase.id}"
-                    ),
-                    "package_name": package.name if package else None,
-                    "amount_cents": int(purchase.amount_cents),
-                    "currency": str((purchase.currency or "USD")).upper(),
-                    "credits_total": int(purchase.credits_total),
-                    "credits_remaining": int(purchase.credits_remaining),
-                    "status": str(purchase.status),
-                    "purchased_at": purchase.purchased_at,
-                    "stripe_checkout_session_id": purchase.stripe_checkout_session_id,
-                    "stripe_payment_intent_id": purchase.stripe_payment_intent_id,
-                }
+        purchase_ids = [int(purchase.id) for purchase, _package in rows]
+        assigned_counts = SubscriptionService._get_assigned_counts_by_purchase_id(
+            db=db,
+            purchase_ids=purchase_ids,
+        )
+        items: List[Dict[str, Any]] = [
+            SubscriptionService._build_purchase_item(
+                purchase=purchase,
+                package=package,
+                assigned_count=assigned_counts.get(int(purchase.id), 0),
             )
+            for purchase, package in rows
+        ]
         return {"items": items, "total": int(total), "page": page, "size": size}
 
     @staticmethod
@@ -368,27 +438,19 @@ class SubscriptionService:
             .all()
         )
 
-        items: List[Dict[str, Any]] = []
-        for purchase, package in rows:
-            items.append(
-                {
-                    "id": int(purchase.id),
-                    "order_reference": (
-                        purchase.stripe_checkout_session_id
-                        or purchase.stripe_payment_intent_id
-                        or f"purchase-{purchase.id}"
-                    ),
-                    "package_name": package.name if package else None,
-                    "amount_cents": int(purchase.amount_cents),
-                    "currency": str((purchase.currency or "USD")).upper(),
-                    "credits_total": int(purchase.credits_total),
-                    "credits_remaining": int(purchase.credits_remaining),
-                    "status": str(purchase.status),
-                    "purchased_at": purchase.purchased_at,
-                    "stripe_checkout_session_id": purchase.stripe_checkout_session_id,
-                    "stripe_payment_intent_id": purchase.stripe_payment_intent_id,
-                }
+        purchase_ids = [int(purchase.id) for purchase, _package in rows]
+        assigned_counts = SubscriptionService._get_assigned_counts_by_purchase_id(
+            db=db,
+            purchase_ids=purchase_ids,
+        )
+        items: List[Dict[str, Any]] = [
+            SubscriptionService._build_purchase_item(
+                purchase=purchase,
+                package=package,
+                assigned_count=assigned_counts.get(int(purchase.id), 0),
             )
+            for purchase, package in rows
+        ]
         return {"items": items}
 
     @staticmethod
