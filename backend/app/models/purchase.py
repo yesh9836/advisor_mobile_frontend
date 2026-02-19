@@ -185,6 +185,12 @@ class LeadCreditLedger(Base):
     )
     credits_delta: Mapped[int] = mapped_column(Integer, nullable=False)
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    idempotency_key: Mapped[Optional[str]] = mapped_column(
+        String(191),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(),
@@ -196,6 +202,36 @@ class LeadCreditLedger(Base):
 
     user: Mapped["User"] = relationship("User", back_populates="lead_credit_ledger_entries")
     purchase: Mapped[Optional["LeadPurchase"]] = relationship("LeadPurchase", back_populates="credit_ledger_entries")
+
+
+class ProcessedStripeEvent(Base):
+    """Durable dedupe record for Stripe webhook event IDs."""
+
+    __tablename__ = "processed_stripe_events"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+    )
+    stripe_event_id: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    event_type: Mapped[str] = mapped_column(
+        String(120),
+        nullable=False,
+        index=True,
+    )
+    processed_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        nullable=False,
+        default=utcnow,
+        server_default=text("CURRENT_TIMESTAMP"),
+        index=True,
+    )
 
 
 class FirstPurchaseAddonOffer(Base):
