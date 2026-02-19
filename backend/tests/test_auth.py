@@ -1,11 +1,13 @@
 from datetime import timedelta
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
 from app.core.config import settings
-from app.core.security import create_access_token, hash_refresh_token
+from app.core.security import create_access_token, hash_password_reset_token, hash_refresh_token
 from app.db.timezone import utcnow
 from app.models.auth_session import RefreshTokenSession
+from app.models.password_reset import PasswordResetToken
 from app.schemas.auth import UserLogin
 from app.services.auth_service import AuthService
 
@@ -447,3 +449,221 @@ def test_access_token_with_wrong_type_claim_is_rejected(client):
         cookies={settings.AUTH_ACCESS_COOKIE_NAME: wrong_type_access},
     )
     assert me.status_code == 401
+
+
+@pytest.mark.integration
+def test_password_reset_request_response_is_generic_for_known_and_unknown_email(
+    client,
+    db,
+    monkeypatch,
+):
+    payload = {
+        "email": "reset.generic@example.com",
+        "password": "ResetGeneric123!",
+        "name": "Reset Generic",
+        "phone": "555-1515",
+    }
+    register = client.post("/api/v1/auth/register", json=payload)
+    assert register.status_code == 201, register.text
+
+    sent_links: list[str] = []
+
+    def _capture_email(**kwargs):
+        sent_links.append(kwargs["reset_url"])
+        return True
+
+    monkeypatch.setattr("app.services.auth_service.EmailService.send_password_reset_email", _capture_email)
+
+    existing = client.post(
+        "/api/v1/auth/password-reset/request",
+        json={"email": payload["email"]},
+    )
+    assert existing.status_code == 202, existing.text
+
+    unknown = client.post(
+        "/api/v1/auth/password-reset/request",
+        json={"email": "unknown.reset@example.com"},
+    )
+    assert unknown.status_code == 202, unknown.text
+    assert existing.json() == unknown.json()
+    assert len(sent_links) == 1
+
+    issued_tokens = db.query(PasswordResetToken).count()
+    assert issued_tokens == 1
+
+
+@pytest.mark.integration
+def test_password_reset_confirm_rejects_unissued_token(client):
+    response = client.post(
+        "/api/v1/auth/password-reset/confirm",
+        json={"token": "invalid-token-that-was-never-issued-12345", "new_password": "AnyNewPass123!"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid or expired password reset token"
+
+
+@pytest.mark.integration
+def test_password_reset_confirm_updates_password_revokes_old_family_and_marks_token_used(
+    client,
+    monkeypatch,
+):
+    payload = {
+        "email": "reset.confirm@example.com",
+        "password": "ResetOld123!",
+        "name": "Reset Confirm",
+        "phone": "555-1616",
+    }
+    register = client.post("/api/v1/auth/register", json=payload)
+    assert register.status_code == 201, register.text
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": payload["email"], "password": payload["password"]},
+    )
+    assert login.status_code == 204, login.text
+    old_access = client.cookies.get(settings.AUTH_ACCESS_COOKIE_NAME)
+    assert old_access
+
+    sent_links: list[str] = []
+
+    def _capture_email(**kwargs):
+        sent_links.append(kwargs["reset_url"])
+        return True
+
+    monkeypatch.setattr("app.services.auth_service.EmailService.send_password_reset_email", _capture_email)
+
+    request_reset = client.post(
+        "/api/v1/auth/password-reset/request",
+        json={"email": payload["email"]},
+    )
+    assert request_reset.status_code == 202, request_reset.text
+    assert sent_links
+
+    reset_url = sent_links[-1]
+    parsed = urlparse(reset_url)
+    token = parse_qs(parsed.query).get("token", [None])[0]
+    assert token
+
+    confirm = client.post(
+        "/api/v1/auth/password-reset/confirm",
+        json={"token": token, "new_password": "ResetNew123!"},
+    )
+    assert confirm.status_code == 204, confirm.text
+
+    reuse = client.post(
+        "/api/v1/auth/password-reset/confirm",
+        json={"token": token, "new_password": "AnotherPass123!"},
+    )
+    assert reuse.status_code == 400
+    assert reuse.json()["detail"] == "Invalid or expired password reset token"
+
+    old_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": payload["email"], "password": payload["password"]},
+    )
+    assert old_login.status_code == 401
+
+    new_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": payload["email"], "password": "ResetNew123!"},
+    )
+    assert new_login.status_code == 204, new_login.text
+
+    old_family_me = client.get(
+        "/api/v1/auth/me",
+        cookies={settings.AUTH_ACCESS_COOKIE_NAME: old_access},
+    )
+    assert old_family_me.status_code == 401
+
+
+@pytest.mark.integration
+def test_password_reset_confirm_rejects_expired_token(client, db, monkeypatch):
+    payload = {
+        "email": "reset.expired@example.com",
+        "password": "ResetExpired123!",
+        "name": "Reset Expired",
+        "phone": "555-1717",
+    }
+    register = client.post("/api/v1/auth/register", json=payload)
+    assert register.status_code == 201, register.text
+
+    sent_links: list[str] = []
+
+    def _capture_email(**kwargs):
+        sent_links.append(kwargs["reset_url"])
+        return True
+
+    monkeypatch.setattr("app.services.auth_service.EmailService.send_password_reset_email", _capture_email)
+
+    request_reset = client.post(
+        "/api/v1/auth/password-reset/request",
+        json={"email": payload["email"]},
+    )
+    assert request_reset.status_code == 202, request_reset.text
+    reset_url = sent_links[-1]
+    token = parse_qs(urlparse(reset_url).query).get("token", [None])[0]
+    assert token
+
+    token_row = (
+        db.query(PasswordResetToken)
+        .filter(PasswordResetToken.token_hash == hash_password_reset_token(token))
+        .first()
+    )
+    assert token_row is not None
+    token_row.expires_at = utcnow() - timedelta(minutes=1)
+    db.commit()
+
+    confirm = client.post(
+        "/api/v1/auth/password-reset/confirm",
+        json={"token": token, "new_password": "ResetExpiredNew123!"},
+    )
+    assert confirm.status_code == 400
+    assert confirm.json()["detail"] == "Invalid or expired password reset token"
+
+
+@pytest.mark.integration
+def test_password_reset_request_is_rate_limited_per_account_to_three_per_hour(
+    client,
+    db,
+    monkeypatch,
+):
+    payload = {
+        "email": "reset.limit@example.com",
+        "password": "ResetLimit123!",
+        "name": "Reset Limit",
+        "phone": "555-1818",
+    }
+    register = client.post("/api/v1/auth/register", json=payload)
+    assert register.status_code == 201, register.text
+    user_id = register.json()["id"]
+
+    sent_links: list[str] = []
+
+    def _capture_email(**kwargs):
+        sent_links.append(kwargs["reset_url"])
+        return True
+
+    monkeypatch.setattr("app.services.auth_service.EmailService.send_password_reset_email", _capture_email)
+
+    for _ in range(3):
+        response = client.post(
+            "/api/v1/auth/password-reset/request",
+            json={"email": payload["email"]},
+        )
+        assert response.status_code == 202, response.text
+
+    rate_limited_response = client.post(
+        "/api/v1/auth/password-reset/request",
+        json={"email": payload["email"]},
+    )
+    assert rate_limited_response.status_code == 429, rate_limited_response.text
+    assert "Too many password reset requests" in rate_limited_response.json()["detail"]
+    assert rate_limited_response.headers.get("retry-after")
+
+    assert len(sent_links) == 3
+    issued_tokens = (
+        db.query(PasswordResetToken)
+        .filter(PasswordResetToken.user_id == user_id)
+        .count()
+    )
+    assert issued_tokens == 3
