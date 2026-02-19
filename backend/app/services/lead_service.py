@@ -200,6 +200,8 @@ class LeadService:
     def allocate_unsold_leads_for_purchase(
         db: Session,
         purchase: LeadPurchase,
+        *,
+        max_assignments: Optional[int] = None,
     ) -> Dict[str, object]:
         bind = db.get_bind()
         dialect_name = bind.dialect.name if bind is not None else ""
@@ -251,6 +253,18 @@ class LeadService:
             }
 
         needed = requested_count - len(assigned_lead_ids)
+        if max_assignments is not None:
+            needed = min(needed, max(int(max_assignments), 0))
+        if needed <= 0:
+            assigned_count = len(assigned_lead_ids)
+            return {
+                "requested_count": requested_count,
+                "assigned_count": assigned_count,
+                "unfulfilled_count": max(requested_count - assigned_count, 0),
+                "newly_assigned_count": 0,
+                "assigned_lead_ids": assigned_lead_ids,
+            }
+
         candidate_query = (
             db.query(Lead)
             .filter(Lead.state_code.in_(states))
@@ -301,10 +315,16 @@ class LeadService:
         )
         query = (
             db.query(LeadPurchase)
+            .join(User, User.id == LeadPurchase.user_id)
             .outerjoin(ownership_counts, ownership_counts.c.purchase_id == LeadPurchase.id)
             .filter(LeadPurchase.status == "completed", LeadPurchase.credits_total > 0)
             .filter(func.coalesce(ownership_counts.c.assigned_count, 0) < LeadPurchase.credits_total)
-            .order_by(LeadPurchase.purchased_at.asc(), LeadPurchase.id.asc())
+            .order_by(
+                User.created_at.asc(),
+                User.id.asc(),
+                LeadPurchase.purchased_at.asc(),
+                LeadPurchase.id.asc(),
+            )
         )
 
         normalized_states = LeadService._normalize_state_codes(state_codes)
@@ -343,32 +363,118 @@ class LeadService:
                 "remaining_unfulfilled_count": 0,
             }
 
-        updated_purchases = 0
-        total_newly_assigned = 0
-        total_remaining_unfulfilled = 0
+        purchase_ids = [int(purchase.id) for purchase in purchases if purchase.id is not None]
+        assigned_counts_by_purchase: Dict[int, int] = {}
+        if purchase_ids:
+            assigned_rows = (
+                db.query(
+                    LeadOwnership.purchase_id,
+                    func.count(LeadOwnership.id),
+                )
+                .filter(LeadOwnership.purchase_id.in_(purchase_ids))
+                .group_by(LeadOwnership.purchase_id)
+                .all()
+            )
+            assigned_counts_by_purchase = {
+                int(purchase_id): int(assigned_count)
+                for purchase_id, assigned_count in assigned_rows
+                if purchase_id is not None
+            }
+
+        purchase_by_id: Dict[int, LeadPurchase] = {}
+        purchase_unfulfilled: Dict[int, int] = {}
+        advisor_order: List[int] = []
+        advisor_purchase_queues: Dict[int, List[int]] = {}
+        advisor_queue_index: Dict[int, int] = {}
 
         for purchase in purchases:
-            allocation_summary = LeadService.allocate_unsold_leads_for_purchase(db=db, purchase=purchase)
-            newly_assigned_count = int(allocation_summary.get("newly_assigned_count", 0) or 0)
-            unfulfilled_count = int(allocation_summary.get("unfulfilled_count", 0) or 0)
-            total_remaining_unfulfilled += unfulfilled_count
+            if purchase.id is None:
+                continue
+            purchase_id = int(purchase.id)
+            requested_count = max(int(purchase.credits_total or 0), 0)
+            assigned_count = assigned_counts_by_purchase.get(purchase_id, 0)
+            unfulfilled_count = max(requested_count - assigned_count, 0)
 
-            if newly_assigned_count <= 0:
+            purchase_by_id[purchase_id] = purchase
+            purchase_unfulfilled[purchase_id] = unfulfilled_count
+
+            if unfulfilled_count <= 0:
                 continue
 
-            updated_purchases += 1
-            total_newly_assigned += newly_assigned_count
+            advisor_id = int(purchase.user_id)
+            if advisor_id not in advisor_purchase_queues:
+                advisor_purchase_queues[advisor_id] = []
+                advisor_queue_index[advisor_id] = 0
+                advisor_order.append(advisor_id)
+            advisor_purchase_queues[advisor_id].append(purchase_id)
+
+        total_newly_assigned = 0
+        per_purchase_newly_assigned: Dict[int, int] = {}
+
+        while True:
+            assigned_in_round = 0
+            active_advisors = 0
+
+            for advisor_id in advisor_order:
+                purchase_queue = advisor_purchase_queues.get(advisor_id, [])
+                queue_index = advisor_queue_index.get(advisor_id, 0)
+                while (
+                    queue_index < len(purchase_queue)
+                    and purchase_unfulfilled.get(purchase_queue[queue_index], 0) <= 0
+                ):
+                    queue_index += 1
+                advisor_queue_index[advisor_id] = queue_index
+
+                if queue_index >= len(purchase_queue):
+                    continue
+
+                active_advisors += 1
+                purchase_id = purchase_queue[queue_index]
+                purchase = purchase_by_id[purchase_id]
+
+                allocation_summary = LeadService.allocate_unsold_leads_for_purchase(
+                    db=db,
+                    purchase=purchase,
+                    max_assignments=1,
+                )
+                newly_assigned_count = int(allocation_summary.get("newly_assigned_count", 0) or 0)
+                unfulfilled_count = int(allocation_summary.get("unfulfilled_count", 0) or 0)
+                purchase_unfulfilled[purchase_id] = max(unfulfilled_count, 0)
+
+                if newly_assigned_count <= 0:
+                    continue
+
+                assigned_in_round += newly_assigned_count
+                per_purchase_newly_assigned[purchase_id] = (
+                    per_purchase_newly_assigned.get(purchase_id, 0) + newly_assigned_count
+                )
+
+                if purchase_unfulfilled[purchase_id] <= 0:
+                    advisor_queue_index[advisor_id] = queue_index + 1
+
+            total_newly_assigned += assigned_in_round
+            if active_advisors == 0 or assigned_in_round <= 0:
+                break
+
+        updated_purchases = len(per_purchase_newly_assigned)
+        total_remaining_unfulfilled = sum(
+            max(int(unfulfilled_count), 0) for unfulfilled_count in purchase_unfulfilled.values()
+        )
+
+        for purchase_id, newly_assigned_count in per_purchase_newly_assigned.items():
+            purchase = purchase_by_id[purchase_id]
+            assigned_count = max(int(purchase.credits_total or 0) - purchase_unfulfilled[purchase_id], 0)
             AuditService.log_purchase_event(
                 actor_user_id=purchase.user_id,
                 action="purchase_leads_backfilled",
-                purchase_id=purchase.id,
-                correlation_ids={"purchase_id": int(purchase.id)},
+                purchase_id=purchase_id,
+                correlation_ids={"purchase_id": purchase_id},
                 meta_data={
                     "source_event": source_event,
-                    "requested_count": int(allocation_summary.get("requested_count", 0) or 0),
-                    "assigned_count": int(allocation_summary.get("assigned_count", 0) or 0),
+                    "requested_count": int(purchase.credits_total or 0),
+                    "assigned_count": assigned_count,
                     "newly_assigned_count": newly_assigned_count,
-                    "unfulfilled_count": unfulfilled_count,
+                    "unfulfilled_count": int(purchase_unfulfilled[purchase_id]),
                 },
             )
 
