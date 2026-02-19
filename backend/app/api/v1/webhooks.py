@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 
 from app.core.config import settings
 from app.services.metrics_service import MetricsService
+from app.services.stripe_webhook_inbox_service import StripeWebhookInboxService
 from app.services.subscription_service import (
     StripeWebhookNonRetryableError,
     StripeWebhookProcessingError,
@@ -49,6 +50,63 @@ async def stripe_webhook(
 
     logger.info(f"Stripe webhook verified: type={event.get('type')} id={event.get('id')}")
     event_type = str(event.get("type") or "unknown")
+
+    if settings.STRIPE_WEBHOOK_FAST_ACK_ENABLED:
+        ack_started_at = perf_counter()
+        try:
+            enqueued = await asyncio.to_thread(
+                StripeWebhookInboxService.enqueue_event_threadsafe,
+                event=event,
+            )
+        except StripeWebhookProcessingError as exc:
+            logger.error(
+                "Stripe webhook inbox enqueue failed: type=%s id=%s error=%s",
+                event.get("type"),
+                event.get("id"),
+                exc,
+            )
+            MetricsService.increment(
+                "purchase_webhook_retry_total",
+                tags={
+                    "event_type": event_type,
+                    "stage": "enqueue",
+                },
+            )
+            raise HTTPException(status_code=500, detail="Webhook processing failed")
+        except Exception as exc:
+            logger.exception(
+                "Unexpected Stripe webhook inbox enqueue failure: type=%s id=%s error=%s",
+                event.get("type"),
+                event.get("id"),
+                exc,
+            )
+            MetricsService.increment(
+                "purchase_webhook_failed_total",
+                tags={
+                    "event_type": event_type,
+                    "stage": "enqueue",
+                },
+            )
+            raise HTTPException(status_code=500, detail="Webhook processing failed")
+
+        elapsed_ms = (perf_counter() - ack_started_at) * 1000.0
+        MetricsService.increment(
+            "purchase_webhook_ingested_total",
+            tags={
+                "event_type": event_type,
+                "enqueued": "true" if enqueued else "false",
+            },
+        )
+        MetricsService.histogram(
+            "purchase_webhook_ack_latency_ms",
+            elapsed_ms,
+            tags={
+                "event_type": event_type,
+                "processing_mode": "fast_ack",
+            },
+        )
+        return {"status": "ok"}
+
     started_at = perf_counter()
     try:
         await asyncio.to_thread(
