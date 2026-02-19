@@ -234,6 +234,49 @@ class ProcessedStripeEvent(Base):
     )
 
 
+class StripePoisonEvent(Base):
+    """Durable record for non-retryable Stripe webhook events."""
+
+    __tablename__ = "stripe_poison_events"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+    )
+    stripe_event_id: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
+    event_type: Mapped[str] = mapped_column(
+        String(120),
+        nullable=False,
+        index=True,
+    )
+    reason: Mapped[str] = mapped_column(
+        String(120),
+        nullable=False,
+        index=True,
+    )
+    detail: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+    payload_excerpt: Mapped[Optional[dict]] = mapped_column(
+        JSON,
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        nullable=False,
+        default=utcnow,
+        server_default=text("CURRENT_TIMESTAMP"),
+        index=True,
+    )
+
+
 class FirstPurchaseAddonOffer(Base):
     """Singleton-style config for first completed purchase upsell behavior."""
 

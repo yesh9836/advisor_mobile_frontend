@@ -6,6 +6,7 @@ from .purchase import (
     LeadPackage,
     LeadPurchase,
     ProcessedStripeEvent,
+    StripePoisonEvent,
 )
 from .license import License
 from .license_resubmission import LicenseResubmission
@@ -24,6 +25,7 @@ __all__ = [
     "LeadPurchase",
     "LeadCreditLedger",
     "ProcessedStripeEvent",
+    "StripePoisonEvent",
     "FirstPurchaseAddonOffer",
     "License",
     "LicenseResubmission",
