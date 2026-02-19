@@ -1091,6 +1091,230 @@ def test_webhook_charge_refunded_applies_single_refund_adjustment_and_audit(
 
 
 @pytest.mark.integration
+def test_webhook_checkout_completed_replay_does_not_reactivate_refunded_purchase(
+    client,
+    db,
+    user_factory,
+    plan_factory,
+    purchase_factory,
+    monkeypatch,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="AdvisorWebhookRefundReplay123!",
+        email="advisor.webhook.refund.replay@example.com",
+        name="Webhook Refund Replay Advisor",
+    )
+    plan = plan_factory(stripe_price_id="price_refund_replay_checkout")
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=4,
+        credits_remaining=4,
+        status="completed",
+        stripe_checkout_session_id="cs_refund_replay_1",
+        stripe_payment_intent_id="pi_refund_replay_1",
+    )
+
+    refund_event = {
+        "id": "evt_charge_refunded_replay_guard_1",
+        "type": "charge.refunded",
+        "data": {
+            "object": {
+                "id": "ch_refund_replay_1",
+                "payment_intent": "pi_refund_replay_1",
+                "amount_refunded": purchase.amount_cents,
+                "reason": "requested_by_customer",
+            }
+        },
+    }
+    replay_success_event = _build_purchase_webhook_event(
+        event_id="evt_checkout_completed_replay_guard_1",
+        event_type="checkout.session.completed",
+        session_id="cs_refund_replay_1",
+        payment_intent_id="pi_refund_replay_1",
+        user_id=advisor.id,
+        package_id=plan.id,
+        amount_cents=plan.price_cents,
+    )
+    event_holder = {"value": refund_event}
+
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: event_holder["value"],
+    )
+
+    refund_response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert refund_response.status_code == 200, refund_response.text
+
+    event_holder["value"] = replay_success_event
+    replay_response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert replay_response.status_code == 200, replay_response.text
+
+    db.refresh(purchase)
+    assert purchase.status == "refunded"
+    assert purchase.credits_remaining == 0
+    assert (
+        db.query(LeadCreditLedger)
+        .filter(
+            LeadCreditLedger.purchase_id == purchase.id,
+            LeadCreditLedger.movement_type == "purchase_grant",
+        )
+        .count()
+        == 0
+    )
+    assert (
+        db.query(LeadCreditLedger)
+        .filter(
+            LeadCreditLedger.purchase_id == purchase.id,
+            LeadCreditLedger.movement_type == "refund_adjustment",
+        )
+        .count()
+        == 1
+    )
+
+
+@pytest.mark.integration
+def test_webhook_payment_intent_succeeded_replay_does_not_reactivate_refunded_purchase(
+    client,
+    db,
+    user_factory,
+    plan_factory,
+    purchase_factory,
+    monkeypatch,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="AdvisorWebhookPIRefundReplay123!",
+        email="advisor.webhook.pi.refund.replay@example.com",
+        name="Webhook PI Refund Replay Advisor",
+    )
+    plan = plan_factory(stripe_price_id="price_refund_replay_pi")
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=4,
+        credits_remaining=0,
+        status="refunded",
+        stripe_checkout_session_id="cs_pi_refund_replay_1",
+        stripe_payment_intent_id="pi_refund_replay_guard_2",
+    )
+    event = {
+        "id": "evt_pi_succeeded_refund_replay_guard_1",
+        "type": "payment_intent.succeeded",
+        "data": {"object": {"id": "pi_refund_replay_guard_2"}},
+    }
+
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: event,
+    )
+
+    response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert response.status_code == 200, response.text
+
+    db.refresh(purchase)
+    assert purchase.status == "refunded"
+    assert purchase.credits_remaining == 0
+    assert (
+        db.query(LeadCreditLedger)
+        .filter(
+            LeadCreditLedger.purchase_id == purchase.id,
+            LeadCreditLedger.movement_type == "purchase_grant",
+        )
+        .count()
+        == 0
+    )
+
+
+@pytest.mark.integration
+def test_webhook_payment_intent_succeeded_replay_does_not_change_canceled_purchase(
+    client,
+    db,
+    user_factory,
+    plan_factory,
+    purchase_factory,
+    monkeypatch,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="AdvisorWebhookPICanceledReplay123!",
+        email="advisor.webhook.pi.canceled.replay@example.com",
+        name="Webhook PI Canceled Replay Advisor",
+    )
+    plan = plan_factory(stripe_price_id="price_canceled_replay_pi")
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=4,
+        credits_remaining=0,
+        status="canceled",
+        stripe_checkout_session_id="cs_pi_canceled_replay_1",
+        stripe_payment_intent_id="pi_canceled_replay_guard_1",
+    )
+    event_holder = {
+        "value": {
+            "id": "evt_pi_succeeded_canceled_replay_guard_1",
+            "type": "payment_intent.succeeded",
+            "data": {"object": {"id": "pi_canceled_replay_guard_1"}},
+        }
+    }
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: event_holder["value"],
+    )
+
+    monkeypatch.setattr("app.services.subscription_service.settings.PURCHASE_WEBHOOK_CREDIT_GRANT_ENABLED", False)
+    disabled_response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert disabled_response.status_code == 200, disabled_response.text
+
+    db.refresh(purchase)
+    assert purchase.status == "canceled"
+
+    event_holder["value"] = {
+        "id": "evt_pi_succeeded_canceled_replay_guard_2",
+        "type": "payment_intent.succeeded",
+        "data": {"object": {"id": "pi_canceled_replay_guard_1"}},
+    }
+    monkeypatch.setattr("app.services.subscription_service.settings.PURCHASE_WEBHOOK_CREDIT_GRANT_ENABLED", True)
+    enabled_response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert enabled_response.status_code == 200, enabled_response.text
+
+    db.refresh(purchase)
+    assert purchase.status == "canceled"
+    assert purchase.credits_remaining == 0
+    assert (
+        db.query(LeadCreditLedger)
+        .filter(
+            LeadCreditLedger.purchase_id == purchase.id,
+            LeadCreditLedger.movement_type == "purchase_grant",
+        )
+        .count()
+        == 0
+    )
+
+
+@pytest.mark.integration
 def test_webhook_checkout_completed_missing_metadata_returns_500(
     client,
     user_factory,
