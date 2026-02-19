@@ -92,11 +92,32 @@ def create_refresh_token() -> str:
     return secrets.token_urlsafe(64)
 
 
+def create_password_reset_token() -> str:
+    """
+    Create a high-entropy password reset token.
+    """
+    return secrets.token_urlsafe(64)
+
+
+def hash_token(token: str) -> str:
+    """
+    Hash a token for storage-at-rest safety.
+    """
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def hash_refresh_token(token: str) -> str:
     """
     Hash refresh token for storage-at-rest safety.
     """
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+    return hash_token(token)
+
+
+def hash_password_reset_token(token: str) -> str:
+    """
+    Hash password reset token for storage-at-rest safety.
+    """
+    return hash_token(token)
 
 
 def create_csrf_token() -> str:
