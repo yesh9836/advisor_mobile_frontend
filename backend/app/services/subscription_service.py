@@ -819,18 +819,36 @@ class SubscriptionService:
             logger.warning("No local lead purchase found for payment_intent_id=%s", payment_intent_id)
             return
 
-        if (
-            SubscriptionService._normalize_purchase_status(purchase.status)
-            in SubscriptionService._TERMINAL_PURCHASE_STATUSES
-        ):
+        current_status = SubscriptionService._normalize_purchase_status(purchase.status)
+        requested_status = "failed"
+        resolved_status = SubscriptionService._resolve_purchase_status_transition(
+            purchase=purchase,
+            requested_status=requested_status,
+            source_event=source_event,
+            checkout_session_id=purchase.stripe_checkout_session_id,
+            payment_intent_id=payment_intent_id,
+        )
+        if resolved_status != requested_status:
             logger.info(
-                "Lead purchase already terminal for payment_intent_id=%s status=%s",
+                (
+                    "Ignoring payment failure transition for purchase_id=%s payment_intent_id=%s "
+                    "current_status=%s resolved_status=%s"
+                ),
+                purchase.id,
                 payment_intent_id,
-                purchase.status,
+                current_status,
+                resolved_status,
             )
             return
 
-        purchase.status = "failed"
+        if current_status == resolved_status:
+            logger.info(
+                "Lead purchase already in failed status for payment_intent_id=%s",
+                payment_intent_id,
+            )
+            return
+
+        purchase.status = resolved_status
         if purchase.credits_remaining < 0:
             purchase.credits_remaining = 0
         db.add(purchase)
