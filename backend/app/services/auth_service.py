@@ -5,6 +5,7 @@ Authentication service containing business logic for user registration and authe
 import logging
 from datetime import datetime, timedelta
 from typing import NamedTuple, Optional
+from urllib.parse import quote_plus
 from uuid import uuid4
 
 from fastapi import HTTPException, status
@@ -14,15 +15,19 @@ from app.core.config import settings
 from app.core.security import (
     create_access_token,
     create_csrf_token,
+    create_password_reset_token,
     create_refresh_token,
     get_password_hash,
+    hash_password_reset_token,
     hash_refresh_token,
     verify_password,
 )
 from app.db.timezone import utcnow
 from app.models.auth_session import RefreshTokenSession
+from app.models.password_reset import PasswordResetToken
 from app.models.user import User
-from app.schemas.auth import UserRegister, UserLogin
+from app.schemas.auth import PasswordResetConfirm, PasswordResetRequest, UserRegister, UserLogin
+from app.services.email_service import EmailService
 
 logger = logging.getLogger(__name__)
 
@@ -185,6 +190,21 @@ class AuthService:
             if session.revoked_at is None:
                 session.revoked_at = now
                 session.revoked_reason = reason
+
+    @staticmethod
+    def _revoke_all_user_refresh_sessions(db: Session, *, user_id: int, reason: str) -> None:
+        now = utcnow()
+        sessions = (
+            db.query(RefreshTokenSession)
+            .filter(
+                RefreshTokenSession.user_id == user_id,
+                RefreshTokenSession.revoked_at.is_(None),
+            )
+            .all()
+        )
+        for session in sessions:
+            session.revoked_at = now
+            session.revoked_reason = reason
 
     @staticmethod
     def _get_refresh_session_for_rotation(
@@ -409,3 +429,149 @@ class AuthService:
         except Exception:
             db.rollback()
             logger.exception("Logout revocation failed")
+
+    @staticmethod
+    def _build_password_reset_url(token: str) -> str:
+        frontend_base_url = settings.FRONTEND_URL.rstrip("/")
+        return f"{frontend_base_url}/reset-password?token={quote_plus(token)}"
+
+    @staticmethod
+    def _is_password_reset_rate_limited(
+        db: Session,
+        *,
+        user_id: int,
+        now: datetime,
+    ) -> tuple[bool, int]:
+        window_start = now - timedelta(hours=1)
+        recent_requests = (
+            db.query(PasswordResetToken)
+            .filter(
+                PasswordResetToken.user_id == user_id,
+                PasswordResetToken.created_at >= window_start,
+            )
+            .order_by(PasswordResetToken.created_at.asc())
+            .all()
+        )
+        issued_count = len(recent_requests)
+        if issued_count < settings.PASSWORD_RESET_REQUESTS_PER_HOUR:
+            return False, 0
+
+        oldest_request = recent_requests[0]
+        retry_after_seconds = max(
+            1,
+            int(((oldest_request.created_at + timedelta(hours=1)) - now).total_seconds()),
+        )
+        return True, retry_after_seconds
+
+    @staticmethod
+    def request_password_reset(
+        db: Session,
+        payload: PasswordResetRequest,
+        *,
+        user_agent: str | None = None,
+        ip_address: str | None = None,
+    ) -> None:
+        """
+        Best-effort password reset request flow.
+
+        This method intentionally avoids raising user-facing errors so callers can
+        always return a generic response that does not leak account existence.
+        """
+        try:
+            now = utcnow()
+            user = db.query(User).filter(User.email == payload.email).first()
+            if not user or not user.is_active:
+                return
+
+            is_rate_limited, retry_after_seconds = AuthService._is_password_reset_rate_limited(
+                db,
+                user_id=user.id,
+                now=now,
+            )
+            if is_rate_limited:
+                logger.info(
+                    "Password reset request rate-limited for user_id=%s",
+                    user.id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=(
+                        "Too many password reset requests. Please wait before requesting another reset email."
+                    ),
+                    headers={"Retry-After": str(retry_after_seconds)},
+                )
+
+            raw_token = create_password_reset_token()
+            token_record = PasswordResetToken(
+                user_id=user.id,
+                token_hash=hash_password_reset_token(raw_token),
+                expires_at=now + timedelta(minutes=settings.PASSWORD_RESET_TOKEN_EXPIRE_MINUTES),
+                requested_user_agent=(user_agent or "")[:255] or None,
+                requested_ip=(ip_address or "")[:45] or None,
+            )
+            db.add(token_record)
+            db.commit()
+
+            reset_url = AuthService._build_password_reset_url(raw_token)
+            EmailService.send_password_reset_email(
+                recipient_email=user.email,
+                recipient_name=user.name,
+                reset_url=reset_url,
+                expires_minutes=settings.PASSWORD_RESET_TOKEN_EXPIRE_MINUTES,
+            )
+        except HTTPException:
+            raise
+        except Exception:
+            db.rollback()
+            logger.exception(
+                "Password reset request flow failed for email=%s",
+                payload.email,
+            )
+
+    @staticmethod
+    def confirm_password_reset(
+        db: Session,
+        payload: PasswordResetConfirm,
+    ) -> None:
+        now = utcnow()
+        token_hash = hash_password_reset_token(payload.token)
+
+        try:
+            token_row = (
+                db.query(PasswordResetToken)
+                .filter(PasswordResetToken.token_hash == token_hash)
+                .with_for_update()
+                .first()
+            )
+            if not token_row or token_row.used_at is not None or token_row.expires_at <= now:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid or expired password reset token",
+                )
+
+            user = db.query(User).filter(User.id == token_row.user_id).first()
+            if not user or not user.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid or expired password reset token",
+                )
+
+            user.password_hash = get_password_hash(payload.new_password)
+            token_row.used_at = now
+            AuthService._revoke_all_user_refresh_sessions(
+                db,
+                user_id=user.id,
+                reason="password_reset",
+            )
+            db.commit()
+            logger.info("Password reset completed for user_id=%s", user.id)
+        except HTTPException:
+            db.rollback()
+            raise
+        except Exception:
+            db.rollback()
+            logger.exception("Password reset confirm flow failed")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Unable to reset password right now",
+            )
