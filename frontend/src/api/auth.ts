@@ -22,3 +22,20 @@ export const logout = async (): Promise<void> => {
     window.dispatchEvent(new Event(AUTH_LOGOUT_EVENT));
   }
 };
+
+export const requestPasswordReset = async (
+  email: string,
+): Promise<{ message: string }> => {
+  const response = await apiClient.post<{ message: string }>(
+    "/auth/password-reset/request",
+    { email },
+  );
+  return response.data;
+};
+
+export const confirmPasswordReset = async (payload: {
+  token: string;
+  new_password: string;
+}): Promise<void> => {
+  await apiClient.post("/auth/password-reset/confirm", payload);
+};

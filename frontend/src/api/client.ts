@@ -6,7 +6,12 @@ import axios, {
 
 export const AUTH_LOGOUT_EVENT = "auth:logout";
 
-const PUBLIC_AUTH_ENDPOINTS = ["/auth/login", "/auth/register"];
+const PUBLIC_AUTH_ENDPOINTS = [
+  "/auth/login",
+  "/auth/register",
+  "/auth/password-reset/request",
+  "/auth/password-reset/confirm",
+];
 const AUTH_SESSION_ENDPOINTS = ["/auth/refresh", "/auth/logout"];
 const MUTATING_METHODS = new Set(["post", "put", "patch", "delete"]);
 
