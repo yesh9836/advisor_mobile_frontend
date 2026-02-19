@@ -67,6 +67,19 @@ def test_admin_endpoints_require_admin(client, user_factory, auth_headers):
     ok_audit_logs = client.get("/api/v1/admin/audit-logs", headers=admin_headers)
     assert ok_audit_logs.status_code == 200, ok_audit_logs.text
 
+    ok_offer_get = client.get(
+        "/api/v1/admin/first-purchase-offer",
+        headers=admin_headers,
+    )
+    assert ok_offer_get.status_code == 200, ok_offer_get.text
+
+    ok_offer_put = client.put(
+        "/api/v1/admin/first-purchase-offer",
+        headers=admin_headers,
+        json={"is_enabled": False},
+    )
+    assert ok_offer_put.status_code == 200, ok_offer_put.text
+
     wordpress_placeholder = client.post(
         "/api/v1/admin/sync/wordpress",
         headers=admin_headers,
@@ -86,12 +99,16 @@ def test_admin_endpoints_require_admin(client, user_factory, auth_headers):
         ("GET", f"/api/v1/admin/users/{admin.id}"),
         ("POST", f"/api/v1/admin/users/{admin.id}/deactivate"),
         ("GET", "/api/v1/admin/audit-logs"),
+        ("GET", "/api/v1/admin/first-purchase-offer"),
+        ("PUT", "/api/v1/admin/first-purchase-offer"),
         ("POST", "/api/v1/admin/sync/wordpress"),
     ]
 
     for method, path in forbidden_paths:
         if method == "GET":
             response = client.get(path, headers=advisor_headers)
+        elif method == "PUT":
+            response = client.put(path, headers=advisor_headers, json={"is_enabled": False})
         else:
             response = client.post(path, headers=advisor_headers, json={"reason": "No"})
 
@@ -178,6 +195,67 @@ def test_admin_analytics_overview_returns_aggregates(
         {"month": "2026-01", "new_users": 1},
         {"month": "2026-02", "new_users": 1},
     ]
+
+
+def test_admin_can_configure_first_purchase_addon_offer(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+    plan_factory,
+):
+    admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+    trigger_package = plan_factory(name="TriggerStarter", price_cents=12000, daily_download_limit=10)
+
+    initial = client.get("/api/v1/admin/first-purchase-offer", headers=admin_headers)
+    assert initial.status_code == 200, initial.text
+    assert initial.json()["is_enabled"] is False
+    assert initial.json()["trigger_package_id"] is None
+    assert initial.json()["offer_package_id"] is None
+
+    update_response = client.put(
+        "/api/v1/admin/first-purchase-offer",
+        headers=admin_headers,
+        json={
+            "is_enabled": True,
+            "trigger_package_id": trigger_package.id,
+            "offer_credits_total": 5,
+            "offer_price_cents": 7500,
+            "offer_currency": "USD",
+            "headline": "First order bonus",
+            "message": "Upgrade this order and receive extra credits.",
+            "cta_label": "Upgrade to bonus package",
+        },
+    )
+    assert update_response.status_code == 200, update_response.text
+    payload = update_response.json()
+    assert payload["is_enabled"] is True
+    assert payload["trigger_package_id"] == trigger_package.id
+    assert payload["trigger_package_name"].startswith("TriggerStarter")
+    assert payload["offer_package_id"] is not None
+    assert payload["offer_package_name"].startswith("First Purchase Add-on")
+    assert payload["offer_price_cents"] == 7500
+    assert payload["offer_credits_total"] == 5
+    assert payload["offer_currency"] == "USD"
+    assert payload["updated_by"] == admin.id
+
+    refreshed = client.get("/api/v1/admin/first-purchase-offer", headers=admin_headers)
+    assert refreshed.status_code == 200, refreshed.text
+    assert refreshed.json()["is_enabled"] is True
+    assert refreshed.json()["offer_package_id"] == payload["offer_package_id"]
+
+    audit_event = (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.actor_user_id == admin.id,
+            AuditLog.action == "first_purchase_addon_offer_updated",
+            AuditLog.entity_type == "FirstPurchaseAddonOffer",
+        )
+        .order_by(AuditLog.id.desc())
+        .first()
+    )
+    assert audit_event is not None
+    assert (audit_event.meta_data or {}).get("after", {}).get("is_enabled") is True
 
 
 def test_admin_dashboard_counts_match_seeded_data(

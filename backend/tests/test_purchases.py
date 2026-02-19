@@ -257,6 +257,94 @@ def test_purchase_balance_orders_and_history_endpoints(
 
 
 @pytest.mark.integration
+def test_first_purchase_offer_eligibility_depends_on_first_completed_purchase(
+    client,
+    user_factory,
+    auth_headers,
+    plan_factory,
+    purchase_factory,
+):
+    admin = user_factory(
+        role="admin",
+        password="AdminOffer123!",
+        email=f"admin.offer.{uuid4().hex[:8]}@example.com",
+        name="Offer Admin",
+    )
+    admin_headers = auth_headers(admin.email, "AdminOffer123!")
+
+    advisor = user_factory(
+        role="advisor",
+        password="AdvisorOffer123!",
+        email=f"advisor.offer.{uuid4().hex[:8]}@example.com",
+        name="Offer Advisor",
+    )
+    advisor_headers = auth_headers(advisor.email, "AdvisorOffer123!")
+
+    trigger_package = plan_factory(
+        name="OfferTrigger",
+        price_cents=11000,
+        daily_download_limit=10,
+    )
+
+    update_response = client.put(
+        "/api/v1/admin/first-purchase-offer",
+        headers=admin_headers,
+        json={
+            "is_enabled": True,
+            "trigger_package_id": trigger_package.id,
+            "offer_credits_total": 5,
+            "offer_price_cents": 6400,
+            "offer_currency": "USD",
+            "headline": "First order bonus",
+            "message": "Upgrade and receive more credits.",
+            "cta_label": "Upgrade now",
+        },
+    )
+    assert update_response.status_code == 200, update_response.text
+
+    before_purchase = client.get(
+        "/api/v1/purchases/first-purchase-offer?checkout_session_id=cs_before_purchase",
+        headers=advisor_headers,
+    )
+    assert before_purchase.status_code == 200, before_purchase.text
+    assert before_purchase.json() == {"eligible": False, "offer": None}
+
+    first_purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=trigger_package.id,
+        status="completed",
+        credits_total=trigger_package.daily_download_limit,
+        stripe_checkout_session_id="cs_first_purchase_offer",
+    )
+
+    first_check = client.get(
+        "/api/v1/purchases/first-purchase-offer?checkout_session_id=cs_first_purchase_offer",
+        headers=advisor_headers,
+    )
+    assert first_check.status_code == 200, first_check.text
+    assert first_check.json()["eligible"] is True
+    assert first_check.json()["offer"]["offer_package_id"] is not None
+    assert first_check.json()["offer"]["offer_credits_total"] == 5
+
+    add_on_purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=first_check.json()["offer"]["offer_package_id"],
+        status="completed",
+        credits_total=5,
+        stripe_checkout_session_id="cs_second_purchase_offer",
+    )
+    _ = first_purchase
+    _ = add_on_purchase
+
+    after_second_purchase = client.get(
+        "/api/v1/purchases/first-purchase-offer?checkout_session_id=cs_first_purchase_offer",
+        headers=advisor_headers,
+    )
+    assert after_second_purchase.status_code == 200, after_second_purchase.text
+    assert after_second_purchase.json() == {"eligible": False, "offer": None}
+
+
+@pytest.mark.integration
 def test_subscription_compat_routes_are_removed(client):
     assert client.get("/api/v1/subscriptions/plans").status_code == 404
     assert client.post("/api/v1/subscriptions/checkout", json={"plan_id": 1}).status_code == 404
