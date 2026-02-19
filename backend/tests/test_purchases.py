@@ -2,6 +2,8 @@ from uuid import uuid4
 
 import pytest
 
+from app.models.lead import LeadOwnership
+
 
 def _create_advisor_with_verified_license(user_factory, license_factory, auth_headers):
     unique_key = uuid4().hex[:10]
@@ -166,10 +168,12 @@ def test_purchase_checkout_allows_rollout_allowlisted_user_when_globally_disable
 @pytest.mark.integration
 def test_purchase_balance_orders_and_history_endpoints(
     client,
+    db,
     user_factory,
     license_factory,
     plan_factory,
     purchase_factory,
+    lead_factory,
     auth_headers,
 ):
     advisor, headers = _create_advisor_with_verified_license(
@@ -199,6 +203,11 @@ def test_purchase_balance_orders_and_history_endpoints(
     )
     _ = pending_purchase
     _ = completed_purchase
+    assigned_a = lead_factory(state_code="CA", mobile_phone="555-PURCHASE-ASSIGN-0001")
+    assigned_b = lead_factory(state_code="CA", mobile_phone="555-PURCHASE-ASSIGN-0002")
+    db.add(LeadOwnership(user_id=advisor.id, lead_id=assigned_a.id, purchase_id=completed_purchase.id))
+    db.add(LeadOwnership(user_id=advisor.id, lead_id=assigned_b.id, purchase_id=completed_purchase.id))
+    db.commit()
 
     balance_response = client.get("/api/v1/purchases/balance", headers=headers)
     assert balance_response.status_code == 200, balance_response.text
@@ -216,6 +225,16 @@ def test_purchase_balance_orders_and_history_endpoints(
     assert all("order_reference" in item for item in orders_payload["items"])
     assert all("credits_total" in item for item in orders_payload["items"])
     assert all("credits_remaining" in item for item in orders_payload["items"])
+    assert all("assigned_count" in item for item in orders_payload["items"])
+    assert all("unfulfilled_count" in item for item in orders_payload["items"])
+    assert all("fulfillment_status" in item for item in orders_payload["items"])
+    orders_by_id = {item["id"]: item for item in orders_payload["items"]}
+    assert orders_by_id[completed_purchase.id]["assigned_count"] == 2
+    assert orders_by_id[completed_purchase.id]["unfulfilled_count"] == 8
+    assert orders_by_id[completed_purchase.id]["fulfillment_status"] == "partially_fulfilled"
+    assert orders_by_id[pending_purchase.id]["assigned_count"] == 0
+    assert orders_by_id[pending_purchase.id]["unfulfilled_count"] == 4
+    assert orders_by_id[pending_purchase.id]["fulfillment_status"] == "pending"
 
     completed_only = client.get(
         "/api/v1/purchases/orders?page=1&size=20&status=completed",
@@ -232,6 +251,9 @@ def test_purchase_balance_orders_and_history_endpoints(
     history_payload = history_response.json()
     assert len(history_payload["items"]) == 2
     assert history_payload["items"][0]["purchased_at"] >= history_payload["items"][1]["purchased_at"]
+    assert all("assigned_count" in item for item in history_payload["items"])
+    assert all("unfulfilled_count" in item for item in history_payload["items"])
+    assert all("fulfillment_status" in item for item in history_payload["items"])
 
 
 @pytest.mark.integration

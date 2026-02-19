@@ -3,6 +3,7 @@ from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
 from app.models.lead import LeadDownload, LeadOwnership
+from app.schemas.lead import LeadCreate
 from app.services.lead_service import LeadService
 
 
@@ -740,3 +741,156 @@ def test_download_leads_csv_emits_purchase_credit_consumed_audit_events(
     assert consumed_event["purchase_id"] == purchase.id
     assert consumed_event["credits_delta"] == -1
     assert consumed_event["correlation_ids"]["purchase_id"] == purchase.id
+
+
+@pytest.mark.unit
+def test_reconcile_pending_purchase_assignments_prioritizes_oldest_purchase(
+    db,
+    user_factory,
+    plan_factory,
+    license_factory,
+    purchase_factory,
+    lead_factory,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LeadUnitReconcileOrder123!",
+        email="lead.unit.reconcile.order@example.com",
+    )
+    plan = plan_factory(
+        daily_download_limit=5,
+        state_limit=1,
+        stripe_price_id="price_reconcile_order",
+    )
+    license_factory(user_id=advisor.id, state="CA", status="verified")
+    older_purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=2,
+        credits_remaining=2,
+        status="completed",
+    )
+    newer_purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=2,
+        credits_remaining=2,
+        status="completed",
+    )
+    lead_factory(state_code="CA", mobile_phone="555-RECON-ORDER-0001")
+    lead_factory(state_code="CA", mobile_phone="555-RECON-ORDER-0002")
+
+    summary = LeadService.reconcile_pending_purchase_assignments(
+        db=db,
+        state_codes=["CA"],
+        source_event="test_reconcile_order",
+    )
+
+    assert summary["newly_assigned_count"] == 2
+    assert (
+        db.query(LeadOwnership)
+        .filter(LeadOwnership.purchase_id == older_purchase.id)
+        .count()
+        == 2
+    )
+    assert (
+        db.query(LeadOwnership)
+        .filter(LeadOwnership.purchase_id == newer_purchase.id)
+        .count()
+        == 0
+    )
+
+
+@pytest.mark.unit
+def test_create_lead_triggers_pending_purchase_reconciliation(
+    db,
+    user_factory,
+    plan_factory,
+    license_factory,
+    purchase_factory,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LeadUnitCreateRecon123!",
+        email="lead.unit.create.recon@example.com",
+    )
+    plan = plan_factory(
+        daily_download_limit=5,
+        state_limit=1,
+        stripe_price_id="price_create_reconcile",
+    )
+    license_factory(user_id=advisor.id, state="CA", status="verified")
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=1,
+        credits_remaining=1,
+        status="completed",
+    )
+
+    created = LeadService.create_lead(
+        db=db,
+        data=LeadCreate(
+            state_code="CA",
+            mobile_phone="555-CR-RECON-0001",
+        ),
+    )
+
+    ownership = (
+        db.query(LeadOwnership)
+        .filter(
+            LeadOwnership.purchase_id == purchase.id,
+            LeadOwnership.user_id == advisor.id,
+            LeadOwnership.lead_id == created.id,
+        )
+        .first()
+    )
+    assert ownership is not None
+
+
+@pytest.mark.unit
+def test_bulk_import_leads_triggers_pending_purchase_reconciliation(
+    db,
+    user_factory,
+    plan_factory,
+    license_factory,
+    purchase_factory,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LeadUnitBulkRecon123!",
+        email="lead.unit.bulk.recon@example.com",
+    )
+    plan = plan_factory(
+        daily_download_limit=5,
+        state_limit=1,
+        stripe_price_id="price_bulk_reconcile",
+    )
+    license_factory(user_id=advisor.id, state="CA", status="verified")
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=3,
+        credits_remaining=3,
+        status="completed",
+    )
+
+    result = LeadService.bulk_import_leads(
+        db=db,
+        csv_data=[
+            {"state_code": "CA", "mobile_phone": "555-BULK-RECON-0001"},
+            {"state_code": "CA", "mobile_phone": "555-BULK-RECON-0002"},
+            {"state_code": "CA", "mobile_phone": "555-BULK-RECON-0003"},
+        ],
+    )
+
+    assert result["success"] == 3
+    assert (
+        db.query(LeadOwnership)
+        .filter(
+            LeadOwnership.purchase_id == purchase.id,
+            LeadOwnership.user_id == advisor.id,
+        )
+        .count()
+        == 3
+    )
