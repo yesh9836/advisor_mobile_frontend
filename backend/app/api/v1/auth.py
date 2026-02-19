@@ -11,13 +11,22 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_active_user, get_db
 from app.core.config import settings
 from app.models.user import User
-from app.schemas.auth import UserLogin, UserRegister
+from app.schemas.auth import (
+    PasswordResetConfirm,
+    PasswordResetRequest,
+    PasswordResetRequestResponse,
+    UserLogin,
+    UserRegister,
+)
 from app.schemas.user import UserResponse
 from app.services.auth_service import AuthService, IssuedAuthTokens
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
+PASSWORD_RESET_GENERIC_MESSAGE = (
+    "If an account exists for that email, password reset instructions will be sent."
+)
 
 
 def _set_auth_cookies(response: Response, tokens: IssuedAuthTokens) -> None:
@@ -142,6 +151,44 @@ def login(
         ip_address=request.client.host if request.client else None,
     )
     _set_auth_cookies(response, issued_tokens)
+    response.status_code = status.HTTP_204_NO_CONTENT
+    return response
+
+
+@router.post(
+    "/password-reset/request",
+    response_model=PasswordResetRequestResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Request password reset",
+    description="Request a one-time password reset link for the account email.",
+)
+def request_password_reset(
+    payload: PasswordResetRequest,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+) -> PasswordResetRequestResponse:
+    AuthService.request_password_reset(
+        db,
+        payload,
+        user_agent=request.headers.get("user-agent"),
+        ip_address=request.client.host if request.client else None,
+    )
+    return PasswordResetRequestResponse(message=PASSWORD_RESET_GENERIC_MESSAGE)
+
+
+@router.post(
+    "/password-reset/confirm",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Confirm password reset",
+    description="Confirm password reset with a valid one-time token.",
+)
+def confirm_password_reset(
+    payload: PasswordResetConfirm,
+    response: Response,
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    AuthService.confirm_password_reset(db, payload)
+    _clear_auth_cookies(response)
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
 
