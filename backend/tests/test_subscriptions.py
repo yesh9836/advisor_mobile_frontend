@@ -1223,6 +1223,188 @@ def test_webhook_payment_intent_succeeded_defers_credit_grant_when_toggle_disabl
 
 
 @pytest.mark.integration
+def test_webhook_payment_intent_failed_does_not_downgrade_completed_purchase(
+    client,
+    db,
+    user_factory,
+    plan_factory,
+    purchase_factory,
+    monkeypatch,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="AdvisorWebhookPIFailedCompleted123!",
+        email="advisor.webhook.pi.failed.completed@example.com",
+        name="Webhook PI Failed Completed Advisor",
+    )
+    plan = plan_factory(stripe_price_id="price_webhook_pi_failed_completed_guard")
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        stripe_checkout_session_id="cs_pi_failed_completed_guard_1",
+        stripe_payment_intent_id="pi_failed_completed_guard_1",
+        credits_total=4,
+        credits_remaining=1,
+        status="completed",
+    )
+    event = {
+        "id": "evt_pi_failed_completed_guard_1",
+        "type": "payment_intent.payment_failed",
+        "data": {
+            "object": {
+                "id": "pi_failed_completed_guard_1",
+            }
+        },
+    }
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: event,
+    )
+
+    response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert response.status_code == 200, response.text
+
+    db.refresh(purchase)
+    assert purchase.status == "completed"
+    assert purchase.credits_remaining == 1
+    assert (
+        db.query(ProcessedStripeEvent)
+        .filter(ProcessedStripeEvent.stripe_event_id == "evt_pi_failed_completed_guard_1")
+        .count()
+        == 1
+    )
+
+
+@pytest.mark.integration
+def test_webhook_payment_intent_failed_marks_pending_purchase_failed(
+    client,
+    db,
+    user_factory,
+    plan_factory,
+    purchase_factory,
+    monkeypatch,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="AdvisorWebhookPIFailedPending123!",
+        email="advisor.webhook.pi.failed.pending@example.com",
+        name="Webhook PI Failed Pending Advisor",
+    )
+    plan = plan_factory(stripe_price_id="price_webhook_pi_failed_pending")
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        stripe_checkout_session_id="cs_pi_failed_pending_1",
+        stripe_payment_intent_id="pi_failed_pending_1",
+        credits_total=4,
+        credits_remaining=0,
+        status="pending",
+    )
+    event = {
+        "id": "evt_pi_failed_pending_1",
+        "type": "payment_intent.payment_failed",
+        "data": {
+            "object": {
+                "id": "pi_failed_pending_1",
+            }
+        },
+    }
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: event,
+    )
+
+    response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert response.status_code == 200, response.text
+
+    db.refresh(purchase)
+    assert purchase.status == "failed"
+    assert purchase.credits_remaining == 0
+    assert (
+        db.query(ProcessedStripeEvent)
+        .filter(ProcessedStripeEvent.stripe_event_id == "evt_pi_failed_pending_1")
+        .count()
+        == 1
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("status", "credits_remaining", "event_id", "payment_intent_id"),
+    [
+        ("refunded", 0, "evt_pi_failed_refunded_noop_1", "pi_failed_refunded_noop_1"),
+        ("canceled", 2, "evt_pi_failed_canceled_noop_1", "pi_failed_canceled_noop_1"),
+    ],
+)
+def test_webhook_payment_intent_failed_does_not_change_immutable_statuses(
+    client,
+    db,
+    user_factory,
+    plan_factory,
+    purchase_factory,
+    monkeypatch,
+    status,
+    credits_remaining,
+    event_id,
+    payment_intent_id,
+):
+    advisor = user_factory(
+        role="advisor",
+        password=f"AdvisorWebhookPIFailedImmutable123!{status}",
+        email=f"advisor.webhook.pi.failed.immutable.{status}@example.com",
+        name=f"Webhook PI Failed Immutable {status}",
+    )
+    plan = plan_factory(stripe_price_id=f"price_webhook_pi_failed_{status}_noop")
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        stripe_checkout_session_id=f"cs_{payment_intent_id}",
+        stripe_payment_intent_id=payment_intent_id,
+        credits_total=4,
+        credits_remaining=credits_remaining,
+        status=status,
+    )
+    event = {
+        "id": event_id,
+        "type": "payment_intent.payment_failed",
+        "data": {
+            "object": {
+                "id": payment_intent_id,
+            }
+        },
+    }
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: event,
+    )
+
+    response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert response.status_code == 200, response.text
+
+    db.refresh(purchase)
+    assert purchase.status == status
+    assert purchase.credits_remaining == credits_remaining
+    assert (
+        db.query(ProcessedStripeEvent)
+        .filter(ProcessedStripeEvent.stripe_event_id == event_id)
+        .count()
+        == 1
+    )
+
+
+@pytest.mark.integration
 def test_webhook_charge_refunded_applies_single_refund_adjustment_and_audit(
     client,
     db,
