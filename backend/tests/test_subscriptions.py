@@ -5,7 +5,7 @@ import stripe
 
 from app.models.audit_log import AuditLog
 from app.models.lead import LeadOwnership
-from app.models.purchase import LeadCreditLedger, LeadPurchase, ProcessedStripeEvent
+from app.models.purchase import LeadCreditLedger, LeadPurchase, ProcessedStripeEvent, StripePoisonEvent
 from app.services.subscription_service import StripeWebhookProcessingError
 
 
@@ -1790,8 +1790,9 @@ def test_webhook_payment_intent_succeeded_replay_does_not_change_canceled_purcha
 
 
 @pytest.mark.integration
-def test_webhook_checkout_completed_missing_metadata_returns_500(
+def test_webhook_checkout_completed_missing_metadata_is_acked_as_non_retryable(
     client,
+    db,
     user_factory,
     monkeypatch,
 ):
@@ -1821,14 +1822,46 @@ def test_webhook_checkout_completed_missing_metadata_returns_500(
         "app.api.v1.webhooks.stripe.Webhook.construct_event",
         lambda payload, sig_header, secret: event,
     )
+    metric_counters = []
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.MetricsService.increment",
+        lambda name, value=1, tags=None: metric_counters.append((name, value, tags or {})),
+    )
+    monkeypatch.setattr(
+        "app.services.subscription_service.MetricsService.increment",
+        lambda name, value=1, tags=None: metric_counters.append((name, value, tags or {})),
+    )
 
     response = client.post(
         "/api/v1/webhooks/stripe",
         headers={"stripe-signature": "sig_test"},
         json={"mock": "payload"},
     )
-    assert response.status_code == 500
-    assert response.json()["detail"] == "Webhook processing failed"
+    assert response.status_code == 200, response.text
+    assert response.json() == {"status": "ok"}
+
+    poison = (
+        db.query(StripePoisonEvent)
+        .filter(StripePoisonEvent.stripe_event_id == "evt_checkout_missing_metadata")
+        .first()
+    )
+    assert poison is not None
+    assert poison.event_type == "checkout.session.completed"
+    assert poison.reason == "missing_purchase_metadata"
+    assert "session_id=cs_evt_missing_metadata" in poison.detail
+    assert (poison.payload_excerpt or {}).get("object_id") == "cs_evt_missing_metadata"
+
+    assert any(
+        name == "purchase_webhook_non_retryable_total"
+        and tags.get("reason") == "missing_purchase_metadata"
+        and tags.get("poison_recorded") == "true"
+        for name, _, tags in metric_counters
+    )
+    assert any(
+        name == "purchase_webhook_acknowledged_non_retryable_total"
+        and tags.get("reason") == "missing_purchase_metadata"
+        for name, _, tags in metric_counters
+    )
 
     current = client.post(
         "/api/v1/auth/login",
@@ -1841,8 +1874,9 @@ def test_webhook_checkout_completed_missing_metadata_returns_500(
 
 
 @pytest.mark.integration
-def test_webhook_checkout_completed_missing_plan_returns_500(
+def test_webhook_checkout_completed_missing_package_is_acked_as_non_retryable_once(
     client,
+    db,
     user_factory,
     monkeypatch,
 ):
@@ -1873,14 +1907,59 @@ def test_webhook_checkout_completed_missing_plan_returns_500(
         "app.api.v1.webhooks.stripe.Webhook.construct_event",
         lambda payload, sig_header, secret: event,
     )
+    metric_counters = []
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.MetricsService.increment",
+        lambda name, value=1, tags=None: metric_counters.append((name, value, tags or {})),
+    )
+    monkeypatch.setattr(
+        "app.services.subscription_service.MetricsService.increment",
+        lambda name, value=1, tags=None: metric_counters.append((name, value, tags or {})),
+    )
 
-    response = client.post(
+    first_response = client.post(
         "/api/v1/webhooks/stripe",
         headers={"stripe-signature": "sig_test"},
         json={"mock": "payload"},
     )
-    assert response.status_code == 500
-    assert response.json()["detail"] == "Webhook processing failed"
+    assert first_response.status_code == 200, first_response.text
+    assert first_response.json() == {"status": "ok"}
+
+    second_response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert second_response.status_code == 200, second_response.text
+    assert second_response.json() == {"status": "ok"}
+
+    poison_rows = (
+        db.query(StripePoisonEvent)
+        .filter(StripePoisonEvent.stripe_event_id == "evt_checkout_missing_plan")
+        .all()
+    )
+    assert len(poison_rows) == 1
+    poison = poison_rows[0]
+    assert poison.event_type == "checkout.session.completed"
+    assert poison.reason == "missing_package"
+    assert "package_id=999999" in poison.detail
+
+    assert any(
+        name == "purchase_webhook_non_retryable_total"
+        and tags.get("reason") == "missing_package"
+        and tags.get("poison_recorded") == "true"
+        for name, _, tags in metric_counters
+    )
+    assert any(
+        name == "purchase_webhook_non_retryable_total"
+        and tags.get("reason") == "missing_package"
+        and tags.get("poison_recorded") == "false"
+        for name, _, tags in metric_counters
+    )
+    assert (
+        sum(1 for name, _, tags in metric_counters if name == "purchase_webhook_acknowledged_non_retryable_total")
+        == 2
+    )
 
     current = client.post(
         "/api/v1/auth/login",
