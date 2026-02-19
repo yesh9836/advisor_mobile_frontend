@@ -726,6 +726,50 @@ def test_webhook_fast_ack_enqueues_without_running_sync_processing(
 
 
 @pytest.mark.integration
+def test_webhook_livemode_mismatch_is_ignored_before_processing(
+    client,
+    monkeypatch,
+):
+    event = {
+        "id": "evt_live_mode_mismatch",
+        "type": "checkout.session.completed",
+        "livemode": True,
+        "data": {"object": {"id": "cs_live_mode_mismatch"}},
+    }
+    metric_counters = []
+
+    monkeypatch.setattr("app.api.v1.webhooks.settings.STRIPE_WEBHOOK_EXPECT_LIVEMODE", False)
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: event,
+    )
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.StripeWebhookInboxService.enqueue_event_threadsafe",
+        lambda event: (_ for _ in ()).throw(AssertionError("mismatched event should not enqueue")),
+    )
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.SubscriptionService.handle_webhook_event_threadsafe",
+        lambda event: (_ for _ in ()).throw(AssertionError("mismatched event should not process")),
+    )
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.MetricsService.increment",
+        lambda name, value=1, tags=None: metric_counters.append((name, value, tags or {})),
+    )
+
+    response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"status": "ignored"}
+    assert any(
+        name == "purchase_webhook_ignored_total" and tags.get("reason") == "livemode_mismatch"
+        for name, _, tags in metric_counters
+    )
+
+
+@pytest.mark.integration
 def test_webhook_fast_ack_returns_500_when_enqueue_fails(
     client,
     monkeypatch,
@@ -1555,6 +1599,190 @@ def test_webhook_charge_refunded_applies_single_refund_adjustment_and_audit(
     assert len(refund_audits) == 1
     refund_meta = refund_audits[0].meta_data or {}
     assert refund_meta.get("correlation_ids", {}).get("payment_intent_id") == "pi_refund_1"
+
+
+@pytest.mark.integration
+def test_webhook_charge_refunded_partial_then_full_adjusts_incrementally(
+    client,
+    db,
+    user_factory,
+    plan_factory,
+    purchase_factory,
+    monkeypatch,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="AdvisorWebhookPartialRefund123!",
+        email="advisor.webhook.partial.refund@example.com",
+        name="Webhook Partial Refund Advisor",
+    )
+    plan = plan_factory(stripe_price_id="price_webhook_partial_refund")
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=4,
+        credits_remaining=4,
+        status="completed",
+        stripe_checkout_session_id="cs_partial_refund_1",
+        stripe_payment_intent_id="pi_partial_refund_1",
+    )
+    event_holder = {
+        "value": {
+            "id": "evt_charge_partial_refund_1",
+            "type": "charge.refunded",
+            "data": {
+                "object": {
+                    "id": "ch_partial_refund_1",
+                    "payment_intent": "pi_partial_refund_1",
+                    "amount_refunded": 2500,
+                    "reason": "requested_by_customer",
+                }
+            },
+        }
+    }
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: event_holder["value"],
+    )
+
+    partial_response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert partial_response.status_code == 200, partial_response.text
+
+    db.refresh(purchase)
+    assert purchase.status == "completed"
+    assert purchase.credits_remaining == 3
+    partial_adjustments = (
+        db.query(LeadCreditLedger)
+        .filter(
+            LeadCreditLedger.purchase_id == purchase.id,
+            LeadCreditLedger.movement_type == "refund_adjustment",
+        )
+        .all()
+    )
+    assert len(partial_adjustments) == 1
+    assert partial_adjustments[0].credits_delta == -1
+
+    event_holder["value"] = {
+        "id": "evt_charge_partial_refund_2",
+        "type": "charge.refunded",
+        "data": {
+            "object": {
+                "id": "ch_partial_refund_1",
+                "payment_intent": "pi_partial_refund_1",
+                "amount_refunded": purchase.amount_cents,
+                "reason": "requested_by_customer",
+            }
+        },
+    }
+    full_response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert full_response.status_code == 200, full_response.text
+
+    db.refresh(purchase)
+    assert purchase.status == "refunded"
+    assert purchase.credits_remaining == 0
+    adjustments = (
+        db.query(LeadCreditLedger)
+        .filter(
+            LeadCreditLedger.purchase_id == purchase.id,
+            LeadCreditLedger.movement_type == "refund_adjustment",
+        )
+        .all()
+    )
+    assert len(adjustments) == 2
+    assert sum(entry.credits_delta for entry in adjustments) == -4
+
+
+@pytest.mark.integration
+def test_webhook_charge_refunded_duplicate_cumulative_amount_is_idempotent(
+    client,
+    db,
+    user_factory,
+    plan_factory,
+    purchase_factory,
+    monkeypatch,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="AdvisorWebhookPartialDuplicate123!",
+        email="advisor.webhook.partial.duplicate@example.com",
+        name="Webhook Partial Duplicate Advisor",
+    )
+    plan = plan_factory(stripe_price_id="price_webhook_partial_duplicate")
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=4,
+        credits_remaining=4,
+        status="completed",
+        stripe_checkout_session_id="cs_partial_duplicate_1",
+        stripe_payment_intent_id="pi_partial_duplicate_1",
+    )
+    event_holder = {
+        "value": {
+            "id": "evt_charge_partial_duplicate_1",
+            "type": "charge.refunded",
+            "data": {
+                "object": {
+                    "id": "ch_partial_duplicate_1",
+                    "payment_intent": "pi_partial_duplicate_1",
+                    "amount_refunded": 5000,
+                    "reason": "requested_by_customer",
+                }
+            },
+        }
+    }
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: event_holder["value"],
+    )
+
+    first = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert first.status_code == 200, first.text
+
+    event_holder["value"] = {
+        "id": "evt_charge_partial_duplicate_2",
+        "type": "charge.refunded",
+        "data": {
+            "object": {
+                "id": "ch_partial_duplicate_1",
+                "payment_intent": "pi_partial_duplicate_1",
+                "amount_refunded": 5000,
+                "reason": "requested_by_customer",
+            }
+        },
+    }
+    second = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert second.status_code == 200, second.text
+
+    db.refresh(purchase)
+    assert purchase.status == "completed"
+    assert purchase.credits_remaining == 2
+    adjustments = (
+        db.query(LeadCreditLedger)
+        .filter(
+            LeadCreditLedger.purchase_id == purchase.id,
+            LeadCreditLedger.movement_type == "refund_adjustment",
+        )
+        .all()
+    )
+    assert len(adjustments) == 1
+    assert adjustments[0].credits_delta == -2
 
 
 @pytest.mark.integration

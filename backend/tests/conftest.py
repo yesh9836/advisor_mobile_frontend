@@ -63,6 +63,15 @@ def _install_stripe_stub() -> None:
         def list(*args, **kwargs):
             return {"data": []}
 
+    class _Event:
+        @staticmethod
+        def list(*args, **kwargs):
+            return {"data": []}
+
+    class _RequestsClient:
+        def __init__(self, timeout=None):
+            self.timeout = timeout
+
     stripe.error = types.SimpleNamespace(
         StripeError=StripeError,
         SignatureVerificationError=SignatureVerificationError,
@@ -72,8 +81,12 @@ def _install_stripe_stub() -> None:
     stripe.Customer = _Customer
     stripe.PaymentMethod = _PaymentMethod
     stripe.Invoice = _Invoice
+    stripe.Event = _Event
+    stripe.http_client = types.SimpleNamespace(RequestsClient=_RequestsClient)
     stripe.api_key = None
     stripe.api_version = None
+    stripe.max_network_retries = 0
+    stripe.default_http_client = None
 
     sys.modules["stripe"] = stripe
 
