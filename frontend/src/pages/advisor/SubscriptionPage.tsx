@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { createCheckout, getPackages } from "@/api/purchases";
-import type { PurchasePackage } from "@/types/purchase";
+import { createCheckout, getPackages, getPurchaseHistory } from "@/api/purchases";
+import type { PurchaseOrderItem, PurchasePackage } from "@/types/purchase";
 import { getApiErrorMessage } from "@/utils/api-error";
 
 interface DisplayPlan {
@@ -59,21 +59,27 @@ const toDisplayPlan = (packageOption: PurchasePackage): DisplayPlan => {
   };
 };
 
+const buildCheckoutFulfillmentNotice = (
+  purchase: PurchaseOrderItem | null,
+  checkoutSessionId: string | null,
+): string => {
+  if (!purchase) {
+    return `Checkout completed. Your lead credits are available${checkoutSessionId ? ` (session ${checkoutSessionId})` : ""}.`;
+  }
+
+  return `Checkout completed. Delivered now: ${purchase.assigned_count}/${purchase.credits_total}. Pending auto-delivery: ${Math.max(purchase.unfulfilled_count, 0)}.`;
+};
+
 const SubscriptionPage = () => {
   const [plans, setPlans] = useState<DisplayPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [checkoutKey, setCheckoutKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
 
   const checkoutState = searchParams.get("checkout");
   const checkoutSessionId = searchParams.get("session_id");
-  const checkoutNotice =
-    checkoutState === "success"
-      ? `Checkout completed. Your lead credits are available${checkoutSessionId ? ` (session ${checkoutSessionId})` : ""}.`
-      : checkoutState === "cancel"
-        ? "Checkout canceled. No charge was made."
-        : null;
 
   useEffect(() => {
     let mounted = true;
@@ -104,6 +110,44 @@ const SubscriptionPage = () => {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadCheckoutNotice = async () => {
+      if (checkoutState === "cancel") {
+        setCheckoutNotice("Checkout canceled. No charge was made.");
+        return;
+      }
+      if (checkoutState !== "success") {
+        setCheckoutNotice(null);
+        return;
+      }
+
+      if (!checkoutSessionId) {
+        setCheckoutNotice(buildCheckoutFulfillmentNotice(null, null));
+        return;
+      }
+
+      try {
+        const history = await getPurchaseHistory(20);
+        if (!active) return;
+        const matched = history.items.find(
+          (item) => item.stripe_checkout_session_id === checkoutSessionId,
+        );
+        setCheckoutNotice(buildCheckoutFulfillmentNotice(matched ?? null, checkoutSessionId));
+      } catch {
+        if (!active) return;
+        setCheckoutNotice(buildCheckoutFulfillmentNotice(null, checkoutSessionId));
+      }
+    };
+
+    void loadCheckoutNotice();
+
+    return () => {
+      active = false;
+    };
+  }, [checkoutSessionId, checkoutState]);
 
   const handleCheckout = async (entry: DisplayPlan) => {
     if (!entry.packageId) {
