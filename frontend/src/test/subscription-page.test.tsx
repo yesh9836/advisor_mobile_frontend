@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
@@ -7,6 +7,10 @@ import SubscriptionPage from "@/pages/advisor/SubscriptionPage";
 vi.mock("@/api/purchases", () => ({
   getPackages: vi.fn().mockResolvedValue([]),
   createCheckout: vi.fn(),
+  getFirstPurchaseOfferEligibility: vi.fn().mockResolvedValue({
+    eligible: false,
+    offer: null,
+  }),
   getPurchaseHistory: vi.fn().mockResolvedValue({
     items: [],
   }),
@@ -188,5 +192,58 @@ describe("SubscriptionPage license gate", () => {
     expect(
       screen.queryByText("Submit a license from your profile to unlock lead checkout."),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows first-purchase add-on popup after first successful checkout and allows add-on checkout", async () => {
+    const { getPurchaseHistory, getFirstPurchaseOfferEligibility, createCheckout } =
+      await import("@/api/purchases");
+    vi.mocked(getPurchaseHistory).mockResolvedValueOnce({
+      items: [
+        {
+          id: 1,
+          order_reference: "cs_test_123",
+          package_name: "Starter",
+          amount_cents: 20000,
+          currency: "USD",
+          credits_total: 10,
+          credits_remaining: 10,
+          status: "completed",
+          assigned_count: 10,
+          unfulfilled_count: 0,
+          fulfillment_status: "fulfilled",
+          purchased_at: "2026-02-19T00:00:00Z",
+          stripe_checkout_session_id: "cs_test_123",
+          stripe_payment_intent_id: "pi_test_123",
+        },
+      ],
+    });
+    vi.mocked(getFirstPurchaseOfferEligibility).mockResolvedValueOnce({
+      eligible: true,
+      offer: {
+        trigger_package_id: 1,
+        offer_package_id: 2,
+        offer_package_name: "Starter Plus",
+        offer_price_cents: 25000,
+        offer_currency: "USD",
+        offer_credits_total: 14,
+        headline: "First order bonus",
+        message: "Upgrade now for extra credits.",
+        cta_label: "Upgrade package",
+      },
+    });
+    vi.mocked(createCheckout).mockRejectedValueOnce(new Error("checkout unavailable"));
+
+    renderRoute("/subscription?checkout=success&session_id=cs_test_123");
+
+    expect(
+      await screen.findByRole("heading", { name: "First order bonus" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Upgrade package" }));
+
+    await waitFor(() => {
+      expect(getFirstPurchaseOfferEligibility).toHaveBeenCalledWith("cs_test_123");
+      expect(createCheckout).toHaveBeenCalledWith(2);
+    });
+    expect(await screen.findByText("checkout unavailable")).toBeInTheDocument();
   });
 });

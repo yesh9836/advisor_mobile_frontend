@@ -64,6 +64,10 @@ vi.mock("@/pages/admin/AnalyticsPage", () => ({
   default: () => <div>Analytics Route</div>,
 }));
 
+vi.mock("@/pages/admin/FirstPurchaseOfferPage", () => ({
+  default: () => <div>First Purchase Offer Route</div>,
+}));
+
 vi.mock("@/pages/admin/LicenseReviewsPage", () => ({
   default: () => <div>License Reviews Route</div>,
 }));
@@ -90,5 +94,10 @@ describe("Admin user route mapping", () => {
   it("maps /admin/analytics to AnalyticsPage", async () => {
     renderRoute("/admin/analytics");
     expect(await screen.findByText("Analytics Route")).toBeInTheDocument();
+  });
+
+  it("maps /admin/first-purchase-offer to FirstPurchaseOfferPage", async () => {
+    renderRoute("/admin/first-purchase-offer");
+    expect(await screen.findByText("First Purchase Offer Route")).toBeInTheDocument();
   });
 });

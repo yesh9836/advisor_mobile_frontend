@@ -185,6 +185,7 @@ describe("Sidebar role-based navigation", () => {
     expect(screen.getByText("Orders")).toBeInTheDocument();
     expect(screen.getByText("Imports")).toBeInTheDocument();
     expect(screen.getByText("Analytics")).toBeInTheDocument();
+    expect(screen.getByText("First Purchase Offer")).toBeInTheDocument();
     expect(screen.getByText("License Reviews")).toBeInTheDocument();
     expect(screen.queryByText("Buy Leads")).not.toBeInTheDocument();
     expect(screen.queryByText("Lead Inbox")).not.toBeInTheDocument();
