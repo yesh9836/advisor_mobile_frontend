@@ -186,16 +186,40 @@ class LeadService:
         return [lead for _ownership, lead in rows]
 
     @staticmethod
+    def _normalize_state_codes(state_codes: Optional[List[str]]) -> List[str]:
+        if not state_codes:
+            return []
+        normalized = {
+            str(state_code).strip().upper()
+            for state_code in state_codes
+            if str(state_code).strip()
+        }
+        return sorted(code for code in normalized if len(code) == 2)
+
+    @staticmethod
     def allocate_unsold_leads_for_purchase(
         db: Session,
         purchase: LeadPurchase,
     ) -> Dict[str, object]:
+        bind = db.get_bind()
+        dialect_name = bind.dialect.name if bind is not None else ""
+        if purchase.id is not None and dialect_name == "mysql":
+            locked_purchase = (
+                db.query(LeadPurchase)
+                .filter(LeadPurchase.id == purchase.id)
+                .with_for_update()
+                .first()
+            )
+            if locked_purchase is not None:
+                purchase = locked_purchase
+
         requested_count = max(int(purchase.credits_total or 0), 0)
         if purchase.status != "completed" or requested_count <= 0:
             return {
                 "requested_count": requested_count,
                 "assigned_count": 0,
                 "unfulfilled_count": 0,
+                "newly_assigned_count": 0,
                 "assigned_lead_ids": [],
             }
 
@@ -206,11 +230,13 @@ class LeadService:
             .all()
         )
         assigned_lead_ids = [int(row.lead_id) for row in existing_assignments]
+        existing_assigned_count = len(assigned_lead_ids)
         if len(assigned_lead_ids) >= requested_count:
             return {
                 "requested_count": requested_count,
                 "assigned_count": len(assigned_lead_ids),
                 "unfulfilled_count": 0,
+                "newly_assigned_count": 0,
                 "assigned_lead_ids": assigned_lead_ids,
             }
 
@@ -220,6 +246,7 @@ class LeadService:
                 "requested_count": requested_count,
                 "assigned_count": len(assigned_lead_ids),
                 "unfulfilled_count": max(requested_count - len(assigned_lead_ids), 0),
+                "newly_assigned_count": 0,
                 "assigned_lead_ids": assigned_lead_ids,
             }
 
@@ -230,8 +257,6 @@ class LeadService:
             .filter(~Lead.id.in_(select(LeadOwnership.lead_id)))
             .order_by(Lead.created_at.desc(), Lead.id.desc())
         )
-        bind = db.get_bind()
-        dialect_name = bind.dialect.name if bind is not None else ""
         if dialect_name == "mysql":
             candidate_query = candidate_query.with_for_update(skip_locked=True)
 
@@ -254,8 +279,149 @@ class LeadService:
             "requested_count": requested_count,
             "assigned_count": assigned_count,
             "unfulfilled_count": max(requested_count - assigned_count, 0),
+            "newly_assigned_count": max(assigned_count - existing_assigned_count, 0),
             "assigned_lead_ids": assigned_lead_ids,
         }
+
+    @staticmethod
+    def _query_unfulfilled_completed_purchases(
+        db: Session,
+        *,
+        state_codes: Optional[List[str]] = None,
+        max_purchases: int = 500,
+    ) -> List[LeadPurchase]:
+        ownership_counts = (
+            db.query(
+                LeadOwnership.purchase_id.label("purchase_id"),
+                func.count(LeadOwnership.id).label("assigned_count"),
+            )
+            .filter(LeadOwnership.purchase_id.isnot(None))
+            .group_by(LeadOwnership.purchase_id)
+            .subquery()
+        )
+        query = (
+            db.query(LeadPurchase)
+            .outerjoin(ownership_counts, ownership_counts.c.purchase_id == LeadPurchase.id)
+            .filter(LeadPurchase.status == "completed", LeadPurchase.credits_total > 0)
+            .filter(func.coalesce(ownership_counts.c.assigned_count, 0) < LeadPurchase.credits_total)
+            .order_by(LeadPurchase.purchased_at.asc(), LeadPurchase.id.asc())
+        )
+
+        normalized_states = LeadService._normalize_state_codes(state_codes)
+        if normalized_states:
+            query = query.filter(
+                db.query(License.id)
+                .filter(
+                    License.user_id == LeadPurchase.user_id,
+                    License.verification_status == "verified",
+                    func.upper(License.state).in_(normalized_states),
+                )
+                .exists()
+            )
+
+        sanitized_limit = max(1, int(max_purchases))
+        return query.limit(sanitized_limit).all()
+
+    @staticmethod
+    def reconcile_pending_purchase_assignments(
+        db: Session,
+        *,
+        state_codes: Optional[List[str]] = None,
+        source_event: str = "inventory_ingest",
+        max_purchases: int = 500,
+    ) -> Dict[str, int]:
+        purchases = LeadService._query_unfulfilled_completed_purchases(
+            db=db,
+            state_codes=state_codes,
+            max_purchases=max_purchases,
+        )
+        if not purchases:
+            return {
+                "scanned_purchases": 0,
+                "updated_purchases": 0,
+                "newly_assigned_count": 0,
+                "remaining_unfulfilled_count": 0,
+            }
+
+        updated_purchases = 0
+        total_newly_assigned = 0
+        total_remaining_unfulfilled = 0
+
+        for purchase in purchases:
+            allocation_summary = LeadService.allocate_unsold_leads_for_purchase(db=db, purchase=purchase)
+            newly_assigned_count = int(allocation_summary.get("newly_assigned_count", 0) or 0)
+            unfulfilled_count = int(allocation_summary.get("unfulfilled_count", 0) or 0)
+            total_remaining_unfulfilled += unfulfilled_count
+
+            if newly_assigned_count <= 0:
+                continue
+
+            updated_purchases += 1
+            total_newly_assigned += newly_assigned_count
+            AuditService.log_purchase_event(
+                actor_user_id=purchase.user_id,
+                action="purchase_leads_backfilled",
+                purchase_id=purchase.id,
+                correlation_ids={"purchase_id": int(purchase.id)},
+                meta_data={
+                    "source_event": source_event,
+                    "requested_count": int(allocation_summary.get("requested_count", 0) or 0),
+                    "assigned_count": int(allocation_summary.get("assigned_count", 0) or 0),
+                    "newly_assigned_count": newly_assigned_count,
+                    "unfulfilled_count": unfulfilled_count,
+                },
+            )
+
+        if total_newly_assigned > 0:
+            db.commit()
+            MetricsService.increment(
+                "purchase_pending_reconciliation_assigned_total",
+                value=total_newly_assigned,
+                tags={"source_event": source_event},
+            )
+        else:
+            # Releases row locks acquired during reconciliation scans on MySQL.
+            db.rollback()
+
+        return {
+            "scanned_purchases": len(purchases),
+            "updated_purchases": updated_purchases,
+            "newly_assigned_count": total_newly_assigned,
+            "remaining_unfulfilled_count": total_remaining_unfulfilled,
+        }
+
+    @staticmethod
+    def _reconcile_pending_purchases_best_effort(
+        db: Session,
+        *,
+        state_codes: Optional[List[str]],
+        source_event: str,
+    ) -> None:
+        try:
+            summary = LeadService.reconcile_pending_purchase_assignments(
+                db=db,
+                state_codes=state_codes,
+                source_event=source_event,
+            )
+            if summary["newly_assigned_count"] > 0:
+                logger.info(
+                    (
+                        "Purchase reconciliation assigned leads: source=%s "
+                        "scanned=%s updated=%s assigned=%s remaining_unfulfilled=%s"
+                    ),
+                    source_event,
+                    summary["scanned_purchases"],
+                    summary["updated_purchases"],
+                    summary["newly_assigned_count"],
+                    summary["remaining_unfulfilled_count"],
+                )
+        except Exception as exc:
+            db.rollback()
+            logger.error(
+                "Purchase reconciliation failed after inventory ingest: source=%s error=%s",
+                source_event,
+                exc,
+            )
 
     @staticmethod
     def _get_exportable_leads_for_user(
@@ -722,6 +888,11 @@ class LeadService:
             db.add(lead)
             db.commit()
             db.refresh(lead)
+            LeadService._reconcile_pending_purchases_best_effort(
+                db=db,
+                state_codes=[lead.state_code] if lead.state_code else None,
+                source_event="lead_create",
+            )
             return lead
         except Exception as e:
             db.rollback()
@@ -790,6 +961,12 @@ class LeadService:
             leads = [Lead(**row) for row in valid_rows]
             db.add_all(leads)
             db.commit()
+            imported_states = sorted({lead.state_code for lead in leads if lead.state_code})
+            LeadService._reconcile_pending_purchases_best_effort(
+                db=db,
+                state_codes=imported_states,
+                source_event="lead_bulk_import",
+            )
             return {"success": len(leads), "failed": 0, "errors": []}
         except Exception as e:
             db.rollback()
