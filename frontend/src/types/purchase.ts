@@ -53,3 +53,52 @@ export interface PaginatedPurchaseOrders {
 export interface PurchaseHistory {
   items: PurchaseOrderItem[];
 }
+
+export interface FirstPurchaseAddonOfferUpdatePayload {
+  is_enabled: boolean;
+  trigger_package_id: number | null;
+  offer_credits_total: number | null;
+  offer_price_cents: number | null;
+  offer_currency: string | null;
+  headline: string | null;
+  message: string | null;
+  cta_label: string | null;
+  starts_at: string | null;
+  ends_at: string | null;
+}
+
+export interface FirstPurchaseAddonOfferConfig {
+  id: number | null;
+  is_enabled: boolean;
+  trigger_package_id: number | null;
+  trigger_package_name: string | null;
+  offer_package_id: number | null;
+  offer_package_name: string | null;
+  offer_price_cents: number | null;
+  offer_currency: string | null;
+  offer_credits_total: number | null;
+  headline: string | null;
+  message: string | null;
+  cta_label: string | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  updated_at: string | null;
+  updated_by: number | null;
+}
+
+export interface FirstPurchaseAddonOfferAdvisor {
+  trigger_package_id: number;
+  offer_package_id: number;
+  offer_package_name: string;
+  offer_price_cents: number;
+  offer_currency: string;
+  offer_credits_total: number;
+  headline: string;
+  message: string;
+  cta_label: string;
+}
+
+export interface FirstPurchaseAddonOfferEligibility {
+  eligible: boolean;
+  offer: FirstPurchaseAddonOfferAdvisor | null;
+}
