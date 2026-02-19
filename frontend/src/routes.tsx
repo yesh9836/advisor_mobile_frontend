@@ -10,6 +10,7 @@ import ProfilePage from "@/pages/advisor/ProfilePage";
 import SubscriptionPage from "@/pages/advisor/SubscriptionPage";
 import AdminDashboard from "@/pages/admin/AdminDashboard";
 import AnalyticsPage from "@/pages/admin/AnalyticsPage";
+import FirstPurchaseOfferPage from "@/pages/admin/FirstPurchaseOfferPage";
 import ImportsPage from "@/pages/admin/ImportsPage";
 import LeadInventoryPage from "@/pages/admin/LeadInventoryPage";
 import LicenseReviewsPage from "@/pages/admin/LicenseReviewsPage";
@@ -161,6 +162,14 @@ export const AppRoutes = () => {
             element={
               <ProtectedRoute allowedRoles={["admin"]}>
                 <AnalyticsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/first-purchase-offer"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <FirstPurchaseOfferPage />
               </ProtectedRoute>
             }
           />
