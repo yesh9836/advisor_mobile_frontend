@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from .audit_log import AuditLog
     from .auth_session import RefreshTokenSession
     from .password_reset import PasswordResetToken
+    from .notification import NotificationOutbox
 
 class User(Base):
     """
@@ -153,6 +154,9 @@ class User(Base):
         "PasswordResetToken",
         back_populates="user",
         cascade="all, delete-orphan",
+    )
+    notification_outbox_entries: Mapped[List["NotificationOutbox"]] = relationship(
+        "NotificationOutbox",
     )
 
     def __repr__(self) -> str:

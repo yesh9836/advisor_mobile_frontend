@@ -8,6 +8,7 @@ from .delivery_settings import AdvisorDeliverySettings
 from .audit_log import AuditLog
 from .auth_session import RefreshTokenSession
 from .password_reset import PasswordResetToken
+from .notification import NotificationOutbox
 
 __all__ = [
     "Base",
@@ -27,4 +28,5 @@ __all__ = [
     "AuditLog",
     "RefreshTokenSession",
     "PasswordResetToken",
+    "NotificationOutbox",
 ]
