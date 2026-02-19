@@ -326,6 +326,67 @@ class FirstPurchaseOfferService:
         return True
 
     @staticmethod
+    def _is_user_eligible_for_offer_package(
+        db: Session,
+        *,
+        user: User,
+        offer_package_id: int,
+        required_trigger_checkout_session_id: Optional[str] = None,
+    ) -> bool:
+        config = FirstPurchaseOfferService._get_singleton_config(db)
+        if config is None or not config.is_enabled:
+            return False
+
+        if config.trigger_package_id is None:
+            return False
+
+        if config.offer_package_id is None or not FirstPurchaseOfferService._is_offer_window_active(config):
+            return False
+
+        if int(config.offer_package_id) != int(offer_package_id):
+            return False
+
+        # Limit=2 lets us verify "exactly one completed purchase" with a single query.
+        completed_purchases = (
+            db.query(LeadPurchase)
+            .filter(
+                LeadPurchase.user_id == user.id,
+                LeadPurchase.status == "completed",
+            )
+            .order_by(LeadPurchase.purchased_at.asc(), LeadPurchase.id.asc())
+            .limit(2)
+            .all()
+        )
+        if len(completed_purchases) != 1:
+            return False
+
+        first_completed_purchase = completed_purchases[0]
+        if int(first_completed_purchase.package_id) != int(config.trigger_package_id):
+            return False
+
+        if (
+            required_trigger_checkout_session_id is not None
+            and first_completed_purchase.stripe_checkout_session_id != required_trigger_checkout_session_id
+        ):
+            return False
+
+        return True
+
+    @staticmethod
+    def can_user_purchase_offer_package(
+        db: Session,
+        *,
+        user: User,
+        offer_package_id: int,
+    ) -> bool:
+        return FirstPurchaseOfferService._is_user_eligible_for_offer_package(
+            db,
+            user=user,
+            offer_package_id=offer_package_id,
+            required_trigger_checkout_session_id=None,
+        )
+
+    @staticmethod
     def get_advisor_offer_eligibility(
         db: Session,
         *,
@@ -333,39 +394,15 @@ class FirstPurchaseOfferService:
         checkout_session_id: str,
     ) -> FirstPurchaseAddonOfferEligibilityResponse:
         config = FirstPurchaseOfferService._get_singleton_config(db)
-        if config is None or not config.is_enabled:
+        if config is None or config.offer_package_id is None:
             return FirstPurchaseAddonOfferEligibilityResponse(eligible=False, offer=None)
 
-        if config.trigger_package_id is None:
-            return FirstPurchaseAddonOfferEligibilityResponse(eligible=False, offer=None)
-
-        if config.offer_package_id is None or not FirstPurchaseOfferService._is_offer_window_active(config):
-            return FirstPurchaseAddonOfferEligibilityResponse(eligible=False, offer=None)
-
-        completed_checkout = (
-            db.query(LeadPurchase)
-            .filter(
-                LeadPurchase.user_id == user.id,
-                LeadPurchase.status == "completed",
-                LeadPurchase.stripe_checkout_session_id == checkout_session_id,
-            )
-            .first()
-        )
-        if completed_checkout is None:
-            return FirstPurchaseAddonOfferEligibilityResponse(eligible=False, offer=None)
-
-        if int(completed_checkout.package_id) != int(config.trigger_package_id):
-            return FirstPurchaseAddonOfferEligibilityResponse(eligible=False, offer=None)
-
-        completed_purchase_count = (
-            db.query(LeadPurchase)
-            .filter(
-                LeadPurchase.user_id == user.id,
-                LeadPurchase.status == "completed",
-            )
-            .count()
-        )
-        if completed_purchase_count != 1:
+        if not FirstPurchaseOfferService._is_user_eligible_for_offer_package(
+            db,
+            user=user,
+            offer_package_id=int(config.offer_package_id),
+            required_trigger_checkout_session_id=checkout_session_id,
+        ):
             return FirstPurchaseAddonOfferEligibilityResponse(eligible=False, offer=None)
 
         offer_package = (

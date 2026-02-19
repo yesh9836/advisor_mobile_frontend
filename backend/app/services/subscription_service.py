@@ -101,6 +101,10 @@ class SubscriptionService:
         return {"price": package.stripe_price_id, "quantity": 1}
 
     @staticmethod
+    def _is_first_purchase_offer_managed_package(package: LeadPackage) -> bool:
+        return isinstance(package.features, dict) and package.features.get("managed_by") == "first_purchase_offer"
+
+    @staticmethod
     def handle_webhook_event_threadsafe(event: Dict[str, Any]) -> None:
         """Create an isolated DB session for background-thread webhook work."""
         db = SessionLocal()
@@ -126,11 +130,22 @@ class SubscriptionService:
                 detail="One-time purchases are temporarily unavailable for this account",
             )
 
-        customer_id = PaymentService.create_or_get_stripe_customer(db, user)
-
         package = db.query(LeadPackage).filter(LeadPackage.id == package_id).first()
         if not package:
             raise HTTPException(status_code=404, detail="Package not found")
+
+        if SubscriptionService._is_first_purchase_offer_managed_package(package):
+            from app.services.first_purchase_offer_service import FirstPurchaseOfferService
+
+            if not FirstPurchaseOfferService.can_user_purchase_offer_package(
+                db,
+                user=user,
+                offer_package_id=int(package.id),
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Package is not available for this account",
+                )
 
         # Validate verified license
         verified_license = (
@@ -148,6 +163,8 @@ class SubscriptionService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="At least one verified license is required",
             )
+
+        customer_id = PaymentService.create_or_get_stripe_customer(db, user)
 
         frontend_base_url = settings.FRONTEND_URL.rstrip("/")
         success_url = (
