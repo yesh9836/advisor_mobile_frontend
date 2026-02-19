@@ -79,6 +79,27 @@ class SubscriptionService:
         return max(int(package.daily_download_limit or 0), 0)
 
     @staticmethod
+    def _is_catalog_visible_package(package: LeadPackage) -> bool:
+        if not isinstance(package.features, dict):
+            return True
+        return package.features.get("catalog_visible", True) is not False
+
+    @staticmethod
+    def _build_checkout_line_item(package: LeadPackage) -> Dict[str, Any]:
+        if isinstance(package.features, dict) and package.features.get("managed_by") == "first_purchase_offer":
+            return {
+                "price_data": {
+                    "currency": str((package.currency or "USD")).lower(),
+                    "unit_amount": int(package.price_cents or 0),
+                    "product_data": {
+                        "name": str(package.name or "First Purchase Add-on"),
+                    },
+                },
+                "quantity": 1,
+            }
+        return {"price": package.stripe_price_id, "quantity": 1}
+
+    @staticmethod
     def handle_webhook_event_threadsafe(event: Dict[str, Any]) -> None:
         """Create an isolated DB session for background-thread webhook work."""
         db = SessionLocal()
@@ -90,7 +111,8 @@ class SubscriptionService:
     @staticmethod
     def get_available_packages(db: Session) -> List[LeadPackage]:
         """Return all available one-time lead packages."""
-        return db.query(LeadPackage).order_by(LeadPackage.price_cents.asc()).all()
+        rows = db.query(LeadPackage).order_by(LeadPackage.price_cents.asc()).all()
+        return [row for row in rows if SubscriptionService._is_catalog_visible_package(row)]
 
     @staticmethod
     def create_purchase_checkout_session(db: Session, user: User, package_id: int) -> Dict[str, str]:
@@ -141,7 +163,7 @@ class SubscriptionService:
             session = stripe.checkout.Session.create(
                 customer=customer_id,
                 mode="payment",
-                line_items=[{"price": package.stripe_price_id, "quantity": 1}],
+                line_items=[SubscriptionService._build_checkout_line_item(package)],
                 client_reference_id=str(user.id),
                 metadata={
                     "user_id": str(user.id),
