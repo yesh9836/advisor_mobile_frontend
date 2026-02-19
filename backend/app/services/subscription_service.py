@@ -6,6 +6,7 @@ import stripe
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
 from app.models.lead import LeadOwnership
@@ -133,6 +134,54 @@ class SubscriptionService:
         return max(int(package.daily_download_limit or 0), 0)
 
     @staticmethod
+    def _build_purchase_terms_snapshot(package: LeadPackage) -> Dict[str, Any]:
+        return {
+            "amount_cents": max(int(package.price_cents or 0), 0),
+            "currency": str((package.currency or "USD")).upper(),
+            "credits_total": SubscriptionService._resolve_package_credits(package),
+        }
+
+    @staticmethod
+    def _build_checkout_purchase_metadata(
+        *,
+        user_id: int,
+        package_id: int,
+        purchase_terms: Dict[str, Any],
+    ) -> Dict[str, str]:
+        return {
+            "user_id": str(user_id),
+            "package_id": str(package_id),
+            "purchase_amount_cents": str(max(int(purchase_terms.get("amount_cents") or 0), 0)),
+            "purchase_currency": str(purchase_terms.get("currency") or "USD").upper(),
+            "purchase_credits_total": str(max(int(purchase_terms.get("credits_total") or 0), 0)),
+        }
+
+    @staticmethod
+    def _resolve_purchase_terms_from_metadata(metadata: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        amount_raw = metadata.get("purchase_amount_cents")
+        credits_raw = metadata.get("purchase_credits_total")
+        currency_raw = metadata.get("purchase_currency")
+
+        if amount_raw is None or credits_raw is None or currency_raw is None:
+            return None
+
+        try:
+            amount_cents = max(int(amount_raw), 0)
+            credits_total = max(int(credits_raw), 0)
+        except (TypeError, ValueError):
+            return None
+
+        currency = str(currency_raw).strip().upper()
+        if not currency:
+            return None
+
+        return {
+            "amount_cents": amount_cents,
+            "currency": currency,
+            "credits_total": credits_total,
+        }
+
+    @staticmethod
     def _is_catalog_visible_package(package: LeadPackage) -> bool:
         if not isinstance(package.features, dict):
             return True
@@ -225,6 +274,12 @@ class SubscriptionService:
             f"?checkout=success&session_id={{CHECKOUT_SESSION_ID}}"
         )
         cancel_url = f"{frontend_base_url}/subscription?checkout=cancel"
+        purchase_terms = SubscriptionService._build_purchase_terms_snapshot(package)
+        checkout_metadata = SubscriptionService._build_checkout_purchase_metadata(
+            user_id=int(user.id),
+            package_id=int(package.id),
+            purchase_terms=purchase_terms,
+        )
 
         try:
             idempotency_key = PaymentService.checkout_session_idempotency_key(
@@ -236,26 +291,68 @@ class SubscriptionService:
                 mode="payment",
                 line_items=[SubscriptionService._build_checkout_line_item(package)],
                 client_reference_id=str(user.id),
-                metadata={
-                    "user_id": str(user.id),
-                    "package_id": str(package.id),
-                },
+                metadata=checkout_metadata,
                 payment_intent_data={
-                    "metadata": {
-                        "user_id": str(user.id),
-                        "package_id": str(package.id),
-                    }
+                    "metadata": checkout_metadata
                 },
                 success_url=success_url,
                 cancel_url=cancel_url,
                 idempotency_key=idempotency_key,
             )
+            session_id = str(session["id"])
+            payment_intent_id = SubscriptionService._extract_payment_intent_id(session)
+
+            purchase = (
+                db.query(LeadPurchase)
+                .filter(LeadPurchase.stripe_checkout_session_id == session_id)
+                .first()
+            )
+            if not purchase and payment_intent_id:
+                purchase = (
+                    db.query(LeadPurchase)
+                    .filter(LeadPurchase.stripe_payment_intent_id == payment_intent_id)
+                    .first()
+                )
+
+            if purchase:
+                if not purchase.stripe_checkout_session_id:
+                    purchase.stripe_checkout_session_id = session_id
+                if payment_intent_id and not purchase.stripe_payment_intent_id:
+                    purchase.stripe_payment_intent_id = payment_intent_id
+            else:
+                purchase = LeadPurchase(
+                    user_id=int(user.id),
+                    package_id=int(package.id),
+                    stripe_checkout_session_id=session_id,
+                    stripe_payment_intent_id=payment_intent_id,
+                    amount_cents=int(purchase_terms["amount_cents"]),
+                    currency=str(purchase_terms["currency"]),
+                    credits_total=int(purchase_terms["credits_total"]),
+                    credits_remaining=0,
+                    status="pending",
+                    purchased_at=datetime.now(timezone.utc),
+                )
+                db.add(purchase)
+
+            db.add(purchase)
+            try:
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+                purchase = (
+                    db.query(LeadPurchase)
+                    .filter(LeadPurchase.stripe_checkout_session_id == session_id)
+                    .first()
+                )
+                if not purchase:
+                    raise
+            db.refresh(purchase)
 
             logger.info(
                 "Checkout session created user_id=%s package_id=%s session_id=%s idempotency_key=%s",
                 user.id,
                 package.id,
-                session["id"],
+                session_id,
                 idempotency_key,
             )
             MetricsService.increment(
@@ -268,21 +365,23 @@ class SubscriptionService:
             AuditService.log_purchase_event(
                 actor_user_id=user.id,
                 action="purchase_initiated",
-                purchase_id=None,
-                amount_cents=int(package.price_cents or 0),
+                purchase_id=purchase.id,
+                amount_cents=int(purchase.amount_cents or 0),
                 correlation_ids={
-                    "checkout_session_id": session.get("id"),
+                    "checkout_session_id": session_id,
+                    "payment_intent_id": payment_intent_id,
                     "idempotency_key": idempotency_key,
                 },
                 meta_data={
                     "package_id": package.id,
-                    "currency": str((package.currency or "USD")).upper(),
+                    "currency": str((purchase.currency or "USD")).upper(),
                 },
             )
 
-            return {"session_id": session["id"], "url": session["url"]}
+            return {"session_id": session_id, "url": session["url"]}
 
         except stripe.error.StripeError as e:
+            db.rollback()
             logger.error(f"Stripe checkout session creation failed: {e}")
             MetricsService.increment(
                 "purchase_checkout_failed_total",
@@ -295,6 +394,9 @@ class SubscriptionService:
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="Stripe checkout session creation failed",
             )
+        except Exception:
+            db.rollback()
+            raise
 
     @staticmethod
     def get_billing_summary(db: Session, user: User) -> Dict[str, Any]:
@@ -699,10 +801,6 @@ class SubscriptionService:
                 f"checkout.session.completed invalid purchase metadata for session_id={session_id}"
             ) from exc
 
-        package = db.query(LeadPackage).filter(LeadPackage.id == parsed_package_id).first()
-        if not package:
-            raise StripeWebhookProcessingError(f"Package not found for package_id={parsed_package_id}")
-
         payment_status = str(checkout_session.get("payment_status") or "unpaid").lower()
         purchase_status = forced_status or ("completed" if payment_status == "paid" else "pending")
         if purchase_status == "completed" and not settings.PURCHASE_WEBHOOK_CREDIT_GRANT_ENABLED:
@@ -711,11 +809,7 @@ class SubscriptionService:
                 session_id,
             )
             purchase_status = "pending"
-        credits_total = SubscriptionService._resolve_package_credits(package)
-        credits_remaining = credits_total if purchase_status == "completed" else 0
         payment_intent_id = SubscriptionService._extract_payment_intent_id(checkout_session)
-        amount_cents = int(checkout_session.get("amount_total") or package.price_cents or 0)
-        currency = str(checkout_session.get("currency") or package.currency or "USD").upper()
         purchased_at = _to_datetime(checkout_session.get("created")) or datetime.now(timezone.utc)
 
         purchase = (
@@ -730,6 +824,24 @@ class SubscriptionService:
                 .first()
             )
         previous_status = purchase.status if purchase else None
+        metadata_terms = SubscriptionService._resolve_purchase_terms_from_metadata(metadata)
+        if purchase:
+            credits_total = max(int(purchase.credits_total or 0), 0)
+            amount_cents = max(int(purchase.amount_cents or 0), 0)
+            currency = str((purchase.currency or "USD")).upper()
+        elif metadata_terms:
+            credits_total = int(metadata_terms["credits_total"])
+            amount_cents = int(metadata_terms["amount_cents"])
+            currency = str(metadata_terms["currency"])
+        else:
+            package = db.query(LeadPackage).filter(LeadPackage.id == parsed_package_id).first()
+            if not package:
+                raise StripeWebhookProcessingError(f"Package not found for package_id={parsed_package_id}")
+            credits_total = SubscriptionService._resolve_package_credits(package)
+            amount_cents = int(checkout_session.get("amount_total") or package.price_cents or 0)
+            currency = str(checkout_session.get("currency") or package.currency or "USD").upper()
+
+        credits_remaining = credits_total if purchase_status == "completed" else 0
 
         if purchase:
             previous_status_normalized = SubscriptionService._normalize_purchase_status(previous_status)
@@ -752,13 +864,10 @@ class SubscriptionService:
 
         if purchase:
             purchase.status = purchase_status
-            purchase.amount_cents = amount_cents
-            purchase.currency = currency
             if not purchase.stripe_checkout_session_id:
                 purchase.stripe_checkout_session_id = session_id
             if payment_intent_id:
                 purchase.stripe_payment_intent_id = payment_intent_id
-            purchase.credits_total = credits_total
             purchase.credits_remaining = credits_remaining
             purchase.purchased_at = purchased_at
         else:
