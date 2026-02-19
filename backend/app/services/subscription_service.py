@@ -36,6 +36,59 @@ def _to_datetime(timestamp: Optional[int]) -> Optional[datetime]:
 class SubscriptionService:
     """Service class for one-time purchases and Stripe webhooks."""
 
+    _TERMINAL_PURCHASE_STATUSES = frozenset({"failed", "canceled", "refunded"})
+    _IMMUTABLE_PURCHASE_STATUSES = frozenset({"canceled", "refunded"})
+
+    @staticmethod
+    def _normalize_purchase_status(status: Optional[str]) -> str:
+        return str(status or "").strip().lower()
+
+    @staticmethod
+    def _resolve_purchase_status_transition(
+        *,
+        purchase: LeadPurchase,
+        requested_status: str,
+        source_event: str,
+        checkout_session_id: Optional[str] = None,
+        payment_intent_id: Optional[str] = None,
+    ) -> str:
+        current_status = SubscriptionService._normalize_purchase_status(purchase.status)
+        desired_status = SubscriptionService._normalize_purchase_status(requested_status)
+
+        if (
+            current_status in SubscriptionService._IMMUTABLE_PURCHASE_STATUSES
+            and desired_status != current_status
+        ):
+            logger.warning(
+                (
+                    "Ignoring immutable purchase status transition: purchase_id=%s source_event=%s "
+                    "checkout_session_id=%s payment_intent_id=%s current_status=%s requested_status=%s"
+                ),
+                purchase.id,
+                source_event,
+                checkout_session_id,
+                payment_intent_id,
+                current_status,
+                desired_status,
+            )
+            return current_status
+
+        if current_status == "completed" and desired_status != "completed":
+            logger.info(
+                (
+                    "Ignoring downgrade for completed purchase: purchase_id=%s source_event=%s "
+                    "checkout_session_id=%s payment_intent_id=%s requested_status=%s"
+                ),
+                purchase.id,
+                source_event,
+                checkout_session_id,
+                payment_intent_id,
+                desired_status,
+            )
+            return "completed"
+
+        return desired_status
+
     @staticmethod
     def _is_purchase_checkout_enabled_for_user(user: User) -> bool:
         if settings.ONE_TIME_PURCHASES_ENABLED:
@@ -599,7 +652,10 @@ class SubscriptionService:
             logger.warning("No local lead purchase found for payment_intent_id=%s", payment_intent_id)
             return
 
-        if purchase.status in {"failed", "canceled", "refunded"}:
+        if (
+            SubscriptionService._normalize_purchase_status(purchase.status)
+            in SubscriptionService._TERMINAL_PURCHASE_STATUSES
+        ):
             logger.info(
                 "Lead purchase already terminal for payment_intent_id=%s status=%s",
                 payment_intent_id,
@@ -675,10 +731,24 @@ class SubscriptionService:
             )
         previous_status = purchase.status if purchase else None
 
-        if purchase and purchase.status == "completed" and purchase_status != "completed":
-            # Keep fulfilled purchases immutable against out-of-order failure retries.
-            purchase_status = "completed"
-            credits_remaining = max(int(purchase.credits_remaining or 0), int(credits_total or 0))
+        if purchase:
+            previous_status_normalized = SubscriptionService._normalize_purchase_status(previous_status)
+            requested_status = purchase_status
+            purchase_status = SubscriptionService._resolve_purchase_status_transition(
+                purchase=purchase,
+                requested_status=requested_status,
+                source_event="checkout.session.lifecycle",
+                checkout_session_id=session_id,
+                payment_intent_id=payment_intent_id,
+            )
+            if previous_status_normalized == "completed" and requested_status != "completed":
+                # Keep fulfilled purchases immutable against out-of-order failure retries.
+                credits_remaining = max(int(purchase.credits_remaining or 0), int(credits_total or 0))
+            elif (
+                previous_status_normalized in SubscriptionService._IMMUTABLE_PURCHASE_STATUSES
+                and purchase_status == previous_status_normalized
+            ):
+                credits_remaining = max(int(purchase.credits_remaining or 0), 0)
 
         if purchase:
             purchase.status = purchase_status
@@ -865,6 +935,17 @@ class SubscriptionService:
                 return
 
             previous_status = purchase.status
+            requested_status = "pending" if not settings.PURCHASE_WEBHOOK_CREDIT_GRANT_ENABLED else "completed"
+            resolved_status = SubscriptionService._resolve_purchase_status_transition(
+                purchase=purchase,
+                requested_status=requested_status,
+                source_event=event_type,
+                checkout_session_id=purchase.stripe_checkout_session_id,
+                payment_intent_id=payment_intent_id,
+            )
+            if resolved_status != requested_status:
+                return
+
             if not settings.PURCHASE_WEBHOOK_CREDIT_GRANT_ENABLED:
                 if purchase.status != "pending":
                     purchase.status = "pending"
