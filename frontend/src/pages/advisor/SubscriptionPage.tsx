@@ -2,8 +2,17 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { getMyLicenses } from "@/api/licenses";
-import { createCheckout, getPackages, getPurchaseHistory } from "@/api/purchases";
-import type { PurchaseOrderItem, PurchasePackage } from "@/types/purchase";
+import {
+  createCheckout,
+  getFirstPurchaseOfferEligibility,
+  getPackages,
+  getPurchaseHistory,
+} from "@/api/purchases";
+import type {
+  FirstPurchaseAddonOfferAdvisor,
+  PurchaseOrderItem,
+  PurchasePackage,
+} from "@/types/purchase";
 import { getApiErrorMessage } from "@/utils/api-error";
 
 interface DisplayPlan {
@@ -76,8 +85,10 @@ const SubscriptionPage = () => {
   const [plans, setPlans] = useState<DisplayPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [checkoutKey, setCheckoutKey] = useState<string | null>(null);
+  const [addOnCheckoutLoading, setAddOnCheckoutLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
+  const [addOnOffer, setAddOnOffer] = useState<FirstPurchaseAddonOfferAdvisor | null>(null);
   const [licenseGateLoading, setLicenseGateLoading] = useState(true);
   const [hasVerifiedLicense, setHasVerifiedLicense] = useState(false);
   const [licenseGateMessage, setLicenseGateMessage] = useState<string | null>(null);
@@ -188,15 +199,18 @@ const SubscriptionPage = () => {
     const loadCheckoutNotice = async () => {
       if (checkoutState === "cancel") {
         setCheckoutNotice("Checkout canceled. No charge was made.");
+        setAddOnOffer(null);
         return;
       }
       if (checkoutState !== "success") {
         setCheckoutNotice(null);
+        setAddOnOffer(null);
         return;
       }
 
       if (!checkoutSessionId) {
         setCheckoutNotice(buildCheckoutFulfillmentNotice(null, null));
+        setAddOnOffer(null);
         return;
       }
 
@@ -207,9 +221,22 @@ const SubscriptionPage = () => {
           (item) => item.stripe_checkout_session_id === checkoutSessionId,
         );
         setCheckoutNotice(buildCheckoutFulfillmentNotice(matched ?? null, checkoutSessionId));
+        if (!matched) {
+          setAddOnOffer(null);
+          return;
+        }
+
+        const eligibility = await getFirstPurchaseOfferEligibility(checkoutSessionId);
+        if (!active) return;
+        if (eligibility.eligible && eligibility.offer) {
+          setAddOnOffer(eligibility.offer);
+          return;
+        }
+        setAddOnOffer(null);
       } catch {
         if (!active) return;
         setCheckoutNotice(buildCheckoutFulfillmentNotice(null, checkoutSessionId));
+        setAddOnOffer(null);
       }
     };
 
@@ -228,6 +255,7 @@ const SubscriptionPage = () => {
 
     setCheckoutKey(entry.key);
     setError(null);
+    setAddOnOffer(null);
 
     try {
       const session = await createCheckout(entry.packageId);
@@ -239,8 +267,92 @@ const SubscriptionPage = () => {
     }
   };
 
+  const handleAddOnCheckout = async () => {
+    if (!addOnOffer) {
+      return;
+    }
+
+    setAddOnCheckoutLoading(true);
+    setError(null);
+
+    try {
+      const session = await createCheckout(addOnOffer.offer_package_id);
+      window.location.assign(session.url);
+    } catch (checkoutError) {
+      setError(getApiErrorMessage(checkoutError, "Unable to start checkout."));
+    } finally {
+      setAddOnCheckoutLoading(false);
+    }
+  };
+
   return (
     <div className="page">
+      {addOnOffer && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="first-purchase-offer-title"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15, 23, 42, 0.45)",
+            display: "grid",
+            placeItems: "center",
+            zIndex: 120,
+            padding: 16,
+          }}
+        >
+          <section
+            className="panel stack"
+            style={{
+              width: "min(620px, 100%)",
+              maxHeight: "90vh",
+              overflowY: "auto",
+            }}
+          >
+            <div>
+              <h2 id="first-purchase-offer-title" style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>
+                {addOnOffer.headline}
+              </h2>
+              <p style={{ margin: "8px 0 0 0", color: "#475569" }}>
+                {addOnOffer.message}
+              </p>
+            </div>
+
+            <div className="panel" style={{ background: "#f8fafc" }}>
+              <div className="metric-value" style={{ marginTop: 0, fontSize: 34 }}>
+                {formatMoney(
+                  addOnOffer.offer_price_cents,
+                  addOnOffer.offer_currency,
+                )}
+              </div>
+              <div style={{ color: "#475569" }}>
+                {addOnOffer.offer_package_name} • {addOnOffer.offer_credits_total} lead credits
+              </div>
+            </div>
+
+            <div className="row" style={{ justifyContent: "flex-end", gap: 8 }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setAddOnOffer(null)}
+                disabled={addOnCheckoutLoading}
+              >
+                No Thanks
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => void handleAddOnCheckout()}
+                disabled={addOnCheckoutLoading}
+              >
+                {addOnCheckoutLoading ? "Opening Checkout..." : addOnOffer.cta_label}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       <div>
         <h1>Buy Leads</h1>
         <p className="page-subtitle">Choose a package.</p>
@@ -364,24 +476,6 @@ const SubscriptionPage = () => {
             </article>
           ))
         )}
-      </section>
-
-      <section
-        className="panel page-header-row"
-        style={{ alignItems: "center" }}
-      >
-        <div>
-          <h3 style={{ margin: 0, fontSize: 24, color: "#0b1b49" }}>
-            Add-on Offer
-          </h3>
-          <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
-            Add-on pricing will populate automatically when configured in
-            backend.
-          </p>
-        </div>
-        <button type="button" className="btn btn-primary">
-          Add Offer
-        </button>
       </section>
     </div>
   );
