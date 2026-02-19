@@ -32,6 +32,9 @@ class PurchaseOrderItem(BaseModel):
     credits_total: int
     credits_remaining: int
     status: str
+    assigned_count: int
+    unfulfilled_count: int
+    fulfillment_status: str
     purchased_at: datetime
     stripe_checkout_session_id: str
     stripe_payment_intent_id: Optional[str] = None
