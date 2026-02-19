@@ -26,6 +26,23 @@ const formatDate = (value: string | null | undefined): string => {
   });
 };
 
+const formatFulfillmentStatus = (
+  fulfillmentStatus: PurchaseOrderItem["fulfillment_status"],
+): string => {
+  switch (fulfillmentStatus) {
+    case "fulfilled":
+      return "Fulfilled";
+    case "partially_fulfilled":
+      return "Partially fulfilled";
+    case "pending_inventory":
+      return "Pending inventory";
+    case "pending":
+      return "Payment pending";
+    default:
+      return "Not completed";
+  }
+};
+
 const ProfilePage = () => {
   const { user } = useAuth();
 
@@ -63,6 +80,17 @@ const ProfilePage = () => {
   useEffect(() => {
     void loadPurchaseSummary();
   }, [loadPurchaseSummary]);
+
+  const latestPurchase = recentPurchases[0] ?? null;
+  const pendingAutoDeliveryLeads = recentPurchases.reduce((total, purchase) => {
+    if (
+      purchase.fulfillment_status !== "partially_fulfilled"
+      && purchase.fulfillment_status !== "pending_inventory"
+    ) {
+      return total;
+    }
+    return total + Math.max(purchase.unfulfilled_count, 0);
+  }, 0);
 
   return (
     <div className="space-y-6">
@@ -120,13 +148,34 @@ const ProfilePage = () => {
                 <span className="font-semibold text-[#0a1633]">Completed purchases:</span>{" "}
                 {balance.completed_purchases}
               </p>
-              {recentPurchases.length > 0 && (
-                <p>
-                  <span className="font-semibold text-[#0a1633]">Latest purchase:</span>{" "}
-                  {recentPurchases[0].package_name ?? "Package"} on{" "}
-                  {formatDate(recentPurchases[0].purchased_at)}
-                </p>
+              <p>
+                <span className="font-semibold text-[#0a1633]">Pending auto-delivery leads:</span>{" "}
+                {pendingAutoDeliveryLeads}
+              </p>
+              {latestPurchase && (
+                <div className="space-y-1 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                  <p>
+                    <span className="font-semibold text-[#0a1633]">Latest purchase:</span>{" "}
+                    {latestPurchase.package_name ?? "Package"} on{" "}
+                    {formatDate(latestPurchase.purchased_at)}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-[#0a1633]">Delivered now:</span>{" "}
+                    {latestPurchase.assigned_count}/{latestPurchase.credits_total}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-[#0a1633]">Pending auto-delivery:</span>{" "}
+                    {Math.max(latestPurchase.unfulfilled_count, 0)}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-[#0a1633]">Fulfillment:</span>{" "}
+                    {formatFulfillmentStatus(latestPurchase.fulfillment_status)}
+                  </p>
+                </div>
               )}
+              <p className="text-xs text-[#64748b]">
+                New leads are assigned automatically when inventory is available in your licensed states.
+              </p>
             </div>
           ) : (
             <p className="text-sm text-[#4c628a]">
