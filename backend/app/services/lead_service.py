@@ -16,6 +16,7 @@ from app.schemas.lead import LeadCreate, LeadOutcomeUpdateRequest
 from app.services.audit_service import AuditService
 from app.services.delivery_settings_service import DeliverySettingsService
 from app.services.metrics_service import MetricsService
+from app.services.notification_service import NotificationService
 from app.utils.csv_generator import generate_leads_csv_stream
 
 logger = logging.getLogger(__name__)
@@ -222,6 +223,7 @@ class LeadService:
                 "assigned_count": 0,
                 "unfulfilled_count": 0,
                 "newly_assigned_count": 0,
+                "newly_assigned_lead_ids": [],
                 "assigned_lead_ids": [],
             }
 
@@ -239,6 +241,7 @@ class LeadService:
                 "assigned_count": len(assigned_lead_ids),
                 "unfulfilled_count": 0,
                 "newly_assigned_count": 0,
+                "newly_assigned_lead_ids": [],
                 "assigned_lead_ids": assigned_lead_ids,
             }
 
@@ -249,6 +252,7 @@ class LeadService:
                 "assigned_count": len(assigned_lead_ids),
                 "unfulfilled_count": max(requested_count - len(assigned_lead_ids), 0),
                 "newly_assigned_count": 0,
+                "newly_assigned_lead_ids": [],
                 "assigned_lead_ids": assigned_lead_ids,
             }
 
@@ -262,6 +266,7 @@ class LeadService:
                 "assigned_count": assigned_count,
                 "unfulfilled_count": max(requested_count - assigned_count, 0),
                 "newly_assigned_count": 0,
+                "newly_assigned_lead_ids": [],
                 "assigned_lead_ids": assigned_lead_ids,
             }
 
@@ -275,6 +280,7 @@ class LeadService:
             candidate_query = candidate_query.with_for_update(skip_locked=True)
 
         newly_assigned_leads = candidate_query.limit(needed).all()
+        newly_assigned_lead_ids: List[int] = []
         for lead in newly_assigned_leads:
             db.add(
                 LeadOwnership(
@@ -284,6 +290,7 @@ class LeadService:
                 )
             )
             assigned_lead_ids.append(int(lead.id))
+            newly_assigned_lead_ids.append(int(lead.id))
 
         if newly_assigned_leads:
             db.flush()
@@ -294,6 +301,7 @@ class LeadService:
             "assigned_count": assigned_count,
             "unfulfilled_count": max(requested_count - assigned_count, 0),
             "newly_assigned_count": max(assigned_count - existing_assigned_count, 0),
+            "newly_assigned_lead_ids": newly_assigned_lead_ids,
             "assigned_lead_ids": assigned_lead_ids,
         }
 
@@ -410,6 +418,7 @@ class LeadService:
 
         total_newly_assigned = 0
         per_purchase_newly_assigned: Dict[int, int] = {}
+        per_purchase_newly_assigned_ids: Dict[int, List[int]] = {}
 
         while True:
             assigned_in_round = 0
@@ -437,7 +446,13 @@ class LeadService:
                     purchase=purchase,
                     max_assignments=1,
                 )
+                newly_assigned_ids = [
+                    int(lead_id)
+                    for lead_id in (allocation_summary.get("newly_assigned_lead_ids") or [])
+                ]
                 newly_assigned_count = int(allocation_summary.get("newly_assigned_count", 0) or 0)
+                if not newly_assigned_count and newly_assigned_ids:
+                    newly_assigned_count = len(newly_assigned_ids)
                 unfulfilled_count = int(allocation_summary.get("unfulfilled_count", 0) or 0)
                 purchase_unfulfilled[purchase_id] = max(unfulfilled_count, 0)
 
@@ -448,6 +463,8 @@ class LeadService:
                 per_purchase_newly_assigned[purchase_id] = (
                     per_purchase_newly_assigned.get(purchase_id, 0) + newly_assigned_count
                 )
+                if newly_assigned_ids:
+                    per_purchase_newly_assigned_ids.setdefault(purchase_id, []).extend(newly_assigned_ids)
 
                 if purchase_unfulfilled[purchase_id] <= 0:
                     advisor_queue_index[advisor_id] = queue_index + 1
@@ -464,6 +481,16 @@ class LeadService:
         for purchase_id, newly_assigned_count in per_purchase_newly_assigned.items():
             purchase = purchase_by_id[purchase_id]
             assigned_count = max(int(purchase.credits_total or 0) - purchase_unfulfilled[purchase_id], 0)
+            newly_assigned_ids = sorted(set(per_purchase_newly_assigned_ids.get(purchase_id, [])))
+            notification_summary = {"enqueued_total": 0, "enqueued_email": 0, "enqueued_sms": 0}
+            if newly_assigned_ids:
+                notification_summary = NotificationService.enqueue_lead_delivery_notifications(
+                    db=db,
+                    user_id=int(purchase.user_id),
+                    lead_ids=newly_assigned_ids,
+                    purchase_id=int(purchase_id),
+                    source_event=source_event,
+                )
             AuditService.log_purchase_event(
                 actor_user_id=purchase.user_id,
                 action="purchase_leads_backfilled",
@@ -474,7 +501,11 @@ class LeadService:
                     "requested_count": int(purchase.credits_total or 0),
                     "assigned_count": assigned_count,
                     "newly_assigned_count": newly_assigned_count,
+                    "newly_assigned_lead_ids": newly_assigned_ids,
                     "unfulfilled_count": int(purchase_unfulfilled[purchase_id]),
+                    "notification_enqueued_total": int(notification_summary["enqueued_total"]),
+                    "notification_enqueued_email": int(notification_summary["enqueued_email"]),
+                    "notification_enqueued_sms": int(notification_summary["enqueued_sms"]),
                 },
             )
 

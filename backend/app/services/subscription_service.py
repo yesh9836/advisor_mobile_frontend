@@ -15,6 +15,7 @@ from app.models.user import User
 from app.services.audit_service import AuditService
 from app.services.lead_service import LeadService
 from app.services.metrics_service import MetricsService
+from app.services.notification_service import NotificationService
 from app.services.payment_service import PaymentService
 from app.db.session import SessionLocal
 
@@ -699,6 +700,19 @@ class SubscriptionService:
             db=db,
             purchase=purchase,
         )
+        newly_assigned_lead_ids = [
+            int(lead_id)
+            for lead_id in (allocation_summary.get("newly_assigned_lead_ids") or [])
+        ]
+        notification_summary = {"enqueued_total": 0, "enqueued_email": 0, "enqueued_sms": 0}
+        if purchase.status == "completed" and newly_assigned_lead_ids:
+            notification_summary = NotificationService.enqueue_lead_delivery_notifications(
+                db=db,
+                user_id=int(purchase.user_id),
+                lead_ids=newly_assigned_lead_ids,
+                purchase_id=int(purchase.id) if purchase.id is not None else None,
+                source_event="purchase_checkout_session",
+            )
 
         db.add(purchase)
         db.commit()
@@ -746,6 +760,10 @@ class SubscriptionService:
                     "assigned_count": int(allocation_summary.get("assigned_count", 0)),
                     "unfulfilled_count": int(allocation_summary.get("unfulfilled_count", 0)),
                     "assigned_lead_ids": allocation_summary.get("assigned_lead_ids", []),
+                    "newly_assigned_lead_ids": newly_assigned_lead_ids,
+                    "notification_enqueued_total": int(notification_summary["enqueued_total"]),
+                    "notification_enqueued_email": int(notification_summary["enqueued_email"]),
+                    "notification_enqueued_sms": int(notification_summary["enqueued_sms"]),
                 },
             )
 
@@ -855,6 +873,19 @@ class SubscriptionService:
                 db=db,
                 purchase=purchase,
             )
+            newly_assigned_lead_ids = [
+                int(lead_id)
+                for lead_id in (allocation_summary.get("newly_assigned_lead_ids") or [])
+            ]
+            notification_summary = {"enqueued_total": 0, "enqueued_email": 0, "enqueued_sms": 0}
+            if newly_assigned_lead_ids:
+                notification_summary = NotificationService.enqueue_lead_delivery_notifications(
+                    db=db,
+                    user_id=int(purchase.user_id),
+                    lead_ids=newly_assigned_lead_ids,
+                    purchase_id=int(purchase.id) if purchase.id is not None else None,
+                    source_event="payment_intent_succeeded",
+                )
 
             db.commit()
             correlation_ids = SubscriptionService._build_purchase_correlation_ids(
@@ -900,6 +931,10 @@ class SubscriptionService:
                     "assigned_count": int(allocation_summary.get("assigned_count", 0)),
                     "unfulfilled_count": int(allocation_summary.get("unfulfilled_count", 0)),
                     "assigned_lead_ids": allocation_summary.get("assigned_lead_ids", []),
+                    "newly_assigned_lead_ids": newly_assigned_lead_ids,
+                    "notification_enqueued_total": int(notification_summary["enqueued_total"]),
+                    "notification_enqueued_email": int(notification_summary["enqueued_email"]),
+                    "notification_enqueued_sms": int(notification_summary["enqueued_sms"]),
                 },
             )
             logger.info("Lead purchase marked completed for payment_intent_id=%s", payment_intent_id)
