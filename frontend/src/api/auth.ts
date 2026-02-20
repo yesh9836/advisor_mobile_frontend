@@ -1,9 +1,29 @@
 import apiClient, { AUTH_LOGOUT_EVENT } from "@/api/client";
+import { parseApiContract } from "@/api/contract";
 import type { LoginCredentials, RegisterData, User } from "@/types/auth";
+import { z } from "zod";
+
+const userSchema: z.ZodType<User> = z
+  .object({
+    id: z.number(),
+    email: z.string(),
+    name: z.string(),
+    phone: z.string().nullable(),
+    role: z.string(),
+    stripe_customer_id: z.string().nullable(),
+    created_at: z.string(),
+  })
+  .passthrough();
+
+const passwordResetResponseSchema = z
+  .object({
+    message: z.string(),
+  })
+  .passthrough();
 
 export const register = async (data: RegisterData): Promise<User> => {
   const response = await apiClient.post<User>("/auth/register", data);
-  return response.data;
+  return parseApiContract(userSchema, response.data, "/auth/register");
 };
 
 export const login = async (credentials: LoginCredentials): Promise<void> => {
@@ -12,7 +32,7 @@ export const login = async (credentials: LoginCredentials): Promise<void> => {
 
 export const getCurrentUser = async (): Promise<User> => {
   const response = await apiClient.get<User>("/auth/me");
-  return response.data;
+  return parseApiContract(userSchema, response.data, "/auth/me");
 };
 
 export const logout = async (): Promise<void> => {
@@ -30,7 +50,11 @@ export const requestPasswordReset = async (
     "/auth/password-reset/request",
     { email },
   );
-  return response.data;
+  return parseApiContract(
+    passwordResetResponseSchema,
+    response.data,
+    "/auth/password-reset/request",
+  );
 };
 
 export const confirmPasswordReset = async (payload: {
