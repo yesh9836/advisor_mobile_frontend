@@ -88,6 +88,7 @@ class BillingInvoiceResponse(BaseModel):
     currency: str
     status: str
     created_at: datetime
+    package_name: Optional[str] = None
     hosted_invoice_url: Optional[str] = None
     invoice_pdf: Optional[str] = None
     description: Optional[str] = None
