@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
+import random
 from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from ipaddress import ip_address, ip_network
 from threading import Lock
 from typing import Any, Awaitable, Callable
@@ -67,10 +69,18 @@ class _LimiterState:
     last_ready_at: datetime | None = None
     last_error: str | None = None
     last_error_at: datetime | None = None
+    next_retry_at: datetime | None = None
+    failure_count: int = 0
+    last_backoff_seconds: float = 0.0
 
 
 _STATE = _LimiterState()
 _METRICS = _RateLimitMetrics()
+_INIT_LOCK = asyncio.Lock()
+_INIT_RETRY_BASE_SECONDS = 1.0
+_INIT_RETRY_MAX_SECONDS = 30.0
+_INIT_RETRY_JITTER_SECONDS = 0.5
+_INIT_RETRY_MAX_EXPONENT = 8
 
 
 def _is_redis_backend_enabled() -> bool:
@@ -85,6 +95,55 @@ def _isoformat_or_none(value: datetime | None) -> str | None:
     if value is None:
         return None
     return value.astimezone(timezone.utc).isoformat()
+
+
+def _compute_next_retry_delay_seconds() -> float:
+    capped_exponent = min(max(_STATE.failure_count - 1, 0), _INIT_RETRY_MAX_EXPONENT)
+    backoff_seconds = min(
+        _INIT_RETRY_MAX_SECONDS,
+        _INIT_RETRY_BASE_SECONDS * (2**capped_exponent),
+    )
+    jitter_seconds = random.uniform(0.0, _INIT_RETRY_JITTER_SECONDS)
+    return backoff_seconds + jitter_seconds
+
+
+def _retry_cooldown_remaining_seconds(now: datetime | None = None) -> float:
+    if _STATE.next_retry_at is None:
+        return 0.0
+
+    current = now or datetime.now(timezone.utc)
+    remaining = (_STATE.next_retry_at - current).total_seconds()
+    return max(0.0, remaining)
+
+
+def is_rate_limiter_retry_cooldown_active() -> bool:
+    if not _is_redis_backend_enabled():
+        return False
+    return _retry_cooldown_remaining_seconds() > 0
+
+
+def _record_init_failure(error: str) -> None:
+    now = datetime.now(timezone.utc)
+    _STATE.ready = False
+    _STATE.redis_client = None
+    _STATE.last_error = error[:500] if error else "unknown_rate_limiter_error"
+    _STATE.last_error_at = now
+    _STATE.failure_count += 1
+    _STATE.last_backoff_seconds = _compute_next_retry_delay_seconds()
+    _STATE.next_retry_at = now + timedelta(seconds=_STATE.last_backoff_seconds)
+
+
+async def _close_redis_client(redis_client: Any | None) -> None:
+    if redis_client is None:
+        return
+    try:
+        close_method = getattr(redis_client, "aclose", None)
+        if close_method is not None:
+            await close_method()
+        else:
+            await redis_client.close()
+    except Exception:
+        logger.exception("Failed to close Redis rate limiter client")
 
 
 async def _init_fastapi_limiter(redis_client: Any) -> None:
@@ -219,48 +278,72 @@ async def _async_client_ip_identifier(request: Request) -> str:
 
 
 async def init_rate_limiter() -> None:
-    now = datetime.now(timezone.utc)
-    _STATE.ready = False
-    _STATE.last_init_attempt_at = now
-
     if not _is_redis_backend_enabled():
-        _STATE.last_error = None
-        _STATE.last_error_at = None
-        return
-
-    if not rate_limit_dependencies_available():
-        _STATE.last_error = "missing_dependencies"
-        _STATE.last_error_at = now
-        logger.error(
-            "Rate limiting enabled but dependencies are missing. "
-            "Install 'fastapi-limiter' and 'redis'."
-        )
-        return
-
-    try:
-        redis_client = redis_asyncio.from_url(
-            settings.REDIS_URL,
-            encoding="utf-8",
-            decode_responses=True,
-        )
-        await redis_client.ping()
-        await _init_fastapi_limiter(redis_client)
-        _STATE.redis_client = redis_client
-        _STATE.ready = True
-        _STATE.last_ready_at = datetime.now(timezone.utc)
-        _STATE.last_error = None
-        _STATE.last_error_at = None
-        logger.info(
-            "Redis rate limiter initialized backend=%s prefix=%s",
-            settings.RATE_LIMIT_BACKEND,
-            settings.RATE_LIMIT_PREFIX,
-        )
-    except Exception as exc:
         _STATE.redis_client = None
         _STATE.ready = False
-        _STATE.last_error = str(exc)[:500] or exc.__class__.__name__
-        _STATE.last_error_at = datetime.now(timezone.utc)
-        logger.exception("Failed to initialize Redis rate limiter")
+        _STATE.last_error = None
+        _STATE.last_error_at = None
+        _STATE.next_retry_at = None
+        _STATE.failure_count = 0
+        _STATE.last_backoff_seconds = 0.0
+        return
+
+    if is_rate_limiter_retry_cooldown_active():
+        return
+
+    async with _INIT_LOCK:
+        if _STATE.ready:
+            return
+
+        if is_rate_limiter_retry_cooldown_active():
+            return
+
+        now = datetime.now(timezone.utc)
+        _STATE.ready = False
+        _STATE.last_init_attempt_at = now
+
+        if not rate_limit_dependencies_available():
+            _record_init_failure("missing_dependencies")
+            logger.error(
+                "Rate limiting enabled but dependencies are missing. "
+                "Install 'fastapi-limiter' and 'redis'. "
+                "retry_in_seconds=%.2f",
+                _STATE.last_backoff_seconds,
+            )
+            return
+
+        redis_client: Any | None = None
+        try:
+            redis_client = redis_asyncio.from_url(
+                settings.REDIS_URL,
+                encoding="utf-8",
+                decode_responses=True,
+            )
+            await redis_client.ping()
+            await _init_fastapi_limiter(redis_client)
+            old_client = _STATE.redis_client
+            _STATE.redis_client = redis_client
+            _STATE.ready = True
+            _STATE.last_ready_at = datetime.now(timezone.utc)
+            _STATE.last_error = None
+            _STATE.last_error_at = None
+            _STATE.next_retry_at = None
+            _STATE.failure_count = 0
+            _STATE.last_backoff_seconds = 0.0
+            logger.info(
+                "Redis rate limiter initialized backend=%s prefix=%s",
+                settings.RATE_LIMIT_BACKEND,
+                settings.RATE_LIMIT_PREFIX,
+            )
+            if old_client is not None and old_client is not redis_client:
+                await _close_redis_client(old_client)
+        except Exception as exc:
+            await _close_redis_client(redis_client)
+            _record_init_failure(str(exc) or exc.__class__.__name__)
+            logger.exception(
+                "Failed to initialize Redis rate limiter; retry_in_seconds=%.2f",
+                _STATE.last_backoff_seconds,
+            )
 
 
 async def shutdown_rate_limiter() -> None:
@@ -272,18 +355,13 @@ async def shutdown_rate_limiter() -> None:
         except Exception:
             logger.exception("Failed to close FastAPILimiter")
 
-    if redis_client is not None:
-        try:
-            close_method = getattr(redis_client, "aclose", None)
-            if close_method is not None:
-                await close_method()
-            else:
-                await redis_client.close()
-        except Exception:
-            logger.exception("Failed to close Redis rate limiter client")
+    await _close_redis_client(redis_client)
 
     _STATE.redis_client = None
     _STATE.ready = False
+    _STATE.next_retry_at = None
+    _STATE.failure_count = 0
+    _STATE.last_backoff_seconds = 0.0
 
 
 def is_rate_limiter_ready() -> bool:
@@ -313,6 +391,10 @@ def get_rate_limiter_status_snapshot() -> dict[str, Any]:
         "last_ready_at": _isoformat_or_none(_STATE.last_ready_at),
         "last_error": _STATE.last_error,
         "last_error_at": _isoformat_or_none(_STATE.last_error_at),
+        "failure_count": _STATE.failure_count,
+        "last_backoff_seconds": _STATE.last_backoff_seconds,
+        "next_retry_at": _isoformat_or_none(_STATE.next_retry_at),
+        "retry_cooldown_seconds": _retry_cooldown_remaining_seconds(),
     }
 
 
@@ -363,7 +445,7 @@ async def _enforce_endpoint_rate_limit(
         _raise_unavailable(endpoint, request)
         return
 
-    if not is_rate_limiter_ready():
+    if not is_rate_limiter_ready() and not is_rate_limiter_retry_cooldown_active():
         await init_rate_limiter()
     if not is_rate_limiter_ready():
         _raise_unavailable(endpoint, request)
@@ -385,9 +467,7 @@ async def _enforce_endpoint_rate_limit(
             )
         raise
     except Exception:
-        _STATE.ready = False
-        _STATE.last_error = "runtime_rate_limiter_error"
-        _STATE.last_error_at = datetime.now(timezone.utc)
+        _record_init_failure("runtime_rate_limiter_error")
         logger.exception(
             "Redis rate limiter error endpoint=%s client_ip=%s",
             endpoint,
