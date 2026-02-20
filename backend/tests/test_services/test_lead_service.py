@@ -214,6 +214,104 @@ def test_get_available_leads_for_user_applies_search_filter(
 
 
 @pytest.mark.unit
+def test_get_available_leads_for_user_search_supports_tokenized_name_and_state_matching(
+    db,
+    user_factory,
+    plan_factory,
+    license_factory,
+    purchase_factory,
+    lead_factory,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LeadUnitTokenSearch123!",
+        email="lead.unit.token.search@example.com",
+    )
+    plan = plan_factory(state_limit=2, stripe_price_id="price_state_token_search")
+    license_factory(user_id=advisor.id, state="CA", status="verified")
+    purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=5,
+        credits_remaining=5,
+        status="completed",
+    )
+    matching_lead = lead_factory(
+        state_code="CA",
+        mobile_phone="555-333-9001",
+        first_name="Casey",
+        last_name="Advisor",
+    )
+    lead_factory(
+        state_code="CA",
+        mobile_phone="555-333-9002",
+        first_name="Taylor",
+        last_name="Advisor",
+    )
+
+    data = LeadService.get_available_leads_for_user(
+        db=db,
+        user=advisor,
+        page=1,
+        size=20,
+        search="casey ca",
+    )
+
+    assert data["total"] == 1
+    assert len(data["items"]) == 1
+    assert data["items"][0].id == matching_lead.id
+
+
+@pytest.mark.unit
+def test_get_available_leads_for_user_search_supports_phone_digit_tokens(
+    db,
+    user_factory,
+    plan_factory,
+    license_factory,
+    purchase_factory,
+    lead_factory,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LeadUnitPhoneSearch123!",
+        email="lead.unit.phone.search@example.com",
+    )
+    plan = plan_factory(state_limit=1, stripe_price_id="price_phone_search")
+    license_factory(user_id=advisor.id, state="CA", status="verified")
+    purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=5,
+        credits_remaining=5,
+        status="completed",
+    )
+    matching_lead = lead_factory(
+        state_code="CA",
+        mobile_phone="555-SEARCH-9012",
+        first_name="Jordan",
+        last_name="Phone",
+    )
+    lead_factory(
+        state_code="CA",
+        mobile_phone="555-SEARCH-1234",
+        first_name="Taylor",
+        last_name="Phone",
+    )
+
+    data = LeadService.get_available_leads_for_user(
+        db=db,
+        user=advisor,
+        page=1,
+        size=20,
+        search="9012",
+    )
+
+    assert data["total"] == 1
+    assert len(data["items"]) == 1
+    assert data["items"][0].id == matching_lead.id
+
+
+@pytest.mark.unit
 def test_can_user_download_leads_requires_available_new_inventory(
     db,
     user_factory,

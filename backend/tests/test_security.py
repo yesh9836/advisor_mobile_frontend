@@ -17,6 +17,8 @@ from app.core.rate_limit import (
 )
 from app.core.security import get_password_hash, verify_password
 from app.db.timezone import utcnow
+from app.main import _resolve_openapi_docs_config
+from app.models.notification import NotificationOutbox, NotificationOutboxWorkerHeartbeat
 from app.models.purchase import StripeWebhookInbox, StripeWebhookWorkerHeartbeat
 
 
@@ -220,6 +222,30 @@ def test_health_live_endpoint_is_always_healthy(client):
     assert response.json()["status"] == "healthy"
 
 
+@pytest.mark.unit
+def test_openapi_docs_are_disabled_in_production_by_default(monkeypatch):
+    monkeypatch.setattr(settings, "API_DOCS_ENABLED", True)
+    monkeypatch.setattr(settings, "API_DOCS_IN_PRODUCTION", False)
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+
+    openapi_url, docs_url, redoc_url = _resolve_openapi_docs_config()
+    assert openapi_url is None
+    assert docs_url is None
+    assert redoc_url is None
+
+
+@pytest.mark.unit
+def test_openapi_docs_can_be_explicitly_enabled_in_production(monkeypatch):
+    monkeypatch.setattr(settings, "API_DOCS_ENABLED", True)
+    monkeypatch.setattr(settings, "API_DOCS_IN_PRODUCTION", True)
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+
+    openapi_url, docs_url, redoc_url = _resolve_openapi_docs_config()
+    assert openapi_url == "/api/openapi.json"
+    assert docs_url == "/api/docs"
+    assert redoc_url == "/api/redoc"
+
+
 @pytest.mark.integration
 def test_health_ready_reports_503_when_fail_closed_limiter_unavailable(client, monkeypatch):
     monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", True)
@@ -249,6 +275,128 @@ def test_health_ready_stays_healthy_when_fail_open_limiter_unavailable(client, m
     payload = response.json()
     assert payload["status"] == "healthy"
     assert payload["checks"]["rate_limiter"]["fail_open"] is True
+
+
+@pytest.mark.integration
+def test_health_ready_reports_503_when_notifications_enabled_and_worker_heartbeat_missing(
+    client,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "NOTIFICATIONS_ENABLED", True)
+    monkeypatch.setattr(settings, "NOTIFICATION_OUTBOX_HEALTH_HEARTBEAT_MAX_AGE_SECONDS", 60)
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 503
+    payload = response.json()
+    assert payload["status"] == "unhealthy"
+    notification_check = payload["checks"]["notification_outbox_pipeline"]
+    assert notification_check["enabled"] is True
+    assert notification_check["status"] == "unhealthy"
+    assert "worker_heartbeat_stale" in notification_check["breaches"]
+
+
+@pytest.mark.integration
+def test_health_ready_reports_503_when_notifications_due_backlog_exceeds_threshold(
+    client,
+    db,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "NOTIFICATIONS_ENABLED", True)
+    monkeypatch.setattr(settings, "NOTIFICATION_OUTBOX_HEALTH_HEARTBEAT_MAX_AGE_SECONDS", 600)
+    monkeypatch.setattr(settings, "NOTIFICATION_OUTBOX_HEALTH_MAX_DUE_PENDING_COUNT", 0)
+    monkeypatch.setattr(settings, "NOTIFICATION_OUTBOX_HEALTH_MAX_OLDEST_DUE_PENDING_SECONDS", 3600)
+
+    now = utcnow()
+    db.add(
+        NotificationOutboxWorkerHeartbeat(
+            source="notification_outbox_worker",
+            last_started_at=now,
+            last_completed_at=now,
+            last_success_at=now,
+        )
+    )
+    db.add(
+        NotificationOutbox(
+            user_id=None,
+            lead_id=None,
+            purchase_id=None,
+            channel="email",
+            event_type="lead_delivered",
+            recipient="advisor@example.com",
+            subject="New lead",
+            message_body="You have a new lead",
+            payload=None,
+            idempotency_key="health-ready-notification-due-backlog-1",
+            status="pending",
+            attempt_count=0,
+            max_attempts=5,
+            next_retry_at=now - timedelta(seconds=5),
+        )
+    )
+    db.commit()
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 503
+    payload = response.json()
+    notification_check = payload["checks"]["notification_outbox_pipeline"]
+    assert notification_check["status"] == "unhealthy"
+    assert "due_pending_count_exceeded" in notification_check["breaches"]
+    assert notification_check["queue"]["due_pending_count"] == 1
+
+
+@pytest.mark.integration
+def test_health_ready_stays_healthy_when_notification_pipeline_within_thresholds(
+    client,
+    db,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "NOTIFICATIONS_ENABLED", True)
+    monkeypatch.setattr(settings, "NOTIFICATION_OUTBOX_HEALTH_HEARTBEAT_MAX_AGE_SECONDS", 600)
+    monkeypatch.setattr(settings, "NOTIFICATION_OUTBOX_HEALTH_MAX_DUE_PENDING_COUNT", 100)
+    monkeypatch.setattr(settings, "NOTIFICATION_OUTBOX_HEALTH_MAX_OLDEST_DUE_PENDING_SECONDS", 600)
+    monkeypatch.setattr(settings, "NOTIFICATION_OUTBOX_HEALTH_MAX_FAILED_COUNT", 10)
+    monkeypatch.setattr(settings, "NOTIFICATION_OUTBOX_HEALTH_MAX_STALE_LOCK_COUNT", 1)
+
+    now = utcnow()
+    db.add(
+        NotificationOutboxWorkerHeartbeat(
+            source="notification_outbox_worker",
+            last_started_at=now,
+            last_completed_at=now,
+            last_success_at=now,
+        )
+    )
+    db.add(
+        NotificationOutbox(
+            user_id=None,
+            lead_id=None,
+            purchase_id=None,
+            channel="email",
+            event_type="lead_delivered",
+            recipient="advisor@example.com",
+            subject="New lead",
+            message_body="You have a new lead",
+            payload=None,
+            idempotency_key="health-ready-notification-not-due-1",
+            status="pending",
+            attempt_count=0,
+            max_attempts=5,
+            next_retry_at=now + timedelta(minutes=5),
+        )
+    )
+    db.commit()
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "healthy"
+    notification_check = payload["checks"]["notification_outbox_pipeline"]
+    assert notification_check["enabled"] is True
+    assert notification_check["status"] == "healthy"
+    assert notification_check["breaches"] == []
 
 
 @pytest.mark.integration

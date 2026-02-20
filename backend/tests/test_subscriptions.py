@@ -2409,7 +2409,7 @@ def test_webhook_subscription_lifecycle_event_is_ignored(
     user_factory,
     monkeypatch,
 ):
-    _advisor = user_factory(
+    user_factory(
         role="advisor",
         password="AdvisorWebhookIgnored123!",
         email="advisor.webhook.ignored@example.com",
