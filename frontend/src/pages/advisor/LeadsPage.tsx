@@ -187,8 +187,9 @@ const LeadsPage = () => {
         setSelectedLeadId(null);
         setError(getApiErrorMessage(loadError, "Unable to load lead inbox."));
       } finally {
-        if (cancelled) return;
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
