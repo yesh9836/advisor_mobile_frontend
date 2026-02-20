@@ -139,7 +139,6 @@ const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
 
   useEffect(() => {
     if (isAdmin) {
-      setShowConfigureNotificationsCta(false);
       return;
     }
 
