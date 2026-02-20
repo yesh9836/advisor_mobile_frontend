@@ -101,6 +101,12 @@ class LeadPurchase(Base):
         unique=True,
         index=True,
     )
+    stripe_invoice_id: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
 
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(
