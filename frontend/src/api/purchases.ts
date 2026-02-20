@@ -16,10 +16,14 @@ export const getPackages = async (): Promise<PurchasePackage[]> => {
 
 export const createCheckout = async (
   packageId: number,
+  retryToken?: string,
 ): Promise<PurchaseCheckoutSession> => {
   const response = await apiClient.post<PurchaseCheckoutSession>(
     "/purchases/checkout",
-    { package_id: packageId },
+    {
+      package_id: packageId,
+      ...(retryToken ? { retry_token: retryToken } : {}),
+    },
   );
   return response.data;
 };
