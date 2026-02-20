@@ -183,6 +183,19 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.APP_ENV.lower() == "production"
 
+    @property
+    def UPLOAD_ROOT(self) -> Path:
+        """
+        Canonical absolute upload root.
+
+        Relative UPLOAD_DIR values are anchored to the backend root so upload
+        behavior does not vary with process working directory.
+        """
+        configured = Path(self.UPLOAD_DIR).expanduser()
+        if configured.is_absolute():
+            return configured.resolve(strict=False)
+        return (_BACKEND_ROOT / configured).resolve(strict=False)
+
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def parse_cors_origins(cls, value):
