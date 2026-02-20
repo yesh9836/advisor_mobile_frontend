@@ -14,6 +14,7 @@ const PUBLIC_AUTH_ENDPOINTS = [
 ];
 const AUTH_SESSION_ENDPOINTS = ["/auth/refresh", "/auth/logout"];
 const MUTATING_METHODS = new Set(["post", "put", "patch", "delete"]);
+const REFRESH_TRANSIENT_FAILURE_COOLDOWN_MS = 3000;
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
@@ -93,11 +94,20 @@ const refreshClient = axios.create({
 });
 
 let refreshPromise: Promise<void> | null = null;
+let lastTransientRefreshFailureAt = 0;
 
 const refreshSession = async (): Promise<void> => {
   const csrfToken = readCookie(CSRF_COOKIE_NAME);
   const headers = csrfToken ? { [CSRF_HEADER_NAME]: csrfToken } : undefined;
   await refreshClient.post("/auth/refresh", undefined, { headers });
+};
+
+export const isTerminalRefreshFailure = (error: unknown): boolean => {
+  if (!axios.isAxiosError(error)) {
+    return false;
+  }
+  const statusCode = error.response?.status;
+  return statusCode === 401 || statusCode === 403;
 };
 
 apiClient.interceptors.request.use((config) => {
@@ -128,6 +138,11 @@ apiClient.interceptors.response.use(
     originalRequest._retry = true;
 
     try {
+      const now = Date.now();
+      if (now - lastTransientRefreshFailureAt < REFRESH_TRANSIENT_FAILURE_COOLDOWN_MS) {
+        return Promise.reject(error);
+      }
+
       if (!refreshPromise) {
         refreshPromise = refreshSession().finally(() => {
           refreshPromise = null;
@@ -135,9 +150,14 @@ apiClient.interceptors.response.use(
       }
 
       await refreshPromise;
+      lastTransientRefreshFailureAt = 0;
       return apiClient(originalRequest);
     } catch (refreshError) {
-      dispatchForcedLogout();
+      if (isTerminalRefreshFailure(refreshError)) {
+        dispatchForcedLogout();
+      } else {
+        lastTransientRefreshFailureAt = Date.now();
+      }
       return Promise.reject(refreshError);
     }
   },
