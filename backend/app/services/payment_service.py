@@ -1,6 +1,8 @@
+import hashlib
 import logging
-from datetime import datetime, timezone
+import re
 from typing import Optional
+from uuid import uuid4
 
 import stripe
 from fastapi import HTTPException, status
@@ -14,9 +16,9 @@ logger = logging.getLogger(__name__)
 
 class PaymentService:
     """Service for Stripe payment interactions."""
-    
+
     _initialized: bool = False
-    CHECKOUT_IDEMPOTENCY_WINDOW_SECONDS: int = 300
+    _CHECKOUT_RETRY_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9:_-]{8,128}$")
 
     @staticmethod
     def _customer_create_idempotency_key(user: User) -> str:
@@ -32,15 +34,28 @@ class PaymentService:
         *,
         user_id: int,
         package_id: int,
-        request_window_seconds: Optional[int] = None,
-        now: Optional[datetime] = None,
+        retry_token: Optional[str] = None,
     ) -> str:
-        """Build a deterministic idempotency key for checkout creation retries."""
-        window_seconds = request_window_seconds or PaymentService.CHECKOUT_IDEMPOTENCY_WINDOW_SECONDS
-        window_seconds = max(int(window_seconds), 1)
-        current_time = now or datetime.now(timezone.utc)
-        window_bucket = int(current_time.timestamp()) // window_seconds
-        return f"checkout-create:{int(user_id)}:{int(package_id)}:{window_bucket}:v1"
+        """Build an intent-scoped idempotency key for checkout creation retries."""
+        normalized_retry_token = PaymentService._normalize_checkout_retry_token(retry_token)
+        if normalized_retry_token is None:
+            normalized_retry_token = f"new:{uuid4().hex}"
+        token_hash = hashlib.sha256(normalized_retry_token.encode("utf-8")).hexdigest()[:24]
+        return f"checkout-create:{int(user_id)}:{int(package_id)}:{token_hash}:v2"
+
+    @staticmethod
+    def _normalize_checkout_retry_token(retry_token: Optional[str]) -> Optional[str]:
+        if retry_token is None:
+            return None
+        cleaned = str(retry_token).strip()
+        if not cleaned:
+            return None
+        if not PaymentService._CHECKOUT_RETRY_TOKEN_PATTERN.fullmatch(cleaned):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid checkout retry token",
+            )
+        return cleaned
 
     @classmethod
     def _init_stripe(cls) -> None:
