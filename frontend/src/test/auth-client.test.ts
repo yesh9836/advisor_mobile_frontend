@@ -1,4 +1,5 @@
 import {
+  AxiosError,
   AxiosHeaders,
   type AxiosRequestConfig,
   type AxiosResponse,
@@ -6,7 +7,7 @@ import {
 } from "axios";
 import { afterEach, describe, expect, it } from "vitest";
 
-import apiClient from "@/api/client";
+import apiClient, { isTerminalRefreshFailure } from "@/api/client";
 
 const originalAdapter = apiClient.defaults.adapter;
 
@@ -50,6 +51,28 @@ const installCaptureAdapter = () => {
   return seen;
 };
 
+const buildAxiosError = (statusCode?: number): AxiosError => {
+  const config = {
+    headers: new AxiosHeaders(),
+  } as InternalAxiosRequestConfig;
+  if (statusCode === undefined) {
+    return new AxiosError("network failure", "ERR_NETWORK", config);
+  }
+  return new AxiosError(
+    `Request failed with status code ${statusCode}`,
+    "ERR_BAD_RESPONSE",
+    config,
+    undefined,
+    {
+      data: {},
+      status: statusCode,
+      statusText: `${statusCode}`,
+      headers: {},
+      config,
+    } as AxiosResponse,
+  );
+};
+
 afterEach(() => {
   apiClient.defaults.adapter = originalAdapter;
   document.cookie = "csrf_token=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
@@ -79,5 +102,13 @@ describe("apiClient auth transport", () => {
 
     expect(postCsrf).toBe("test-csrf-token");
     expect(getCsrf).toBeUndefined();
+  });
+
+  it("classifies only 401/403 refresh failures as terminal", () => {
+    expect(isTerminalRefreshFailure(buildAxiosError(401))).toBe(true);
+    expect(isTerminalRefreshFailure(buildAxiosError(403))).toBe(true);
+    expect(isTerminalRefreshFailure(buildAxiosError(500))).toBe(false);
+    expect(isTerminalRefreshFailure(buildAxiosError())).toBe(false);
+    expect(isTerminalRefreshFailure(new Error("plain error"))).toBe(false);
   });
 });
