@@ -4,6 +4,7 @@ import inspect
 import logging
 from collections import Counter
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from ipaddress import ip_address, ip_network
 from threading import Lock
 from typing import Any, Awaitable, Callable
@@ -62,6 +63,10 @@ class _RateLimitMetrics:
 class _LimiterState:
     redis_client: Any | None = None
     ready: bool = False
+    last_init_attempt_at: datetime | None = None
+    last_ready_at: datetime | None = None
+    last_error: str | None = None
+    last_error_at: datetime | None = None
 
 
 _STATE = _LimiterState()
@@ -74,6 +79,12 @@ def _is_redis_backend_enabled() -> bool:
 
 def rate_limit_dependencies_available() -> bool:
     return FastAPILimiter is not None and RateLimiter is not None and redis_asyncio is not None
+
+
+def _isoformat_or_none(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.astimezone(timezone.utc).isoformat()
 
 
 async def _init_fastapi_limiter(redis_client: Any) -> None:
@@ -208,12 +219,18 @@ async def _async_client_ip_identifier(request: Request) -> str:
 
 
 async def init_rate_limiter() -> None:
+    now = datetime.now(timezone.utc)
     _STATE.ready = False
+    _STATE.last_init_attempt_at = now
 
     if not _is_redis_backend_enabled():
+        _STATE.last_error = None
+        _STATE.last_error_at = None
         return
 
     if not rate_limit_dependencies_available():
+        _STATE.last_error = "missing_dependencies"
+        _STATE.last_error_at = now
         logger.error(
             "Rate limiting enabled but dependencies are missing. "
             "Install 'fastapi-limiter' and 'redis'."
@@ -230,14 +247,19 @@ async def init_rate_limiter() -> None:
         await _init_fastapi_limiter(redis_client)
         _STATE.redis_client = redis_client
         _STATE.ready = True
+        _STATE.last_ready_at = datetime.now(timezone.utc)
+        _STATE.last_error = None
+        _STATE.last_error_at = None
         logger.info(
             "Redis rate limiter initialized backend=%s prefix=%s",
             settings.RATE_LIMIT_BACKEND,
             settings.RATE_LIMIT_PREFIX,
         )
-    except Exception:
+    except Exception as exc:
         _STATE.redis_client = None
         _STATE.ready = False
+        _STATE.last_error = str(exc)[:500] or exc.__class__.__name__
+        _STATE.last_error_at = datetime.now(timezone.utc)
         logger.exception("Failed to initialize Redis rate limiter")
 
 
@@ -268,6 +290,30 @@ def is_rate_limiter_ready() -> bool:
     if not _is_redis_backend_enabled():
         return True
     return _STATE.ready
+
+
+def is_rate_limiter_critical_unavailable() -> bool:
+    if not _is_redis_backend_enabled():
+        return False
+    if settings.RATE_LIMIT_FAIL_OPEN:
+        return False
+    return not is_rate_limiter_ready()
+
+
+def get_rate_limiter_status_snapshot() -> dict[str, Any]:
+    redis_backend_enabled = _is_redis_backend_enabled()
+    return {
+        "enabled": bool(settings.RATE_LIMIT_ENABLED),
+        "backend": settings.RATE_LIMIT_BACKEND,
+        "redis_backend_enabled": redis_backend_enabled,
+        "ready": is_rate_limiter_ready(),
+        "dependencies_available": rate_limit_dependencies_available(),
+        "fail_open": bool(settings.RATE_LIMIT_FAIL_OPEN),
+        "last_init_attempt_at": _isoformat_or_none(_STATE.last_init_attempt_at),
+        "last_ready_at": _isoformat_or_none(_STATE.last_ready_at),
+        "last_error": _STATE.last_error,
+        "last_error_at": _isoformat_or_none(_STATE.last_error_at),
+    }
 
 
 def _raise_unavailable(endpoint: str, request: Request) -> None:
@@ -340,6 +386,8 @@ async def _enforce_endpoint_rate_limit(
         raise
     except Exception:
         _STATE.ready = False
+        _STATE.last_error = "runtime_rate_limiter_error"
+        _STATE.last_error_at = datetime.now(timezone.utc)
         logger.exception(
             "Redis rate limiter error endpoint=%s client_ip=%s",
             endpoint,
@@ -396,8 +444,10 @@ password_reset_route_rate_limit_dependency = _build_rate_limit_dependency(
 
 __all__ = [
     "client_ip_identifier",
+    "get_rate_limiter_status_snapshot",
     "get_rate_limit_metrics_snapshot",
     "init_rate_limiter",
+    "is_rate_limiter_critical_unavailable",
     "is_rate_limiter_ready",
     "login_rate_limit_dependency",
     "password_reset_route_rate_limit_dependency",
