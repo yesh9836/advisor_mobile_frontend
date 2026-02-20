@@ -9,7 +9,6 @@ from app.api.deps import get_current_active_user, get_db, require_admin
 from app.models.user import User
 from app.schemas.license import (
     AdminLicenseDecisionRow,
-    LicenseApprove,
     LicenseCreate,
     LicenseReject,
     LicenseResponse,
