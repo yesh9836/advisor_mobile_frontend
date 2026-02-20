@@ -97,6 +97,8 @@ def test_list_available_leads_filters_to_verified_states(
     assert data["total"] == 2
     assert len(data["items"]) == 2
     assert {item["state_code"] for item in data["items"]} == {"CA"}
+    assert all("source" in item for item in data["items"])
+    assert {item["source"] for item in data["items"]} == {"manual_entry"}
 
 
 @pytest.mark.integration
