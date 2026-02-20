@@ -296,6 +296,9 @@ class FirstPurchaseOfferService:
             db.add(config)
             db.commit()
             db.refresh(config)
+        except HTTPException:
+            db.rollback()
+            raise
         except Exception as exc:
             db.rollback()
             logger.error("Failed to update first-purchase add-on offer config: %s", exc)
