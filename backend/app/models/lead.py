@@ -72,15 +72,15 @@ class Lead(Base):
     )
 
     # Source tracking
-    source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
 
     # Location (state_code is required)
     state_code: Mapped[str] = mapped_column(String(2), nullable=False, index=True)
     zip_code: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
 
     # Contact info
-    first_name: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
-    last_name: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    first_name: Mapped[Optional[str]] = mapped_column(String(80), nullable=True, index=True)
+    last_name: Mapped[Optional[str]] = mapped_column(String(80), nullable=True, index=True)
     mobile_phone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, index=True)
     preferred_follow_up_method: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
     best_time_to_reach: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
