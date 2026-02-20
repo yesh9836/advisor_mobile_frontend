@@ -1,4 +1,6 @@
 import apiClient from "@/api/client";
+import { parseApiContract } from "@/api/contract";
+import { z } from "zod";
 
 export interface DeliverySettingsResponse {
   email_alerts_enabled: boolean;
@@ -14,12 +16,26 @@ export interface DeliverySettingsUpdatePayload {
   expected_version?: number;
 }
 
+const deliverySettingsResponseSchema: z.ZodType<DeliverySettingsResponse> = z
+  .object({
+    email_alerts_enabled: z.boolean(),
+    sms_alerts_enabled: z.boolean(),
+    version: z.number(),
+    updated_at: z.string(),
+    warnings: z.array(z.string()),
+  })
+  .passthrough();
+
 export const getMyDeliverySettings =
   async (): Promise<DeliverySettingsResponse> => {
     const response = await apiClient.get<DeliverySettingsResponse>(
       "/delivery-settings/me",
     );
-    return response.data;
+    return parseApiContract(
+      deliverySettingsResponseSchema,
+      response.data,
+      "/delivery-settings/me",
+    );
   };
 
 export const updateMyDeliverySettings = async (
@@ -29,5 +45,9 @@ export const updateMyDeliverySettings = async (
     "/delivery-settings/me",
     payload,
   );
-  return response.data;
+  return parseApiContract(
+    deliverySettingsResponseSchema,
+    response.data,
+    "/delivery-settings/me",
+  );
 };

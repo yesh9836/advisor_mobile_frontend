@@ -1,6 +1,7 @@
 import apiClient from "@/api/client";
 import { parseApiContract } from "@/api/contract";
 import type {
+  Lead,
   LeadDashboardSummary,
   LeadFilters,
   LeadOutcome,
@@ -12,7 +13,7 @@ import { z } from "zod";
 const nullableString = z.string().nullable();
 const nullableStringArray = z.array(z.string()).nullable();
 
-const leadSchema = z
+export const leadSchema: z.ZodType<Lead> = z
   .object({
     id: z.number(),
     source: z.string().nullable(),

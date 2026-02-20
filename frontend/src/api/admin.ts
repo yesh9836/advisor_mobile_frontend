@@ -1,4 +1,11 @@
 import apiClient from "@/api/client";
+import { parseApiContract } from "@/api/contract";
+import {
+  adminLicenseDecisionRowSchema,
+  licenseSchema,
+  licenseWithUserSchema,
+} from "@/api/license-contract";
+import { leadSchema } from "@/api/leads";
 import type {
   AdminAnalyticsOverview,
   AdminLeadCreatePayload,
@@ -26,6 +33,7 @@ import type {
   License,
   LicenseWithUser,
 } from "@/types/license";
+import { z } from "zod";
 
 interface LicenseRejectPayload {
   rejection_reason: string;
@@ -88,16 +96,303 @@ const parseFilename = (
   return fallback;
 };
 
+const dashboardStatsSchema: z.ZodType<DashboardStats> = z
+  .object({
+    total_users: z.number(),
+    completed_purchases: z.number(),
+    advisors_with_credits: z.number(),
+    pending_licenses: z.number(),
+    total_leads: z.number(),
+    total_revenue_cents: z.number(),
+    currency: z.string(),
+  })
+  .passthrough();
+
+const firstPurchaseOfferConfigSchema: z.ZodType<FirstPurchaseAddonOfferConfig> = z
+  .object({
+    id: z.number().nullable(),
+    is_enabled: z.boolean(),
+    trigger_package_id: z.number().nullable(),
+    trigger_package_name: z.string().nullable(),
+    offer_package_id: z.number().nullable(),
+    offer_package_name: z.string().nullable(),
+    offer_price_cents: z.number().nullable(),
+    offer_currency: z.string().nullable(),
+    offer_credits_total: z.number().nullable(),
+    headline: z.string().nullable(),
+    message: z.string().nullable(),
+    cta_label: z.string().nullable(),
+    starts_at: z.string().nullable(),
+    ends_at: z.string().nullable(),
+    updated_at: z.string().nullable(),
+    updated_by: z.number().nullable(),
+  })
+  .passthrough();
+
+const adminAnalyticsOverviewSchema: z.ZodType<AdminAnalyticsOverview> = z
+  .object({
+    monthly_revenue: z.array(
+      z
+        .object({
+          month: z.string(),
+          revenue_cents: z.number(),
+        })
+        .passthrough(),
+    ),
+    plan_breakdown: z.array(
+      z
+        .object({
+          package_name: z.string(),
+          purchases: z.number(),
+          credits_granted: z.number(),
+          credits_remaining: z.number(),
+          revenue_cents: z.number(),
+        })
+        .passthrough(),
+    ),
+    state_distribution: z.array(
+      z
+        .object({
+          state_code: z.string(),
+          lead_count: z.number(),
+        })
+        .passthrough(),
+    ),
+    user_growth: z.array(
+      z
+        .object({
+          month: z.string(),
+          new_users: z.number(),
+        })
+        .passthrough(),
+    ),
+  })
+  .passthrough();
+
+const adminUserListItemSchema = z
+  .object({
+    id: z.number(),
+    name: z.string(),
+    email: z.string(),
+    role: z.string(),
+    is_active: z.boolean(),
+    created_at: z.string(),
+    license_count: z.number(),
+    current_credits: z.number(),
+    total_purchases: z.number(),
+  })
+  .passthrough();
+
+const paginatedUsersSchema: z.ZodType<PaginatedUsers> = z
+  .object({
+    items: z.array(adminUserListItemSchema),
+    total: z.number(),
+    page: z.number(),
+    size: z.number(),
+  })
+  .passthrough();
+
+const adminOrderListItemSchema = z
+  .object({
+    id: z.number(),
+    order_reference: z.string(),
+    advisor_name: z.string(),
+    advisor_email: z.string(),
+    package_name: z.string().nullable(),
+    quantity: z.number().nullable(),
+    remaining_credits: z.number().nullable(),
+    status: z.string(),
+    created_at: z.string(),
+    amount_cents: z.number(),
+    currency: z.string(),
+  })
+  .passthrough();
+
+const paginatedOrdersSchema: z.ZodType<PaginatedOrders> = z
+  .object({
+    items: z.array(adminOrderListItemSchema),
+    total: z.number(),
+    page: z.number(),
+    size: z.number(),
+  })
+  .passthrough();
+
+const adminLeadInventoryItemSchema = z
+  .object({
+    id: z.number(),
+    state_code: z.string(),
+    first_name: z.string().nullable(),
+    last_name: z.string().nullable(),
+    mobile_phone: z.string().nullable(),
+    source: z.string().nullable(),
+    created_at: z.string(),
+    download_count: z.number(),
+    assigned_advisor_id: z.number().nullable(),
+    assigned_advisor_name: z.string().nullable(),
+    assigned_advisor_email: z.string().nullable(),
+    purchase_id: z.number().nullable(),
+    purchase_reference: z.string().nullable(),
+  })
+  .passthrough();
+
+const paginatedLeadInventorySchema: z.ZodType<PaginatedLeadInventory> = z
+  .object({
+    items: z.array(adminLeadInventoryItemSchema),
+    total: z.number(),
+    page: z.number(),
+    size: z.number(),
+  })
+  .passthrough();
+
+const licenseStatusSummarySchema: z.ZodType<LicenseStatusSummaryItem[]> = z.array(
+  z
+    .object({
+      status: z.enum(["pending", "verified", "rejected"]),
+      count: z.number(),
+    })
+    .passthrough(),
+);
+
+const auditLogSchema = z
+  .object({
+    id: z.number(),
+    actor_user_id: z.number().nullable(),
+    action: z.string(),
+    entity_type: z.string(),
+    entity_id: z.number().nullable(),
+    meta_data: z.record(z.string(), z.unknown()).nullable(),
+    ip_address: z.string().nullable(),
+    created_at: z.string(),
+  })
+  .passthrough();
+
+const userLicenseItemSchema = z
+  .object({
+    id: z.number(),
+    state: z.string(),
+    license_number: z.string(),
+    license_type: z.string().nullable(),
+    verification_status: z.enum(["pending", "verified", "rejected"]),
+    created_at: z.string(),
+    verified_at: z.string().nullable(),
+    rejection_reason: z.string().nullable(),
+  })
+  .passthrough();
+
+const userCreditSummarySchema = z
+  .object({
+    total_credits: z.number(),
+    remaining_credits: z.number(),
+    completed_purchases: z.number(),
+  })
+  .passthrough();
+
+const userPurchaseItemSchema = z
+  .object({
+    id: z.number(),
+    order_reference: z.string(),
+    status: z.string(),
+    package_name: z.string().nullable(),
+    amount_cents: z.number(),
+    currency: z.string(),
+    credits_total: z.number(),
+    credits_remaining: z.number(),
+    purchased_at: z.string(),
+  })
+  .passthrough();
+
+const userDownloadHistoryItemSchema = z
+  .object({
+    lead_id: z.number(),
+    state_code: z.string(),
+    downloaded_at: z.string(),
+    csv_batch_id: z.string().nullable(),
+  })
+  .passthrough();
+
+const userDetailsSchema: z.ZodType<UserDetails> = z
+  .object({
+    id: z.number(),
+    name: z.string(),
+    email: z.string(),
+    role: z.string(),
+    is_active: z.boolean(),
+    created_at: z.string(),
+    deactivated_at: z.string().nullable(),
+    deactivated_by: z.number().nullable(),
+    licenses: z.array(z.union([userLicenseItemSchema, licenseSchema])),
+    credit_summary: userCreditSummarySchema,
+    purchase_history: z.array(userPurchaseItemSchema),
+    download_history: z.array(userDownloadHistoryItemSchema),
+    recent_activity: z.array(auditLogSchema),
+  })
+  .passthrough();
+
+const paginatedAuditLogsSchema: z.ZodType<PaginatedAuditLogs> = z
+  .object({
+    items: z.array(auditLogSchema),
+    total: z.number(),
+    page: z.number(),
+    size: z.number(),
+  })
+  .passthrough();
+
+const importStatsSchema: z.ZodType<ImportStats> = z
+  .object({
+    scanned: z.number(),
+    inserted: z.number(),
+    skipped_duplicates: z.number(),
+    failed: z.number(),
+    errors: z.array(
+      z
+        .object({
+          row: z.number().optional(),
+          error: z.string(),
+        })
+        .passthrough(),
+    ),
+  })
+  .passthrough();
+
+const leadBulkImportResultSchema: z.ZodType<LeadBulkImportResult> = z
+  .object({
+    success: z.number(),
+    failed: z.number(),
+    errors: z.array(
+      z
+        .object({
+          row: z.number(),
+          error: z.string(),
+        })
+        .passthrough(),
+    ),
+  })
+  .passthrough();
+
+const deactivateAdminUserResponseSchema = z
+  .object({
+    detail: z.string(),
+  })
+  .passthrough();
+
 export const getDashboardStats = async (): Promise<DashboardStats> => {
   const response = await apiClient.get<DashboardStats>("/admin/dashboard");
-  return response.data;
+  return parseApiContract(
+    dashboardStatsSchema,
+    response.data,
+    "/admin/dashboard",
+  );
 };
 
 export const getFirstPurchaseOfferConfig = async (): Promise<FirstPurchaseAddonOfferConfig> => {
   const response = await apiClient.get<FirstPurchaseAddonOfferConfig>(
     "/admin/first-purchase-offer",
   );
-  return response.data;
+  return parseApiContract(
+    firstPurchaseOfferConfigSchema,
+    response.data,
+    "/admin/first-purchase-offer",
+  );
 };
 
 export const updateFirstPurchaseOfferConfig = async (
@@ -107,12 +402,20 @@ export const updateFirstPurchaseOfferConfig = async (
     "/admin/first-purchase-offer",
     payload,
   );
-  return response.data;
+  return parseApiContract(
+    firstPurchaseOfferConfigSchema,
+    response.data,
+    "/admin/first-purchase-offer",
+  );
 };
 
 export const getAnalyticsOverview = async (): Promise<AdminAnalyticsOverview> => {
   const response = await apiClient.get<AdminAnalyticsOverview>("/admin/analytics");
-  return response.data;
+  return parseApiContract(
+    adminAnalyticsOverviewSchema,
+    response.data,
+    "/admin/analytics",
+  );
 };
 
 export const getUsers = async (
@@ -131,7 +434,11 @@ export const getUsers = async (
   const response = await apiClient.get<PaginatedUsers>("/admin/users", {
     params,
   });
-  return response.data;
+  return parseApiContract(
+    paginatedUsersSchema,
+    response.data,
+    "/admin/users",
+  );
 };
 
 export const getOrders = async (
@@ -148,7 +455,11 @@ export const getOrders = async (
   const response = await apiClient.get<PaginatedOrders>("/admin/orders", {
     params,
   });
-  return response.data;
+  return parseApiContract(
+    paginatedOrdersSchema,
+    response.data,
+    "/admin/orders",
+  );
 };
 
 export const getLeadInventory = async (
@@ -170,14 +481,22 @@ export const getLeadInventory = async (
   const response = await apiClient.get<PaginatedLeadInventory>("/admin/lead-inventory", {
     params,
   });
-  return response.data;
+  return parseApiContract(
+    paginatedLeadInventorySchema,
+    response.data,
+    "/admin/lead-inventory",
+  );
 };
 
 export const getLicenseStatusSummary = async (): Promise<LicenseStatusSummaryItem[]> => {
   const response = await apiClient.get<LicenseStatusSummaryItem[]>(
     "/admin/license-status-summary",
   );
-  return response.data;
+  return parseApiContract(
+    licenseStatusSummarySchema,
+    response.data,
+    "/admin/license-status-summary",
+  );
 };
 
 export const createLeadAsAdmin = async (
@@ -192,12 +511,16 @@ export const createLeadAsAdmin = async (
   });
 
   const response = await apiClient.post<Lead>("/leads/", requestPayload);
-  return response.data;
+  return parseApiContract(leadSchema, response.data, "/leads/");
 };
 
 export const getUser = async (userId: number): Promise<UserDetails> => {
   const response = await apiClient.get<UserDetails>(`/admin/users/${userId}`);
-  return response.data;
+  return parseApiContract(
+    userDetailsSchema,
+    response.data,
+    `/admin/users/${userId}`,
+  );
 };
 
 export const deactivateUser = async (
@@ -211,7 +534,11 @@ export const deactivateUser = async (
 
 export const syncWordPress = async (): Promise<ImportStats> => {
   const response = await apiClient.post<ImportStats>("/admin/sync/wordpress");
-  return response.data;
+  return parseApiContract(
+    importStatsSchema,
+    response.data,
+    "/admin/sync/wordpress",
+  );
 };
 
 export const getAuditLogs = async (
@@ -233,7 +560,11 @@ export const getAuditLogs = async (
   const response = await apiClient.get<PaginatedAuditLogs>("/admin/audit-logs", {
     params,
   });
-  return response.data;
+  return parseApiContract(
+    paginatedAuditLogsSchema,
+    response.data,
+    "/admin/audit-logs",
+  );
 };
 
 export const bulkImportLeadsAsAdmin = async (
@@ -247,12 +578,20 @@ export const bulkImportLeadsAsAdmin = async (
       "Content-Type": "multipart/form-data",
     },
   });
-  return response.data;
+  return parseApiContract(
+    leadBulkImportResultSchema,
+    response.data,
+    "/leads/bulk",
+  );
 };
 
 export const getPendingLicenses = async (): Promise<LicenseWithUser[]> => {
   const response = await apiClient.get<LicenseWithUser[]>("/licenses/pending");
-  return response.data;
+  return parseApiContract(
+    z.array(licenseWithUserSchema),
+    response.data,
+    "/licenses/pending",
+  );
 };
 
 export const getAdminDashboardStats = getDashboardStats;
@@ -283,7 +622,11 @@ export const deactivateAdminUser = async (
     `/admin/users/${userId}/deactivate`,
     normalizedPayload,
   );
-  return response.data;
+  return parseApiContract(
+    deactivateAdminUserResponseSchema,
+    response.data,
+    `/admin/users/${userId}/deactivate`,
+  );
 };
 
 interface GetAuditLogsParams {
@@ -312,12 +655,20 @@ export const getProcessedLicenses = async (
       advisor_query: params.advisorQuery,
     },
   });
-  return response.data;
+  return parseApiContract(
+    z.array(adminLicenseDecisionRowSchema),
+    response.data,
+    "/licenses/processed",
+  );
 };
 
 export const approveLicense = async (licenseId: number): Promise<License> => {
   const response = await apiClient.post<License>(`/licenses/${licenseId}/approve`);
-  return response.data;
+  return parseApiContract(
+    licenseSchema,
+    response.data,
+    `/licenses/${licenseId}/approve`,
+  );
 };
 
 export const rejectLicense = async (
@@ -332,7 +683,11 @@ export const rejectLicense = async (
     `/licenses/${licenseId}/reject`,
     payload,
   );
-  return response.data;
+  return parseApiContract(
+    licenseSchema,
+    response.data,
+    `/licenses/${licenseId}/reject`,
+  );
 };
 
 export const downloadLicenseDocument = async (
@@ -341,6 +696,11 @@ export const downloadLicenseDocument = async (
   const response = await apiClient.get<Blob>(`/licenses/${licenseId}/document`, {
     responseType: "blob",
   });
+  if (!(response.data instanceof Blob)) {
+    throw new TypeError(
+      `Unexpected response format from /licenses/${licenseId}/document`,
+    );
+  }
 
   const fallback = `license_${licenseId}`;
   const filename = parseFilename(
@@ -361,6 +721,11 @@ export const previewLicenseDocument = async (
     params: { access_mode: "preview" },
     responseType: "blob",
   });
+  if (!(response.data instanceof Blob)) {
+    throw new TypeError(
+      `Unexpected response format from /licenses/${licenseId}/document`,
+    );
+  }
 
   return {
     blob: response.data,

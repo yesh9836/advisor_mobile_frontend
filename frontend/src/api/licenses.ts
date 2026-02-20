@@ -1,5 +1,10 @@
 import apiClient from "@/api/client";
+import { parseApiContract } from "@/api/contract";
+import { licenseSchema } from "@/api/license-contract";
 import type { License } from "@/types/license";
+import { z } from "zod";
+
+const licenseListSchema: z.ZodType<License[]> = z.array(licenseSchema);
 
 export const submitLicense = async (data: FormData): Promise<License> => {
   const response = await apiClient.post<License>("/licenses", data, {
@@ -8,12 +13,12 @@ export const submitLicense = async (data: FormData): Promise<License> => {
     },
   });
 
-  return response.data;
+  return parseApiContract(licenseSchema, response.data, "/licenses");
 };
 
 export const getMyLicenses = async (): Promise<License[]> => {
   const response = await apiClient.get<License[]>("/licenses");
-  return response.data;
+  return parseApiContract(licenseListSchema, response.data, "/licenses");
 };
 
 export const resubmitLicense = async (
@@ -30,5 +35,9 @@ export const resubmitLicense = async (
     },
   );
 
-  return response.data;
+  return parseApiContract(
+    licenseSchema,
+    response.data,
+    `/licenses/${licenseId}/resubmit`,
+  );
 };
