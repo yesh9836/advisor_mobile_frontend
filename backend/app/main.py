@@ -7,11 +7,17 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import uvicorn
 
 from app.api.v1 import api_router
 from app.core.config import settings
-from app.core.rate_limit import init_rate_limiter, shutdown_rate_limiter
+from app.core.rate_limit import (
+    get_rate_limiter_status_snapshot,
+    init_rate_limiter,
+    is_rate_limiter_critical_unavailable,
+    shutdown_rate_limiter,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -61,8 +67,30 @@ def root():
 
 @app.get("/health")
 def health_check():
-    """Health check endpoint."""
+    """Backward-compatible liveness endpoint."""
     return {"status": "healthy"}
+
+
+@app.get("/health/live")
+def health_live():
+    """Liveness endpoint."""
+    return {"status": "healthy"}
+
+
+@app.get("/health/ready")
+def health_ready():
+    """Readiness endpoint."""
+    limiter_status = get_rate_limiter_status_snapshot()
+    status_text = "unhealthy" if is_rate_limiter_critical_unavailable() else "healthy"
+    payload = {
+        "status": status_text,
+        "checks": {
+            "rate_limiter": limiter_status,
+        },
+    }
+    if status_text != "healthy":
+        return JSONResponse(status_code=503, content=payload)
+    return payload
 
 
 if __name__ == "__main__":
