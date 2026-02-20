@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { getMyLicenses } from "@/api/licenses";
@@ -80,6 +80,14 @@ const buildCheckoutFulfillmentNotice = (
   return `Checkout completed. Delivered now: ${purchase.assigned_count}/${purchase.credits_total}. Pending auto-delivery: ${Math.max(purchase.unfulfilled_count, 0)}.`;
 };
 
+const buildCheckoutRetryToken = (scope: string): string => {
+  const uuidEntropy =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID().replace(/-/g, "")
+      : Math.random().toString(36).slice(2, 14);
+  return `retry_${scope}_${Date.now().toString(36)}_${uuidEntropy}`;
+};
+
 const SubscriptionPage = () => {
   const navigate = useNavigate();
   const [plans, setPlans] = useState<DisplayPlan[]>([]);
@@ -93,6 +101,7 @@ const SubscriptionPage = () => {
   const [hasVerifiedLicense, setHasVerifiedLicense] = useState(false);
   const [licenseGateMessage, setLicenseGateMessage] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
+  const checkoutRetryTokensRef = useRef<Record<string, string>>({});
 
   const checkoutState = searchParams.get("checkout");
   const checkoutSessionId = searchParams.get("session_id");
@@ -258,7 +267,12 @@ const SubscriptionPage = () => {
     setAddOnOffer(null);
 
     try {
-      const session = await createCheckout(entry.packageId);
+      const tokenScope = `pkg${entry.packageId}`;
+      const retryToken =
+        checkoutRetryTokensRef.current[tokenScope] ??
+        buildCheckoutRetryToken(tokenScope);
+      checkoutRetryTokensRef.current[tokenScope] = retryToken;
+      const session = await createCheckout(entry.packageId, retryToken);
       window.location.assign(session.url);
     } catch (checkoutError) {
       setError(getApiErrorMessage(checkoutError, "Unable to start checkout."));
@@ -276,7 +290,12 @@ const SubscriptionPage = () => {
     setError(null);
 
     try {
-      const session = await createCheckout(addOnOffer.offer_package_id);
+      const tokenScope = `offer${addOnOffer.offer_package_id}`;
+      const retryToken =
+        checkoutRetryTokensRef.current[tokenScope] ??
+        buildCheckoutRetryToken(tokenScope);
+      checkoutRetryTokensRef.current[tokenScope] = retryToken;
+      const session = await createCheckout(addOnOffer.offer_package_id, retryToken);
       window.location.assign(session.url);
     } catch (checkoutError) {
       setError(getApiErrorMessage(checkoutError, "Unable to start checkout."));
