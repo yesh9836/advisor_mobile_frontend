@@ -170,8 +170,23 @@ class Settings(BaseSettings):
     DEFAULT_PAGE_SIZE: int = 20
     MAX_PAGE_SIZE: int = 100
 
-    # Rate limiting (requests per minute)
+    # Rate limiting
     RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_BACKEND: str = "redis"  # redis
+    REDIS_URL: str = "redis://127.0.0.1:6379/0"
+    RATE_LIMIT_PREFIX: str = "lm:rl"
+    RATE_LIMIT_FAIL_OPEN: bool = False
+
+    RATE_LIMIT_LOGIN_TIMES: int = 5
+    RATE_LIMIT_LOGIN_SECONDS: int = 60
+    RATE_LIMIT_REGISTER_TIMES: int = 5
+    RATE_LIMIT_REGISTER_SECONDS: int = 300
+    RATE_LIMIT_REFRESH_TIMES: int = 20
+    RATE_LIMIT_REFRESH_SECONDS: int = 60
+    RATE_LIMIT_AUTH_PASSWORD_RESET_ROUTE_TIMES: int = 20
+    RATE_LIMIT_AUTH_PASSWORD_RESET_ROUTE_SECONDS: int = 60
+
+    # Legacy global limiter knobs (deprecated but retained for compatibility).
     RATE_LIMIT_PER_MINUTE: int = 60
     RATE_LIMIT_WINDOW_SECONDS: int = 60
     # Proxy header trust is disabled by default; enable only behind known proxies.
@@ -272,6 +287,14 @@ class Settings(BaseSettings):
     @field_validator(
         "RATE_LIMIT_PER_MINUTE",
         "RATE_LIMIT_WINDOW_SECONDS",
+        "RATE_LIMIT_LOGIN_TIMES",
+        "RATE_LIMIT_LOGIN_SECONDS",
+        "RATE_LIMIT_REGISTER_TIMES",
+        "RATE_LIMIT_REGISTER_SECONDS",
+        "RATE_LIMIT_REFRESH_TIMES",
+        "RATE_LIMIT_REFRESH_SECONDS",
+        "RATE_LIMIT_AUTH_PASSWORD_RESET_ROUTE_TIMES",
+        "RATE_LIMIT_AUTH_PASSWORD_RESET_ROUTE_SECONDS",
         "LICENSE_RESUBMISSION_MAX_ATTEMPTS",
         "LICENSE_RESUBMISSION_WINDOW_DAYS",
         "ACCESS_TOKEN_EXPIRE_MINUTES",
@@ -300,6 +323,14 @@ class Settings(BaseSettings):
         normalized = value.lower()
         if normalized not in {"lax", "strict", "none"}:
             raise ValueError("AUTH_COOKIE_SAMESITE must be one of: lax, strict, none")
+        return normalized
+
+    @field_validator("RATE_LIMIT_BACKEND", mode="after")
+    @classmethod
+    def validate_rate_limit_backend(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"redis"}:
+            raise ValueError("RATE_LIMIT_BACKEND must be 'redis'")
         return normalized
 
     @field_validator("RATE_LIMIT_TRUSTED_PROXIES", mode="after")
@@ -400,6 +431,9 @@ class Settings(BaseSettings):
 
         if self.RATE_LIMIT_TRUST_PROXY_HEADERS and not self.RATE_LIMIT_TRUSTED_PROXIES:
             raise ValueError("RATE_LIMIT_TRUSTED_PROXIES is required when proxy header trust is enabled")
+
+        if self.RATE_LIMIT_ENABLED and self.RATE_LIMIT_BACKEND == "redis" and not self.REDIS_URL:
+            raise ValueError("REDIS_URL must be set when Redis-backed rate limiting is enabled")
 
         return self
 
