@@ -39,6 +39,7 @@ from app.schemas.admin import (
     UserRecentActivityItem,
 )
 from app.services.audit_service import AuditService
+from app.services.auth_service import AuthService
 
 logger = logging.getLogger(__name__)
 
@@ -662,12 +663,29 @@ class AdminService:
         if user is None:
             raise HTTPException(status_code=404, detail="User not found")
 
+        if admin_id == user_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Admins cannot deactivate their own account",
+            )
+
+        if user.role == "admin":
+            raise HTTPException(
+                status_code=400,
+                detail="Admin accounts cannot be deactivated from this endpoint",
+            )
+
         if not user.is_active:
             raise HTTPException(status_code=400, detail="User already inactive")
 
         user.is_active = False
         user.deactivated_at = utcnow()
         user.deactivated_by = admin_id
+        AuthService.revoke_all_user_refresh_sessions(
+            db,
+            user_id=user.id,
+            reason="user_deactivated",
+        )
 
         try:
             db.commit()
