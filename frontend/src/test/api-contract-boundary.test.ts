@@ -5,13 +5,17 @@ vi.mock("@/api/client", () => ({
   default: {
     get: vi.fn(),
     post: vi.fn(),
+    patch: vi.fn(),
     put: vi.fn(),
   },
 }));
 
 import apiClient from "@/api/client";
+import { getDashboardStats } from "@/api/admin";
 import { getCurrentUser } from "@/api/auth";
+import { getMyDeliverySettings } from "@/api/delivery-settings";
 import { getLeads } from "@/api/leads";
+import { getMyLicenses } from "@/api/licenses";
 import { getPackages } from "@/api/purchases";
 
 type MockFn = ReturnType<typeof vi.fn>;
@@ -20,6 +24,7 @@ const mockedApiClient = apiClient as unknown as {
   get: MockFn;
   post: MockFn;
   put: MockFn;
+  patch: MockFn;
 };
 
 const buildValidLeadItem = () => ({
@@ -59,6 +64,7 @@ describe("API contract boundary guards", () => {
   beforeEach(() => {
     mockedApiClient.get.mockReset();
     mockedApiClient.post.mockReset();
+    mockedApiClient.patch.mockReset();
     mockedApiClient.put.mockReset();
   });
 
@@ -71,6 +77,18 @@ describe("API contract boundary guards", () => {
 
     await expect(getCurrentUser()).rejects.toThrow(
       "Unexpected response format from /auth/me",
+    );
+  });
+
+  it("rejects malformed admin dashboard payloads", async () => {
+    mockedApiClient.get.mockResolvedValueOnce({
+      data: {
+        total_users: 8,
+      },
+    });
+
+    await expect(getDashboardStats()).rejects.toThrow(
+      "Unexpected response format from /admin/dashboard",
     );
   });
 
@@ -138,5 +156,44 @@ describe("API contract boundary guards", () => {
     });
 
     await expect(getLeads(1, 25)).rejects.toThrow(/source/);
+  });
+
+  it("rejects malformed licenses payloads", async () => {
+    mockedApiClient.get.mockResolvedValueOnce({
+      data: [
+        {
+          id: 7,
+          user_id: 2,
+          state: "CA",
+          license_number: "CA-123",
+          license_type: null,
+          verification_status: "pending",
+          verified_at: null,
+          verified_by: null,
+          rejection_reason: null,
+          created_at: "2026-02-20T00:00:00Z",
+        },
+      ],
+    });
+
+    await expect(getMyLicenses()).rejects.toThrow(
+      "Unexpected response format from /licenses",
+    );
+  });
+
+  it("rejects malformed delivery settings payloads", async () => {
+    mockedApiClient.get.mockResolvedValueOnce({
+      data: {
+        email_alerts_enabled: true,
+        sms_alerts_enabled: false,
+        version: 4,
+        updated_at: "2026-02-20T00:00:00Z",
+        warnings: "none",
+      },
+    });
+
+    await expect(getMyDeliverySettings()).rejects.toThrow(
+      "Unexpected response format from /delivery-settings/me",
+    );
   });
 });

@@ -41,6 +41,50 @@ const mockedApiClient = apiClient as unknown as {
   post: MockFn;
 };
 
+const buildDashboardStats = () => ({
+  total_users: 9,
+  completed_purchases: 4,
+  advisors_with_credits: 3,
+  pending_licenses: 2,
+  total_leads: 120,
+  total_revenue_cents: 450000,
+  currency: "USD",
+});
+
+const buildAdminUserDetails = () => ({
+  id: 14,
+  name: "Jane Advisor",
+  email: "jane.advisor@example.com",
+  role: "advisor",
+  is_active: true,
+  created_at: "2026-01-01T00:00:00Z",
+  deactivated_at: null,
+  deactivated_by: null,
+  licenses: [],
+  credit_summary: {
+    total_credits: 10,
+    remaining_credits: 4,
+    completed_purchases: 2,
+  },
+  purchase_history: [],
+  download_history: [],
+  recent_activity: [],
+});
+
+const buildLicense = (id: number) => ({
+  id,
+  user_id: 7,
+  state: "CA",
+  license_number: "CA-123",
+  license_type: null,
+  has_document: true,
+  verification_status: "pending" as const,
+  verified_at: null,
+  verified_by: null,
+  rejection_reason: null,
+  created_at: "2026-02-20T00:00:00Z",
+});
+
 describe("admin API contract", () => {
   beforeEach(() => {
     mockedApiClient.get.mockReset();
@@ -48,7 +92,7 @@ describe("admin API contract", () => {
   });
 
   it("getDashboardStats uses GET /admin/dashboard", async () => {
-    const dashboard = { total_users: 9 };
+    const dashboard = buildDashboardStats();
     mockedApiClient.get.mockResolvedValueOnce({ data: dashboard });
 
     await expect(getDashboardStats()).resolves.toEqual(dashboard);
@@ -162,7 +206,44 @@ describe("admin API contract", () => {
   });
 
   it("createLeadAsAdmin posts normalized lead payload", async () => {
-    const created = { id: 45 };
+    const created = {
+      id: 45,
+      source: "manual_entry",
+      state_code: "CA",
+      zip_code: null,
+      first_name: "Alice",
+      last_name: "Lane",
+      mobile_phone: "555-222-3000",
+      preferred_follow_up_method: null,
+      best_time_to_reach: null,
+      retirement_timeline: null,
+      confidence_in_long_term_plan: null,
+      most_important_retirement_activity: null,
+      planning_to_relocate_retirement: null,
+      expected_retirement_income_source: null,
+      overall_health: null,
+      money_management_style: null,
+      investor_profile_statement: null,
+      investment_comfort_level: null,
+      main_purpose_for_investing: null,
+      retirement_savings_range: null,
+      annual_household_income_range: null,
+      total_investable_assets_range: null,
+      monthly_savings_range: null,
+      wants_to_improve_strategy_timing: null,
+      current_investment_strategies: null,
+      has_financial_advisor: null,
+      advisor_local_preference: null,
+      owns_annuity: null,
+      additional_notes: null,
+      created_at: "2026-02-20T00:00:00Z",
+      updated_at: null,
+      outcome_status: null,
+      outcome_notes: null,
+      outcome_updated_at: null,
+      is_downloaded: false,
+      downloaded_at: null,
+    };
     mockedApiClient.post.mockResolvedValueOnce({ data: created });
 
     await expect(
@@ -185,7 +266,7 @@ describe("admin API contract", () => {
   });
 
   it("getUser uses GET /admin/users/{id}", async () => {
-    const details = { id: 14 };
+    const details = buildAdminUserDetails();
     mockedApiClient.get.mockResolvedValueOnce({ data: details });
 
     await expect(getUser(14)).resolves.toEqual(details);
@@ -260,7 +341,14 @@ describe("admin API contract", () => {
   });
 
   it("compat wrappers keep prior signatures", async () => {
-    mockedApiClient.get.mockResolvedValue({ data: { items: [], total: 0, page: 1, size: 20 } });
+    mockedApiClient.get.mockResolvedValueOnce({ data: buildDashboardStats() });
+    mockedApiClient.get.mockResolvedValueOnce({
+      data: { items: [], total: 0, page: 1, size: 20 },
+    });
+    mockedApiClient.get.mockResolvedValueOnce({ data: buildAdminUserDetails() });
+    mockedApiClient.get.mockResolvedValueOnce({
+      data: { items: [], total: 0, page: 1, size: 20 },
+    });
     mockedApiClient.post.mockResolvedValue({ data: { detail: "User deactivated" } });
 
     await getAdminDashboardStats();
@@ -305,8 +393,8 @@ describe("admin API contract", () => {
   it("license approval calls keep existing endpoint contracts", async () => {
     mockedApiClient.get.mockResolvedValueOnce({ data: [] });
     mockedApiClient.get.mockResolvedValueOnce({ data: [] });
-    mockedApiClient.post.mockResolvedValueOnce({ data: { id: 7 } });
-    mockedApiClient.post.mockResolvedValueOnce({ data: { id: 7 } });
+    mockedApiClient.post.mockResolvedValueOnce({ data: buildLicense(7) });
+    mockedApiClient.post.mockResolvedValueOnce({ data: buildLicense(7) });
 
     await getPendingLicenses();
     await getProcessedLicenses({ advisorId: 3, advisorQuery: "jane" });
