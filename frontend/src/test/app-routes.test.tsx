@@ -66,7 +66,7 @@ describe("AppRoutes advisor page mapping", () => {
     renderRoute("/profile");
 
     expect(
-      screen.getByRole("heading", { name: "Advisor Profile" }),
+      await screen.findByRole("heading", { name: "Advisor Profile" }),
     ).toBeInTheDocument();
     expect(screen.getByTestId("license-form")).toBeInTheDocument();
     expect(screen.getByTestId("license-list")).toBeInTheDocument();
@@ -81,7 +81,7 @@ describe("AppRoutes advisor page mapping", () => {
   it("renders billing workflow at /billing", async () => {
     renderRoute("/billing");
 
-    expect(screen.getByRole("heading", { name: "Billing" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Billing" })).toBeInTheDocument();
     expect(
       screen.getByText("Invoices, payment methods, and purchase history."),
     ).toBeInTheDocument();
