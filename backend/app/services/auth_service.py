@@ -26,10 +26,11 @@ from app.core.security import (
 )
 from app.db.timezone import utcnow
 from app.models.auth_session import RefreshTokenSession
+from app.models.notification import NotificationOutbox
 from app.models.password_reset import PasswordResetRequestAttempt, PasswordResetToken
 from app.models.user import User
 from app.schemas.auth import PasswordResetConfirm, PasswordResetRequest, UserRegister, UserLogin
-from app.services.email_service import EmailService
+from app.services.notification_template_service import NotificationTemplateService
 
 logger = logging.getLogger(__name__)
 
@@ -475,6 +476,54 @@ class AuthService:
         ).hexdigest()
 
     @staticmethod
+    def _build_password_reset_email_idempotency_key(
+        *,
+        user_id: int,
+        token_hash: str,
+    ) -> str:
+        return f"password_reset_requested:email:u{int(user_id)}:{token_hash}"
+
+    @staticmethod
+    def _enqueue_password_reset_email_outbox(
+        db: Session,
+        *,
+        user: User,
+        reset_url: str,
+        token_hash: str,
+        now: datetime,
+    ) -> None:
+        template = NotificationTemplateService.render_password_reset_email(
+            app_name=settings.APP_NAME,
+            recipient_name=user.name,
+            reset_url=reset_url,
+            expires_minutes=settings.PASSWORD_RESET_TOKEN_EXPIRE_MINUTES,
+        )
+        db.add(
+            NotificationOutbox(
+                user_id=user.id,
+                lead_id=None,
+                purchase_id=None,
+                channel="email",
+                event_type="password_reset_requested",
+                recipient=user.email,
+                subject=template.subject,
+                message_body=template.text_body,
+                payload={
+                    "html_body": template.html_body,
+                    "source_event": "password_reset_request",
+                },
+                idempotency_key=AuthService._build_password_reset_email_idempotency_key(
+                    user_id=user.id,
+                    token_hash=token_hash,
+                ),
+                status="pending",
+                attempt_count=0,
+                max_attempts=settings.NOTIFICATION_OUTBOX_MAX_ATTEMPTS,
+                next_retry_at=now,
+            )
+        )
+
+    @staticmethod
     def request_password_reset(
         db: Session,
         payload: PasswordResetRequest,
@@ -513,23 +562,25 @@ class AuthService:
                 return
 
             raw_token = create_password_reset_token()
+            token_hash = hash_password_reset_token(raw_token)
             token_record = PasswordResetToken(
                 user_id=user.id,
-                token_hash=hash_password_reset_token(raw_token),
+                token_hash=token_hash,
                 expires_at=now + timedelta(minutes=settings.PASSWORD_RESET_TOKEN_EXPIRE_MINUTES),
                 requested_user_agent=(user_agent or "")[:255] or None,
                 requested_ip=(ip_address or "")[:45] or None,
             )
             db.add(token_record)
-            db.commit()
 
             reset_url = AuthService._build_password_reset_url(raw_token)
-            EmailService.send_password_reset_email(
-                recipient_email=user.email,
-                recipient_name=user.name,
+            AuthService._enqueue_password_reset_email_outbox(
+                db,
+                user=user,
                 reset_url=reset_url,
-                expires_minutes=settings.PASSWORD_RESET_TOKEN_EXPIRE_MINUTES,
+                token_hash=token_hash,
+                now=now,
             )
+            db.commit()
         except HTTPException:
             raise
         except Exception:

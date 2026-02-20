@@ -661,6 +661,42 @@ class SubscriptionService:
         }
 
     @staticmethod
+    def _get_refund_reversed_credits_by_purchase_id(
+        db: Session,
+        purchase_ids: List[int],
+    ) -> Dict[int, int]:
+        if not purchase_ids:
+            return {}
+
+        rows = (
+            db.query(
+                LeadCreditLedger.purchase_id,
+                func.coalesce(func.sum(LeadCreditLedger.credits_delta), 0).label("refund_delta_total"),
+            )
+            .filter(
+                LeadCreditLedger.purchase_id.in_(purchase_ids),
+                LeadCreditLedger.movement_type == "refund_adjustment",
+            )
+            .group_by(LeadCreditLedger.purchase_id)
+            .all()
+        )
+        return {
+            int(purchase_id): max(-int(refund_delta_total or 0), 0)
+            for purchase_id, refund_delta_total in rows
+            if purchase_id is not None
+        }
+
+    @staticmethod
+    def _compute_entitled_credits_total(
+        *,
+        credits_total: int,
+        reversed_refund_credits: int,
+    ) -> int:
+        normalized_total = max(int(credits_total or 0), 0)
+        normalized_reversed = max(int(reversed_refund_credits or 0), 0)
+        return max(normalized_total - min(normalized_reversed, normalized_total), 0)
+
+    @staticmethod
     def _derive_fulfillment_status(
         *,
         purchase_status: str,
@@ -685,9 +721,11 @@ class SubscriptionService:
         purchase: LeadPurchase,
         package: Optional[LeadPackage],
         assigned_count: int,
+        entitled_credits_total: int,
     ) -> Dict[str, Any]:
-        credits_total = int(purchase.credits_total or 0)
-        unfulfilled_count = max(credits_total - max(int(assigned_count), 0), 0)
+        credits_total = max(int(purchase.credits_total or 0), 0)
+        normalized_entitled = max(int(entitled_credits_total or 0), 0)
+        unfulfilled_count = max(normalized_entitled - max(int(assigned_count), 0), 0)
         return {
             "id": int(purchase.id),
             "order_reference": (
@@ -699,13 +737,14 @@ class SubscriptionService:
             "amount_cents": int(purchase.amount_cents),
             "currency": str((purchase.currency or "USD")).upper(),
             "credits_total": credits_total,
+            "entitled_credits_total": normalized_entitled,
             "credits_remaining": int(purchase.credits_remaining),
             "status": str(purchase.status),
             "assigned_count": max(int(assigned_count), 0),
             "unfulfilled_count": unfulfilled_count,
             "fulfillment_status": SubscriptionService._derive_fulfillment_status(
                 purchase_status=str(purchase.status),
-                credits_total=credits_total,
+                credits_total=normalized_entitled,
                 assigned_count=max(int(assigned_count), 0),
                 unfulfilled_count=unfulfilled_count,
             ),
@@ -743,11 +782,19 @@ class SubscriptionService:
             db=db,
             purchase_ids=purchase_ids,
         )
+        reversed_refunds = SubscriptionService._get_refund_reversed_credits_by_purchase_id(
+            db=db,
+            purchase_ids=purchase_ids,
+        )
         items: List[Dict[str, Any]] = [
             SubscriptionService._build_purchase_item(
                 purchase=purchase,
                 package=package,
                 assigned_count=assigned_counts.get(int(purchase.id), 0),
+                entitled_credits_total=SubscriptionService._compute_entitled_credits_total(
+                    credits_total=int(purchase.credits_total or 0),
+                    reversed_refund_credits=reversed_refunds.get(int(purchase.id), 0),
+                ),
             )
             for purchase, package in rows
         ]
@@ -770,11 +817,19 @@ class SubscriptionService:
             db=db,
             purchase_ids=purchase_ids,
         )
+        reversed_refunds = SubscriptionService._get_refund_reversed_credits_by_purchase_id(
+            db=db,
+            purchase_ids=purchase_ids,
+        )
         items: List[Dict[str, Any]] = [
             SubscriptionService._build_purchase_item(
                 purchase=purchase,
                 package=package,
                 assigned_count=assigned_counts.get(int(purchase.id), 0),
+                entitled_credits_total=SubscriptionService._compute_entitled_credits_total(
+                    credits_total=int(purchase.credits_total or 0),
+                    reversed_refund_credits=reversed_refunds.get(int(purchase.id), 0),
+                ),
             )
             for purchase, package in rows
         ]
