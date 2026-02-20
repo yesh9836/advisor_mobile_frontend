@@ -38,6 +38,38 @@ class LicenseService:
     """Service for managing license verification workflow."""
 
     @staticmethod
+    def _upload_root() -> Path:
+        return settings.UPLOAD_ROOT
+
+    @staticmethod
+    def _resolve_stored_document_path(document_path: str) -> Path:
+        upload_root = LicenseService._upload_root()
+        raw_path = Path(document_path)
+
+        if raw_path.is_absolute():
+            candidate = raw_path.resolve()
+        else:
+            relative_path = raw_path
+            configured_upload_dir = Path(settings.UPLOAD_DIR)
+            if not configured_upload_dir.is_absolute():
+                try:
+                    # Backward compatibility for legacy rows like "uploads/licenses/...".
+                    relative_path = raw_path.relative_to(configured_upload_dir)
+                except ValueError:
+                    pass
+            elif raw_path.parts and raw_path.parts[0] == configured_upload_dir.name:
+                # Backward compatibility for legacy rows after switching UPLOAD_DIR
+                # from relative ("uploads/...") to absolute ("/.../uploads").
+                relative_path = Path(*raw_path.parts[1:])
+            candidate = (upload_root / relative_path).resolve()
+
+        try:
+            candidate.relative_to(upload_root)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid document path") from exc
+        return candidate
+
+    @staticmethod
     def _validate_file(file: UploadFile) -> None:
         """
         Validate uploaded file.
@@ -99,7 +131,8 @@ class LicenseService:
             HTTPException: If file save fails
         """
         try:
-            upload_dir = Path(settings.UPLOAD_DIR) / "licenses" / str(user_id)
+            upload_root = LicenseService._upload_root()
+            upload_dir = upload_root / "licenses" / str(user_id)
             upload_dir.mkdir(parents=True, exist_ok=True)
 
             # Keep sortable timestamps but add entropy to avoid same-second collisions.
@@ -143,7 +176,7 @@ class LicenseService:
                         os.remove(file_path)
                     raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-                return str(file_path)
+                return file_path.relative_to(upload_root).as_posix()
 
             raise HTTPException(status_code=500, detail="Failed to generate unique upload filename")
 
@@ -242,8 +275,8 @@ class LicenseService:
             db.rollback()
             # Try to delete uploaded file if database operation failed
             try:
-                if document_path and os.path.exists(document_path):
-                    os.remove(document_path)
+                if document_path:
+                    LicenseService._delete_document_if_safe(document_path)
             except Exception as cleanup_error:
                 logger.error(f"Failed to cleanup document after error: {cleanup_error}")
             
@@ -350,8 +383,8 @@ class LicenseService:
         except Exception as e:
             db.rollback()
             try:
-                if document_path and os.path.exists(document_path):
-                    os.remove(document_path)
+                if document_path:
+                    LicenseService._delete_document_if_safe(document_path)
             except Exception as cleanup_error:
                 logger.error(f"Failed to cleanup resubmitted document after error: {cleanup_error}")
             logger.error(f"Failed to resubmit license: {e}")
@@ -589,17 +622,7 @@ class LicenseService:
         if not document_path:
             raise HTTPException(status_code=404, detail="Document not available")
 
-        upload_root = Path(settings.UPLOAD_DIR).resolve()
-        candidate = Path(document_path)
-        if not candidate.is_absolute():
-            candidate = (Path.cwd() / candidate).resolve()
-        else:
-            candidate = candidate.resolve()
-
-        try:
-            candidate.relative_to(upload_root)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail="Invalid document path") from exc
+        candidate = LicenseService._resolve_stored_document_path(document_path)
 
         if not candidate.exists() or not candidate.is_file():
             raise HTTPException(status_code=404, detail="Document file not found")
