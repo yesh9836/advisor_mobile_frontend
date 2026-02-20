@@ -875,6 +875,52 @@ class SubscriptionService:
         }
 
     @staticmethod
+    def _expected_stripe_event_livemode() -> bool:
+        if settings.STRIPE_WEBHOOK_EXPECT_LIVEMODE is None:
+            return bool(settings.is_production)
+        return bool(settings.STRIPE_WEBHOOK_EXPECT_LIVEMODE)
+
+    @staticmethod
+    def is_stripe_event_livemode_allowed(
+        event: Dict[str, Any],
+        *,
+        source: str,
+    ) -> bool:
+        event_livemode = event.get("livemode")
+        if not isinstance(event_livemode, bool):
+            return True
+
+        expected_livemode = SubscriptionService._expected_stripe_event_livemode()
+        if event_livemode == expected_livemode:
+            return True
+
+        event_type = str(event.get("type") or "unknown")
+        event_id = event.get("id")
+        normalized_source = str(source or "unknown")
+        logger.warning(
+            (
+                "Stripe webhook ignored due to livemode mismatch: type=%s id=%s "
+                "event_livemode=%s expected_livemode=%s source=%s"
+            ),
+            event_type,
+            event_id,
+            event_livemode,
+            expected_livemode,
+            normalized_source,
+        )
+        MetricsService.increment(
+            "purchase_webhook_ignored_total",
+            tags={
+                "event_type": event_type,
+                "reason": "livemode_mismatch",
+                "event_livemode": str(event_livemode).lower(),
+                "expected_livemode": str(expected_livemode).lower(),
+                "source": normalized_source,
+            },
+        )
+        return False
+
+    @staticmethod
     def _compute_target_refunded_credits(
         *,
         credits_total: int,
@@ -1202,6 +1248,12 @@ class SubscriptionService:
             stripe_event_id=event_id,
             event_type=event_type,
         ):
+            return
+        if not SubscriptionService.is_stripe_event_livemode_allowed(
+            event=event,
+            source="core_processor",
+        ):
+            SubscriptionService._commit_if_transaction_active(db)
             return
 
         try:
