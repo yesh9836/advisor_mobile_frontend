@@ -158,12 +158,13 @@ def db(session_factory) -> Generator[Session, None, None]:
 
 
 @pytest.fixture(autouse=True)
-def test_settings(monkeypatch: pytest.MonkeyPatch):
+def test_settings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setattr(settings, "SECRET_KEY", "test-secret-key")
     monkeypatch.setattr(settings, "STRIPE_SECRET_KEY", "sk_test_local")
     monkeypatch.setattr(settings, "STRIPE_WEBHOOK_SECRET", "whsec_test")
     monkeypatch.setattr(settings, "STRIPE_WEBHOOK_FAST_ACK_ENABLED", False)
     monkeypatch.setattr(settings, "FRONTEND_URL", "http://localhost:5173")
+    monkeypatch.setattr(settings, "UPLOAD_DIR", str(tmp_path / "uploads"))
 
 
 @pytest.fixture

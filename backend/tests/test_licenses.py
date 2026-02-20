@@ -209,6 +209,87 @@ def test_license_document_download_permissions_and_content(client, user_factory,
 
 
 @pytest.mark.integration
+def test_license_document_download_is_cwd_independent(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+    monkeypatch,
+    tmp_path,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LicenseCwdAdvisor123!",
+        email="advisor.cwd@example.com",
+        name="Cwd Advisor",
+    )
+    advisor_headers = auth_headers(advisor.email, "LicenseCwdAdvisor123!")
+
+    submit_response = client.post(
+        "/api/v1/licenses/",
+        headers=advisor_headers,
+        data={"state": "CA", "license_number": "CA-LIC-CWD-1001", "license_type": "Series 65"},
+        files={"document": ("license.pdf", b"%PDF-1.4 cwd-test", "application/pdf")},
+    )
+    assert submit_response.status_code == 201, submit_response.text
+    license_id = submit_response.json()["id"]
+
+    saved_license = db.query(License).filter(License.id == license_id).one()
+    assert not Path(saved_license.document_path).is_absolute()
+    assert saved_license.document_path.startswith("licenses/")
+
+    different_cwd = tmp_path / "different-cwd"
+    different_cwd.mkdir(parents=True, exist_ok=True)
+    monkeypatch.chdir(different_cwd)
+
+    download_response = client.get(
+        f"/api/v1/licenses/{license_id}/document",
+        headers=advisor_headers,
+    )
+    assert download_response.status_code == 200, download_response.text
+    assert download_response.content.startswith(b"%PDF-1.4")
+
+
+@pytest.mark.integration
+def test_license_document_download_supports_legacy_uploads_prefixed_path(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LicenseLegacyAdvisor123!",
+        email="advisor.legacy@example.com",
+        name="Legacy Advisor",
+    )
+    advisor_headers = auth_headers(advisor.email, "LicenseLegacyAdvisor123!")
+
+    legacy_document = settings.UPLOAD_ROOT / "licenses" / str(advisor.id) / "legacy.pdf"
+    legacy_document.parent.mkdir(parents=True, exist_ok=True)
+    legacy_document.write_bytes(b"%PDF-1.4 legacy-path")
+
+    license_row = License(
+        user_id=advisor.id,
+        state="NV",
+        license_number="NV-LEGACY-1001",
+        license_type="Series 65",
+        document_path=f"uploads/licenses/{advisor.id}/legacy.pdf",
+        verification_status="pending",
+    )
+    db.add(license_row)
+    db.commit()
+    db.refresh(license_row)
+
+    download_response = client.get(
+        f"/api/v1/licenses/{license_row.id}/document",
+        headers=advisor_headers,
+    )
+    assert download_response.status_code == 200, download_response.text
+    assert download_response.content.startswith(b"%PDF-1.4")
+
+
+@pytest.mark.integration
 def test_license_document_download_rejects_invalid_or_missing_path(
     client,
     db,
@@ -311,7 +392,7 @@ def test_license_upload_retries_unique_filename_on_collision(
 
     timestamp = fixed_now.strftime("%Y%m%d_%H%M%S")
     collision_suffix = collision_uuid.hex[:license_service_module.UPLOAD_FILENAME_ENTROPY_LENGTH]
-    upload_dir = Path(settings.UPLOAD_DIR) / "licenses" / str(advisor.id)
+    upload_dir = settings.UPLOAD_ROOT / "licenses" / str(advisor.id)
     upload_dir.mkdir(parents=True, exist_ok=True)
     colliding_path = upload_dir / f"{timestamp}_{collision_suffix}_license.pdf"
     colliding_path.write_bytes(b"preexisting-content")
@@ -326,9 +407,7 @@ def test_license_upload_retries_unique_filename_on_collision(
     license_id = submit_response.json()["id"]
 
     saved_license = db.query(License).filter(License.id == license_id).one()
-    saved_path = Path(saved_license.document_path)
-    if not saved_path.is_absolute():
-        saved_path = Path.cwd() / saved_path
+    saved_path = settings.UPLOAD_ROOT / Path(saved_license.document_path)
 
     assert saved_path.name.startswith(f"{timestamp}_")
     assert saved_path.name.endswith("_license.pdf")
