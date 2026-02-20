@@ -23,6 +23,21 @@ class PurchaseCheckoutResponse(BaseModel):
     url: str
 
 
+class PurchaseCheckoutRequest(BaseModel):
+    package_id: int = Field(..., ge=1)
+    retry_token: Optional[str] = Field(default=None, min_length=8, max_length=128)
+
+    @field_validator("retry_token")
+    @classmethod
+    def normalize_retry_token(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            return None
+        return cleaned
+
+
 class PurchaseOrderItem(BaseModel):
     id: int
     order_reference: str
