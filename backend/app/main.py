@@ -18,6 +18,8 @@ from app.core.rate_limit import (
     is_rate_limiter_critical_unavailable,
     shutdown_rate_limiter,
 )
+from app.db.session import SessionLocal
+from app.services.stripe_webhook_health_service import StripeWebhookHealthService
 
 logging.basicConfig(
     level=logging.INFO,
@@ -82,10 +84,37 @@ def health_ready():
     """Readiness endpoint."""
     limiter_status = get_rate_limiter_status_snapshot()
     status_text = "unhealthy" if is_rate_limiter_critical_unavailable() else "healthy"
+    webhook_pipeline_status = {
+        "status": "skipped",
+        "enabled": bool(settings.STRIPE_WEBHOOK_FAST_ACK_ENABLED),
+    }
+    if settings.STRIPE_WEBHOOK_FAST_ACK_ENABLED:
+        db = SessionLocal()
+        try:
+            pipeline_snapshot = StripeWebhookHealthService.get_pipeline_health_snapshot(db)
+            webhook_pipeline_status = {
+                "status": pipeline_snapshot.get("status", "unhealthy"),
+                "enabled": True,
+                **pipeline_snapshot,
+            }
+            if webhook_pipeline_status["status"] != "healthy":
+                status_text = "unhealthy"
+        except Exception as exc:
+            logger.exception("Failed to evaluate Stripe webhook pipeline readiness: %s", exc)
+            status_text = "unhealthy"
+            webhook_pipeline_status = {
+                "status": "unhealthy",
+                "enabled": True,
+                "breaches": ["health_snapshot_error"],
+                "error": str(exc),
+            }
+        finally:
+            db.close()
     payload = {
         "status": status_text,
         "checks": {
             "rate_limiter": limiter_status,
+            "stripe_webhook_pipeline": webhook_pipeline_status,
         },
     }
     if status_text != "healthy":
