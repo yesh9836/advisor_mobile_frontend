@@ -10,6 +10,12 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_active_user, get_db
 from app.core.config import settings
+from app.core.rate_limit import (
+    login_rate_limit_dependency,
+    password_reset_route_rate_limit_dependency,
+    refresh_rate_limit_dependency,
+    register_rate_limit_dependency,
+)
 from app.models.user import User
 from app.schemas.auth import (
     PasswordResetConfirm,
@@ -97,6 +103,7 @@ def _require_csrf_header(request: Request) -> None:
     "/register",
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(register_rate_limit_dependency)],
     summary="Register new user",
     description="Create a new advisor or admin account"
 )
@@ -124,6 +131,7 @@ def register(
 @router.post(
     "/login",
     status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(login_rate_limit_dependency)],
     summary="Login",
     description="Authenticate user and issue auth cookies"
 )
@@ -159,6 +167,7 @@ def login(
     "/password-reset/request",
     response_model=PasswordResetRequestResponse,
     status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(password_reset_route_rate_limit_dependency)],
     summary="Request password reset",
     description="Request a one-time password reset link for the account email.",
 )
@@ -196,6 +205,7 @@ def confirm_password_reset(
 @router.post(
     "/refresh",
     status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(refresh_rate_limit_dependency)],
     summary="Refresh access token",
     description="Rotate refresh token and issue fresh auth cookies",
 )
