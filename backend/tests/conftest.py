@@ -185,6 +185,7 @@ def client(
     monkeypatch.setattr(deps_module, "SessionLocal", session_factory)
     monkeypatch.setattr(audit_service, "SessionLocal", session_factory)
     monkeypatch.setattr(subscription_service, "SessionLocal", session_factory)
+    monkeypatch.setattr("app.main.SessionLocal", session_factory)
 
     def override_get_db():
         test_db = session_factory()

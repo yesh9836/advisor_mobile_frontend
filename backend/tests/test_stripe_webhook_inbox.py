@@ -2,8 +2,9 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.models.purchase import LeadCreditLedger, StripeWebhookInbox
+from app.models.purchase import LeadCreditLedger, StripeWebhookInbox, StripeWebhookWorkerHeartbeat
 from app.services.stripe_webhook_inbox_service import StripeWebhookInboxService
+from app.services.stripe_webhook_health_service import StripeWebhookHealthService
 from app.services.subscription_service import StripeWebhookProcessingError, SubscriptionService
 
 
@@ -192,3 +193,43 @@ def test_process_inbox_batch_ignores_livemode_mismatch_in_core_processor(
         and tags.get("source") == "core_processor"
         for name, _, tags in metric_counters
     )
+
+
+@pytest.mark.integration
+def test_process_stripe_webhook_inbox_script_records_worker_heartbeat(session_factory, monkeypatch):
+    from scripts import process_stripe_webhook_inbox as worker_script
+
+    monkeypatch.setattr(worker_script, "SessionLocal", session_factory)
+    monkeypatch.setattr(
+        worker_script.StripeWebhookInboxService,
+        "process_inbox_batch",
+        lambda db: {"selected": 0, "processed": 0, "retried": 0, "failed": 0, "non_retryable": 0},
+    )
+
+    exit_code = worker_script.main()
+
+    assert exit_code == 0
+    db = session_factory()
+    try:
+        heartbeat = (
+            db.query(StripeWebhookWorkerHeartbeat)
+            .filter(
+                StripeWebhookWorkerHeartbeat.source
+                == StripeWebhookHealthService.INBOX_WORKER_HEARTBEAT_SOURCE
+            )
+            .first()
+        )
+        assert heartbeat is not None
+        assert heartbeat.last_started_at is not None
+        assert heartbeat.last_completed_at is not None
+        assert heartbeat.last_success_at is not None
+        assert heartbeat.last_error is None
+        assert heartbeat.last_summary == {
+            "selected": 0,
+            "processed": 0,
+            "retried": 0,
+            "failed": 0,
+            "non_retryable": 0,
+        }
+    finally:
+        db.close()

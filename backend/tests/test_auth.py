@@ -2,6 +2,8 @@ from datetime import timedelta
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from fastapi import HTTPException
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
 from app.core.security import create_access_token, hash_password_reset_token, hash_refresh_token
@@ -9,7 +11,7 @@ from app.db.timezone import utcnow
 from app.models.auth_session import RefreshTokenSession
 from app.models.notification import NotificationOutbox
 from app.models.password_reset import PasswordResetRequestAttempt, PasswordResetToken
-from app.schemas.auth import UserLogin
+from app.schemas.auth import UserLogin, UserRegister
 from app.services.auth_service import AuthService
 from app.services.notification_service import NotificationDispatchResult, NotificationService
 
@@ -78,6 +80,36 @@ def test_register_duplicate_email_is_rejected(client):
     duplicate = client.post("/api/v1/auth/register", json=payload)
     assert duplicate.status_code == 400
     assert duplicate.json()["detail"] == "Email already registered"
+
+
+@pytest.mark.unit
+def test_register_duplicate_email_integrity_race_is_mapped_to_400(db, monkeypatch):
+    register_data = UserRegister(
+        email="dupe.race@example.com",
+        password="StrongPass123!",
+        name="Race User",
+        phone="555-9090",
+    )
+    original_commit = db.commit
+    commit_calls = {"count": 0}
+
+    def commit_with_duplicate_race():
+        commit_calls["count"] += 1
+        if commit_calls["count"] == 1:
+            raise IntegrityError(
+                statement="INSERT INTO users (email, password_hash) VALUES (%s, %s)",
+                params={"email": register_data.email},
+                orig=Exception("Duplicate entry for key 'users.email'"),
+            )
+        return original_commit()
+
+    monkeypatch.setattr(db, "commit", commit_with_duplicate_race)
+
+    with pytest.raises(HTTPException) as exc_info:
+        AuthService.register_user(db, register_data)
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "Email already registered"
 
 
 @pytest.mark.integration

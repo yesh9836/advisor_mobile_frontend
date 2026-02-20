@@ -1,20 +1,48 @@
+import asyncio
+from datetime import timedelta
+from types import SimpleNamespace
+
 import pytest
 from pydantic import ValidationError
 from starlette.requests import Request
 
+from app.core import rate_limit as rate_limit_module
 from app.core.config import Settings, settings
 from app.core.rate_limit import (
+    _enforce_endpoint_rate_limit,
     client_ip_identifier,
     get_rate_limit_metrics_snapshot,
+    get_rate_limiter_status_snapshot,
     reset_rate_limit_metrics,
 )
+from app.core.security import get_password_hash, verify_password
+from app.db.timezone import utcnow
+from app.models.purchase import StripeWebhookInbox, StripeWebhookWorkerHeartbeat
 
 
 @pytest.fixture(autouse=True)
 def reset_rate_limit_observability():
     reset_rate_limit_metrics()
+    rate_limit_module._STATE.redis_client = None
+    rate_limit_module._STATE.ready = False
+    rate_limit_module._STATE.last_init_attempt_at = None
+    rate_limit_module._STATE.last_ready_at = None
+    rate_limit_module._STATE.last_error = None
+    rate_limit_module._STATE.last_error_at = None
+    rate_limit_module._STATE.next_retry_at = None
+    rate_limit_module._STATE.failure_count = 0
+    rate_limit_module._STATE.last_backoff_seconds = 0.0
     yield
     reset_rate_limit_metrics()
+    rate_limit_module._STATE.redis_client = None
+    rate_limit_module._STATE.ready = False
+    rate_limit_module._STATE.last_init_attempt_at = None
+    rate_limit_module._STATE.last_ready_at = None
+    rate_limit_module._STATE.last_error = None
+    rate_limit_module._STATE.last_error_at = None
+    rate_limit_module._STATE.next_retry_at = None
+    rate_limit_module._STATE.failure_count = 0
+    rate_limit_module._STATE.last_backoff_seconds = 0.0
 
 
 @pytest.mark.unit
@@ -223,6 +251,183 @@ def test_health_ready_stays_healthy_when_fail_open_limiter_unavailable(client, m
     assert payload["checks"]["rate_limiter"]["fail_open"] is True
 
 
+@pytest.mark.integration
+def test_health_ready_reports_503_when_fast_ack_enabled_and_worker_heartbeat_missing(client, monkeypatch):
+    monkeypatch.setattr(settings, "STRIPE_WEBHOOK_FAST_ACK_ENABLED", True)
+    monkeypatch.setattr(settings, "STRIPE_WEBHOOK_HEALTH_HEARTBEAT_MAX_AGE_SECONDS", 60)
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 503
+    payload = response.json()
+    assert payload["status"] == "unhealthy"
+    webhook_check = payload["checks"]["stripe_webhook_pipeline"]
+    assert webhook_check["enabled"] is True
+    assert webhook_check["status"] == "unhealthy"
+    assert "worker_heartbeat_stale" in webhook_check["breaches"]
+
+
+@pytest.mark.integration
+def test_health_ready_reports_503_when_fast_ack_due_backlog_exceeds_threshold(client, db, monkeypatch):
+    monkeypatch.setattr(settings, "STRIPE_WEBHOOK_FAST_ACK_ENABLED", True)
+    monkeypatch.setattr(settings, "STRIPE_WEBHOOK_HEALTH_HEARTBEAT_MAX_AGE_SECONDS", 600)
+    monkeypatch.setattr(settings, "STRIPE_WEBHOOK_HEALTH_MAX_DUE_PENDING_COUNT", 0)
+    monkeypatch.setattr(settings, "STRIPE_WEBHOOK_HEALTH_MAX_OLDEST_DUE_PENDING_SECONDS", 3600)
+
+    now = utcnow()
+    db.add(
+        StripeWebhookWorkerHeartbeat(
+            source="stripe_webhook_inbox_worker",
+            last_started_at=now,
+            last_completed_at=now,
+            last_success_at=now,
+        )
+    )
+    db.add(
+        StripeWebhookInbox(
+            stripe_event_id="evt_ready_due_backlog",
+            event_type="checkout.session.completed",
+            payload={"id": "evt_ready_due_backlog"},
+            status="pending",
+            attempt_count=0,
+            max_attempts=10,
+            next_retry_at=now - timedelta(seconds=5),
+        )
+    )
+    db.commit()
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 503
+    payload = response.json()
+    webhook_check = payload["checks"]["stripe_webhook_pipeline"]
+    assert webhook_check["status"] == "unhealthy"
+    assert "due_pending_count_exceeded" in webhook_check["breaches"]
+    assert webhook_check["queue"]["due_pending_count"] == 1
+
+
+@pytest.mark.integration
+def test_health_ready_stays_healthy_when_fast_ack_webhook_pipeline_within_thresholds(
+    client,
+    db,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "STRIPE_WEBHOOK_FAST_ACK_ENABLED", True)
+    monkeypatch.setattr(settings, "STRIPE_WEBHOOK_HEALTH_HEARTBEAT_MAX_AGE_SECONDS", 600)
+    monkeypatch.setattr(settings, "STRIPE_WEBHOOK_HEALTH_MAX_DUE_PENDING_COUNT", 100)
+    monkeypatch.setattr(settings, "STRIPE_WEBHOOK_HEALTH_MAX_OLDEST_DUE_PENDING_SECONDS", 600)
+    monkeypatch.setattr(settings, "STRIPE_WEBHOOK_HEALTH_MAX_FAILED_COUNT", 10)
+    monkeypatch.setattr(settings, "STRIPE_WEBHOOK_HEALTH_MAX_STALE_LOCK_COUNT", 1)
+
+    now = utcnow()
+    db.add(
+        StripeWebhookWorkerHeartbeat(
+            source="stripe_webhook_inbox_worker",
+            last_started_at=now,
+            last_completed_at=now,
+            last_success_at=now,
+        )
+    )
+    db.add(
+        StripeWebhookInbox(
+            stripe_event_id="evt_ready_not_due",
+            event_type="checkout.session.completed",
+            payload={"id": "evt_ready_not_due"},
+            status="pending",
+            attempt_count=0,
+            max_attempts=10,
+            next_retry_at=now + timedelta(minutes=5),
+        )
+    )
+    db.commit()
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "healthy"
+    webhook_check = payload["checks"]["stripe_webhook_pipeline"]
+    assert webhook_check["enabled"] is True
+    assert webhook_check["status"] == "healthy"
+    assert webhook_check["breaches"] == []
+
+
+@pytest.mark.unit
+def test_rate_limiter_outage_cooldown_avoids_repeat_redis_connect_attempts(monkeypatch):
+    monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", True)
+    monkeypatch.setattr(settings, "RATE_LIMIT_BACKEND", "redis")
+    monkeypatch.setattr(settings, "RATE_LIMIT_FAIL_OPEN", False)
+
+    connect_attempts = {"count": 0}
+
+    class DownRedisClient:
+        async def ping(self) -> None:
+            raise RuntimeError("redis unavailable")
+
+        async def aclose(self) -> None:
+            return None
+
+    def fake_from_url(*args, **kwargs):
+        connect_attempts["count"] += 1
+        return DownRedisClient()
+
+    monkeypatch.setattr(
+        rate_limit_module,
+        "redis_asyncio",
+        SimpleNamespace(from_url=fake_from_url),
+    )
+    monkeypatch.setattr(rate_limit_module, "RateLimiter", object)
+    monkeypatch.setattr(rate_limit_module, "rate_limit_dependencies_available", lambda: True)
+
+    request = Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "http",
+            "path": "/api/v1/auth/login",
+            "raw_path": b"/api/v1/auth/login",
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 50000),
+            "server": ("testserver", 80),
+            "root_path": "",
+        }
+    )
+    response = rate_limit_module.Response()
+
+    with pytest.raises(rate_limit_module.HTTPException) as first_blocked:
+        asyncio.run(
+            _enforce_endpoint_rate_limit(
+                endpoint="auth.login",
+                times=5,
+                seconds=60,
+                request=request,
+                response=response,
+            )
+        )
+    assert first_blocked.value.status_code == 503
+    assert connect_attempts["count"] == 1
+
+    with pytest.raises(rate_limit_module.HTTPException) as second_blocked:
+        asyncio.run(
+            _enforce_endpoint_rate_limit(
+                endpoint="auth.login",
+                times=5,
+                seconds=60,
+                request=request,
+                response=response,
+            )
+        )
+    assert second_blocked.value.status_code == 503
+    assert connect_attempts["count"] == 1
+
+    status = get_rate_limiter_status_snapshot()
+    assert status["ready"] is False
+    assert status["failure_count"] == 1
+    assert status["retry_cooldown_seconds"] > 0
+
+
 @pytest.mark.unit
 def test_get_client_identifier_uses_forwarded_for_only_for_trusted_proxy(monkeypatch):
     monkeypatch.setattr(settings, "RATE_LIMIT_TRUST_PROXY_HEADERS", True)
@@ -245,6 +450,15 @@ def test_get_client_identifier_uses_forwarded_for_only_for_trusted_proxy(monkeyp
     )
 
     assert client_ip_identifier(request) == "203.0.113.60"
+
+
+@pytest.mark.unit
+def test_password_hashing_runtime_supports_argon2():
+    password = "Argon2Runtime123!"
+    password_hash = get_password_hash(password)
+
+    assert password_hash.startswith("$argon2")
+    assert verify_password(password, password_hash) is True
 
 
 @pytest.mark.unit
