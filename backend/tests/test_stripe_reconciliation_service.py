@@ -132,3 +132,57 @@ def test_reconciliation_skips_events_at_or_before_checkpoint(db, monkeypatch):
         == 2
     )
 
+
+@pytest.mark.integration
+def test_reconciliation_skips_livemode_mismatch_events(db, monkeypatch):
+    stripe_events = [
+        {
+            "id": "evt_reconcile_livemode_skip",
+            "type": "charge.refunded",
+            "created": 1700000200,
+            "livemode": True,
+            "data": {"object": {"id": "obj_skip"}},
+        },
+        {
+            "id": "evt_reconcile_livemode_ok",
+            "type": "payment_intent.succeeded",
+            "created": 1700000210,
+            "livemode": False,
+            "data": {"object": {"id": "obj_ok"}},
+        },
+    ]
+
+    monkeypatch.setattr(
+        "app.services.stripe_reconciliation_service.PaymentService._init_stripe",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "app.services.stripe_reconciliation_service.settings.STRIPE_WEBHOOK_EXPECT_LIVEMODE",
+        False,
+    )
+    monkeypatch.setattr(
+        "app.services.stripe_reconciliation_service.settings.STRIPE_RECONCILIATION_LOOKBACK_SECONDS",
+        9999999,
+    )
+    monkeypatch.setattr(
+        "app.services.stripe_reconciliation_service.settings.STRIPE_RECONCILIATION_SAFETY_WINDOW_SECONDS",
+        0,
+    )
+    monkeypatch.setattr(
+        "app.services.stripe_reconciliation_service.stripe.Event.list",
+        lambda **kwargs: _FakeStripeEventList(stripe_events),
+    )
+
+    summary = StripeReconciliationService.run_once(db=db)
+
+    assert summary["scanned"] == 2
+    assert summary["considered"] == 2
+    assert summary["enqueued"] == 1
+    assert summary["duplicates"] == 0
+    assert summary["skipped_livemode"] == 1
+    inbox_rows = (
+        db.query(StripeWebhookInbox)
+        .order_by(StripeWebhookInbox.stripe_event_id.asc())
+        .all()
+    )
+    assert [row.stripe_event_id for row in inbox_rows] == ["evt_reconcile_livemode_ok"]

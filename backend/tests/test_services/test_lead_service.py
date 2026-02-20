@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
 from app.models.lead import LeadDownload, LeadOwnership
+from app.models.purchase import LeadCreditLedger
 from app.schemas.lead import LeadCreate
 from app.services.lead_service import LeadService
 
@@ -1026,6 +1027,125 @@ def test_reconcile_pending_purchase_assignments_uses_user_id_tiebreak_for_same_r
     assert summary["newly_assigned_count"] == 1
     assert summary["updated_purchases"] == 1
     assert summary["remaining_unfulfilled_count"] == 1
+
+
+@pytest.mark.unit
+def test_allocate_unsold_leads_for_purchase_uses_refund_adjusted_entitlement(
+    db,
+    user_factory,
+    plan_factory,
+    license_factory,
+    purchase_factory,
+    lead_factory,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LeadUnitRefundTargetAlloc123!",
+        email="lead.unit.refund.target.alloc@example.com",
+    )
+    plan = plan_factory(
+        daily_download_limit=10,
+        state_limit=1,
+        stripe_price_id="price_refund_target_allocate",
+    )
+    license_factory(user_id=advisor.id, state="CA", status="verified")
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=4,
+        credits_remaining=3,
+        status="completed",
+    )
+    db.add(
+        LeadCreditLedger(
+            user_id=advisor.id,
+            purchase_id=purchase.id,
+            movement_type="refund_adjustment",
+            credits_delta=-1,
+            note="partial refund",
+            idempotency_key=f"test_refund_adjustment:{purchase.id}:1",
+        )
+    )
+    db.commit()
+
+    for index in range(4):
+        lead_factory(state_code="CA", mobile_phone=f"555-REFUND-TARGET-ALLOC-{index:04d}")
+
+    summary = LeadService.allocate_unsold_leads_for_purchase(
+        db=db,
+        purchase=purchase,
+    )
+
+    assert summary["requested_count"] == 3
+    assert summary["assigned_count"] == 3
+    assert summary["unfulfilled_count"] == 0
+    assert summary["newly_assigned_count"] == 3
+    assert (
+        db.query(LeadOwnership)
+        .filter(LeadOwnership.purchase_id == purchase.id)
+        .count()
+        == 3
+    )
+
+
+@pytest.mark.unit
+def test_reconcile_pending_purchase_assignments_respects_refund_adjusted_entitlement(
+    db,
+    user_factory,
+    plan_factory,
+    license_factory,
+    purchase_factory,
+    lead_factory,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LeadUnitRefundTargetRecon123!",
+        email="lead.unit.refund.target.reconcile@example.com",
+    )
+    plan = plan_factory(
+        daily_download_limit=10,
+        state_limit=1,
+        stripe_price_id="price_refund_target_reconcile",
+    )
+    license_factory(user_id=advisor.id, state="CA", status="verified")
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=4,
+        credits_remaining=3,
+        status="completed",
+    )
+    db.add(
+        LeadCreditLedger(
+            user_id=advisor.id,
+            purchase_id=purchase.id,
+            movement_type="refund_adjustment",
+            credits_delta=-1,
+            note="partial refund",
+            idempotency_key=f"test_refund_adjustment:{purchase.id}:2",
+        )
+    )
+    db.commit()
+
+    for index in range(4):
+        lead_factory(state_code="CA", mobile_phone=f"555-REFUND-TARGET-RECON-{index:04d}")
+
+    summary = LeadService.reconcile_pending_purchase_assignments(
+        db=db,
+        state_codes=["CA"],
+        source_event="test_refund_adjusted_reconcile",
+    )
+
+    assert summary["scanned_purchases"] == 1
+    assert summary["updated_purchases"] == 1
+    assert summary["newly_assigned_count"] == 3
+    assert summary["remaining_unfulfilled_count"] == 0
+    assert (
+        db.query(LeadOwnership)
+        .filter(LeadOwnership.purchase_id == purchase.id)
+        .count()
+        == 3
+    )
 
 
 @pytest.mark.unit

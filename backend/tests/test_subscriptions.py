@@ -752,7 +752,7 @@ def test_webhook_livemode_mismatch_is_ignored_before_processing(
         lambda event: (_ for _ in ()).throw(AssertionError("mismatched event should not process")),
     )
     monkeypatch.setattr(
-        "app.api.v1.webhooks.MetricsService.increment",
+        "app.services.subscription_service.MetricsService.increment",
         lambda name, value=1, tags=None: metric_counters.append((name, value, tags or {})),
     )
 

@@ -2,9 +2,9 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.models.purchase import StripeWebhookInbox
+from app.models.purchase import LeadCreditLedger, StripeWebhookInbox
 from app.services.stripe_webhook_inbox_service import StripeWebhookInboxService
-from app.services.subscription_service import StripeWebhookProcessingError
+from app.services.subscription_service import StripeWebhookProcessingError, SubscriptionService
 
 
 def _build_event(event_id: str, event_type: str = "checkout.session.completed") -> dict:
@@ -107,3 +107,88 @@ def test_process_inbox_batch_retries_then_fails_after_max_attempts(db, monkeypat
     assert refreshed.status == "failed"
     assert int(refreshed.attempt_count or 0) == 2
     assert refreshed.last_error == "worker retry"
+
+
+@pytest.mark.integration
+def test_process_inbox_batch_ignores_livemode_mismatch_in_core_processor(
+    db,
+    monkeypatch,
+    user_factory,
+    plan_factory,
+    purchase_factory,
+):
+    advisor = user_factory(
+        role="advisor",
+        email="inbox.livemode.guard@example.com",
+        password="InboxLivemodeGuard123!",
+    )
+    package = plan_factory(
+        name="Inbox Livemode Guard Package",
+        state_limit=1,
+        daily_download_limit=4,
+        stripe_price_id="price_inbox_livemode_guard",
+    )
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=package.id,
+        credits_total=4,
+        credits_remaining=4,
+        status="completed",
+        stripe_checkout_session_id="cs_inbox_livemode_guard",
+        stripe_payment_intent_id="pi_inbox_livemode_guard",
+    )
+
+    metric_counters = []
+    monkeypatch.setattr("app.services.subscription_service.PaymentService._init_stripe", lambda: None)
+    monkeypatch.setattr("app.services.subscription_service.settings.STRIPE_WEBHOOK_EXPECT_LIVEMODE", False)
+    monkeypatch.setattr(
+        "app.services.subscription_service.MetricsService.increment",
+        lambda name, value=1, tags=None: metric_counters.append((name, value, tags or {})),
+    )
+    monkeypatch.setattr(
+        "app.services.stripe_webhook_inbox_service.SubscriptionService.handle_webhook_event_threadsafe",
+        lambda event: SubscriptionService.handle_webhook_event(db=db, event=event),
+    )
+
+    StripeWebhookInboxService.enqueue_event(
+        db=db,
+        event={
+            "id": "evt_inbox_livemode_mismatch",
+            "type": "charge.refunded",
+            "livemode": True,
+            "data": {
+                "object": {
+                    "id": "ch_inbox_livemode_mismatch",
+                    "payment_intent": "pi_inbox_livemode_guard",
+                    "amount_refunded": purchase.amount_cents,
+                    "reason": "requested_by_customer",
+                }
+            },
+        },
+    )
+
+    summary = StripeWebhookInboxService.process_inbox_batch(db=db, batch_size=10)
+    assert summary["selected"] == 1
+    assert summary["processed"] == 1
+    assert summary["retried"] == 0
+    assert summary["failed"] == 0
+    assert summary["non_retryable"] == 0
+
+    db.refresh(purchase)
+    assert purchase.status == "completed"
+    assert purchase.credits_remaining == 4
+    assert (
+        db.query(LeadCreditLedger)
+        .filter(
+            LeadCreditLedger.purchase_id == purchase.id,
+            LeadCreditLedger.movement_type == "refund_adjustment",
+        )
+        .count()
+        == 0
+    )
+    assert any(
+        name == "purchase_webhook_ignored_total"
+        and tags.get("reason") == "livemode_mismatch"
+        and tags.get("source") == "core_processor"
+        for name, _, tags in metric_counters
+    )
