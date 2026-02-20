@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from fastapi import APIRouter, Body, Depends, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_active_user, get_db
@@ -10,6 +10,7 @@ from app.schemas.purchase import (
     FirstPurchaseAddonOfferEligibilityResponse,
     PaginatedPurchaseOrders,
     PurchaseBalanceResponse,
+    PurchaseCheckoutRequest,
     PurchaseCheckoutResponse,
     PurchaseHistoryResponse,
     PurchasePackageResponse,
@@ -36,14 +37,15 @@ def get_packages(db: Session = Depends(get_db)) -> List[PurchasePackageResponse]
     summary="Create Stripe checkout session for one-time package purchase",
 )
 def create_checkout(
-    package_id: int = Body(..., embed=True),
+    payload: PurchaseCheckoutRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ) -> PurchaseCheckoutResponse:
     session_data = SubscriptionService.create_purchase_checkout_session(
         db=db,
         user=current_user,
-        package_id=package_id,
+        package_id=payload.package_id,
+        retry_token=payload.retry_token,
     )
     return PurchaseCheckoutResponse(**session_data)
 
