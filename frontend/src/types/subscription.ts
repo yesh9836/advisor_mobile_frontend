@@ -54,6 +54,7 @@ export interface BillingInvoice {
   currency: string;
   status: string;
   created_at: string;
+  package_name: string | null;
   hosted_invoice_url: string | null;
   invoice_pdf: string | null;
   description: string | null;
