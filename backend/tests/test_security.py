@@ -185,6 +185,44 @@ def test_rate_limit_fail_open_allows_requests_when_backend_unavailable(client, m
     assert metrics.get("auth.login:allowed") == 1
 
 
+@pytest.mark.integration
+def test_health_live_endpoint_is_always_healthy(client):
+    response = client.get("/health/live")
+    assert response.status_code == 200
+    assert response.json()["status"] == "healthy"
+
+
+@pytest.mark.integration
+def test_health_ready_reports_503_when_fail_closed_limiter_unavailable(client, monkeypatch):
+    monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", True)
+    monkeypatch.setattr(settings, "RATE_LIMIT_BACKEND", "redis")
+    monkeypatch.setattr(settings, "RATE_LIMIT_FAIL_OPEN", False)
+    monkeypatch.setattr("app.core.rate_limit.is_rate_limiter_ready", lambda: False)
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 503
+    payload = response.json()
+    assert payload["status"] == "unhealthy"
+    assert payload["checks"]["rate_limiter"]["redis_backend_enabled"] is True
+    assert payload["checks"]["rate_limiter"]["ready"] is False
+
+
+@pytest.mark.integration
+def test_health_ready_stays_healthy_when_fail_open_limiter_unavailable(client, monkeypatch):
+    monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", True)
+    monkeypatch.setattr(settings, "RATE_LIMIT_BACKEND", "redis")
+    monkeypatch.setattr(settings, "RATE_LIMIT_FAIL_OPEN", True)
+    monkeypatch.setattr("app.core.rate_limit.is_rate_limiter_ready", lambda: False)
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "healthy"
+    assert payload["checks"]["rate_limiter"]["fail_open"] is True
+
+
 @pytest.mark.unit
 def test_get_client_identifier_uses_forwarded_for_only_for_trusted_proxy(monkeypatch):
     monkeypatch.setattr(settings, "RATE_LIMIT_TRUST_PROXY_HEADERS", True)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import socket
 from uuid import uuid4
 
@@ -17,6 +18,10 @@ from app.main import app
 from app.services import audit_service, subscription_service
 
 
+def _redis_tests_required() -> bool:
+    return os.getenv("REQUIRE_REDIS_RATE_LIMIT_TESTS", "").strip().lower() in {"1", "true", "yes"}
+
+
 def _is_redis_available(host: str = "127.0.0.1", port: int = 6379) -> bool:
     try:
         with socket.create_connection((host, port), timeout=0.2):
@@ -28,10 +33,16 @@ def _is_redis_available(host: str = "127.0.0.1", port: int = 6379) -> bool:
 @pytest.fixture
 def redis_rate_limited_client(session_factory, monkeypatch: pytest.MonkeyPatch, tmp_path):
     if not rate_limit_dependencies_available():
-        pytest.skip("Rate-limit dependencies are unavailable (fastapi-limiter/redis)")
+        message = "Rate-limit dependencies are unavailable (fastapi-limiter/redis)"
+        if _redis_tests_required():
+            pytest.fail(message)
+        pytest.skip(message)
 
     if not _is_redis_available():
-        pytest.skip("Redis is not available on 127.0.0.1:6379")
+        message = "Redis is not available on 127.0.0.1:6379"
+        if _redis_tests_required():
+            pytest.fail(message)
+        pytest.skip(message)
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", True)

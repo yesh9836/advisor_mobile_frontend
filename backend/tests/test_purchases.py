@@ -3,6 +3,7 @@ from uuid import uuid4
 import pytest
 
 from app.models.lead import LeadOwnership
+from app.models.purchase import LeadCreditLedger
 from app.services.payment_service import PaymentService
 
 
@@ -281,15 +282,18 @@ def test_purchase_balance_orders_and_history_endpoints(
     assert len(orders_payload["items"]) == 2
     assert all("order_reference" in item for item in orders_payload["items"])
     assert all("credits_total" in item for item in orders_payload["items"])
+    assert all("entitled_credits_total" in item for item in orders_payload["items"])
     assert all("credits_remaining" in item for item in orders_payload["items"])
     assert all("assigned_count" in item for item in orders_payload["items"])
     assert all("unfulfilled_count" in item for item in orders_payload["items"])
     assert all("fulfillment_status" in item for item in orders_payload["items"])
     orders_by_id = {item["id"]: item for item in orders_payload["items"]}
     assert orders_by_id[completed_purchase.id]["assigned_count"] == 2
+    assert orders_by_id[completed_purchase.id]["entitled_credits_total"] == 10
     assert orders_by_id[completed_purchase.id]["unfulfilled_count"] == 8
     assert orders_by_id[completed_purchase.id]["fulfillment_status"] == "partially_fulfilled"
     assert orders_by_id[pending_purchase.id]["assigned_count"] == 0
+    assert orders_by_id[pending_purchase.id]["entitled_credits_total"] == 4
     assert orders_by_id[pending_purchase.id]["unfulfilled_count"] == 4
     assert orders_by_id[pending_purchase.id]["fulfillment_status"] == "pending"
 
@@ -309,8 +313,71 @@ def test_purchase_balance_orders_and_history_endpoints(
     assert len(history_payload["items"]) == 2
     assert history_payload["items"][0]["purchased_at"] >= history_payload["items"][1]["purchased_at"]
     assert all("assigned_count" in item for item in history_payload["items"])
+    assert all("entitled_credits_total" in item for item in history_payload["items"])
     assert all("unfulfilled_count" in item for item in history_payload["items"])
     assert all("fulfillment_status" in item for item in history_payload["items"])
+
+
+@pytest.mark.integration
+def test_purchase_orders_and_history_use_refund_adjusted_entitlement_for_pending_math(
+    client,
+    db,
+    user_factory,
+    license_factory,
+    plan_factory,
+    purchase_factory,
+    lead_factory,
+    auth_headers,
+):
+    advisor, headers = _create_advisor_with_verified_license(
+        user_factory,
+        license_factory,
+        auth_headers,
+    )
+    plan = plan_factory(stripe_price_id="price_purchase_orders_refund_adjusted")
+    completed_purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=10,
+        credits_remaining=2,
+        status="completed",
+        stripe_checkout_session_id="cs_purchase_order_refund_adjusted",
+        stripe_payment_intent_id="pi_purchase_order_refund_adjusted",
+    )
+
+    for index in range(8):
+        lead = lead_factory(state_code="CA", mobile_phone=f"555-PURCHASE-REFUND-{index:04d}")
+        db.add(LeadOwnership(user_id=advisor.id, lead_id=lead.id, purchase_id=completed_purchase.id))
+
+    db.add(
+        LeadCreditLedger(
+            user_id=advisor.id,
+            purchase_id=completed_purchase.id,
+            movement_type="refund_adjustment",
+            credits_delta=-4,
+            note="test partial refund adjustment",
+            idempotency_key=f"test:refund-adjustment:{completed_purchase.id}",
+        )
+    )
+    db.commit()
+
+    orders_response = client.get("/api/v1/purchases/orders?page=1&size=20", headers=headers)
+    assert orders_response.status_code == 200, orders_response.text
+    order_item = orders_response.json()["items"][0]
+    assert order_item["credits_total"] == 10
+    assert order_item["entitled_credits_total"] == 6
+    assert order_item["assigned_count"] == 8
+    assert order_item["unfulfilled_count"] == 0
+    assert order_item["fulfillment_status"] == "fulfilled"
+
+    history_response = client.get("/api/v1/purchases/history?limit=20", headers=headers)
+    assert history_response.status_code == 200, history_response.text
+    history_item = history_response.json()["items"][0]
+    assert history_item["credits_total"] == 10
+    assert history_item["entitled_credits_total"] == 6
+    assert history_item["assigned_count"] == 8
+    assert history_item["unfulfilled_count"] == 0
+    assert history_item["fulfillment_status"] == "fulfilled"
 
 
 @pytest.mark.integration

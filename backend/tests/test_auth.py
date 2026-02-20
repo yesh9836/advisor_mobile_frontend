@@ -7,9 +7,35 @@ from app.core.config import settings
 from app.core.security import create_access_token, hash_password_reset_token, hash_refresh_token
 from app.db.timezone import utcnow
 from app.models.auth_session import RefreshTokenSession
+from app.models.notification import NotificationOutbox
 from app.models.password_reset import PasswordResetRequestAttempt, PasswordResetToken
 from app.schemas.auth import UserLogin
 from app.services.auth_service import AuthService
+from app.services.notification_service import NotificationDispatchResult, NotificationService
+
+
+def _extract_password_reset_token_from_outbox(db, *, user_id: int) -> str:
+    outbox_row = (
+        db.query(NotificationOutbox)
+        .filter(
+            NotificationOutbox.user_id == user_id,
+            NotificationOutbox.channel == "email",
+            NotificationOutbox.event_type == "password_reset_requested",
+        )
+        .order_by(NotificationOutbox.id.desc())
+        .first()
+    )
+    assert outbox_row is not None
+    marker = "Reset your password: "
+    reset_url = None
+    for line in str(outbox_row.message_body or "").splitlines():
+        if line.startswith(marker):
+            reset_url = line.replace(marker, "", 1).strip()
+            break
+    assert reset_url
+    token = parse_qs(urlparse(reset_url).query).get("token", [None])[0]
+    assert token
+    return token
 
 
 @pytest.mark.integration
@@ -455,7 +481,6 @@ def test_access_token_with_wrong_type_claim_is_rejected(client):
 def test_password_reset_request_response_is_generic_for_known_and_unknown_email(
     client,
     db,
-    monkeypatch,
 ):
     payload = {
         "email": "reset.generic@example.com",
@@ -465,14 +490,6 @@ def test_password_reset_request_response_is_generic_for_known_and_unknown_email(
     }
     register = client.post("/api/v1/auth/register", json=payload)
     assert register.status_code == 201, register.text
-
-    sent_links: list[str] = []
-
-    def _capture_email(**kwargs):
-        sent_links.append(kwargs["reset_url"])
-        return True
-
-    monkeypatch.setattr("app.services.auth_service.EmailService.send_password_reset_email", _capture_email)
 
     existing = client.post(
         "/api/v1/auth/password-reset/request",
@@ -486,10 +503,19 @@ def test_password_reset_request_response_is_generic_for_known_and_unknown_email(
     )
     assert unknown.status_code == 202, unknown.text
     assert existing.json() == unknown.json()
-    assert len(sent_links) == 1
 
     issued_tokens = db.query(PasswordResetToken).count()
     assert issued_tokens == 1
+    queued_reset_emails = (
+        db.query(NotificationOutbox)
+        .filter(
+            NotificationOutbox.user_id == register.json()["id"],
+            NotificationOutbox.channel == "email",
+            NotificationOutbox.event_type == "password_reset_requested",
+        )
+        .count()
+    )
+    assert queued_reset_emails == 1
 
 
 @pytest.mark.integration
@@ -505,7 +531,7 @@ def test_password_reset_confirm_rejects_unissued_token(client):
 @pytest.mark.integration
 def test_password_reset_confirm_updates_password_revokes_old_family_and_marks_token_used(
     client,
-    monkeypatch,
+    db,
 ):
     payload = {
         "email": "reset.confirm@example.com",
@@ -524,25 +550,12 @@ def test_password_reset_confirm_updates_password_revokes_old_family_and_marks_to
     old_access = client.cookies.get(settings.AUTH_ACCESS_COOKIE_NAME)
     assert old_access
 
-    sent_links: list[str] = []
-
-    def _capture_email(**kwargs):
-        sent_links.append(kwargs["reset_url"])
-        return True
-
-    monkeypatch.setattr("app.services.auth_service.EmailService.send_password_reset_email", _capture_email)
-
     request_reset = client.post(
         "/api/v1/auth/password-reset/request",
         json={"email": payload["email"]},
     )
     assert request_reset.status_code == 202, request_reset.text
-    assert sent_links
-
-    reset_url = sent_links[-1]
-    parsed = urlparse(reset_url)
-    token = parse_qs(parsed.query).get("token", [None])[0]
-    assert token
+    token = _extract_password_reset_token_from_outbox(db, user_id=register.json()["id"])
 
     confirm = client.post(
         "/api/v1/auth/password-reset/confirm",
@@ -577,7 +590,7 @@ def test_password_reset_confirm_updates_password_revokes_old_family_and_marks_to
 
 
 @pytest.mark.integration
-def test_password_reset_confirm_rejects_expired_token(client, db, monkeypatch):
+def test_password_reset_confirm_rejects_expired_token(client, db):
     payload = {
         "email": "reset.expired@example.com",
         "password": "ResetExpired123!",
@@ -587,22 +600,12 @@ def test_password_reset_confirm_rejects_expired_token(client, db, monkeypatch):
     register = client.post("/api/v1/auth/register", json=payload)
     assert register.status_code == 201, register.text
 
-    sent_links: list[str] = []
-
-    def _capture_email(**kwargs):
-        sent_links.append(kwargs["reset_url"])
-        return True
-
-    monkeypatch.setattr("app.services.auth_service.EmailService.send_password_reset_email", _capture_email)
-
     request_reset = client.post(
         "/api/v1/auth/password-reset/request",
         json={"email": payload["email"]},
     )
     assert request_reset.status_code == 202, request_reset.text
-    reset_url = sent_links[-1]
-    token = parse_qs(urlparse(reset_url).query).get("token", [None])[0]
-    assert token
+    token = _extract_password_reset_token_from_outbox(db, user_id=register.json()["id"])
 
     token_row = (
         db.query(PasswordResetToken)
@@ -625,7 +628,6 @@ def test_password_reset_confirm_rejects_expired_token(client, db, monkeypatch):
 def test_password_reset_request_is_rate_limited_per_submitted_email_to_three_per_hour(
     client,
     db,
-    monkeypatch,
 ):
     payload = {
         "email": "reset.limit@example.com",
@@ -636,14 +638,6 @@ def test_password_reset_request_is_rate_limited_per_submitted_email_to_three_per
     register = client.post("/api/v1/auth/register", json=payload)
     assert register.status_code == 201, register.text
     user_id = register.json()["id"]
-
-    sent_links: list[str] = []
-
-    def _capture_email(**kwargs):
-        sent_links.append(kwargs["reset_url"])
-        return True
-
-    monkeypatch.setattr("app.services.auth_service.EmailService.send_password_reset_email", _capture_email)
 
     for _ in range(3):
         response = client.post(
@@ -660,20 +654,28 @@ def test_password_reset_request_is_rate_limited_per_submitted_email_to_three_per
     assert "Too many password reset requests" in rate_limited_response.json()["detail"]
     assert rate_limited_response.headers.get("retry-after")
 
-    assert len(sent_links) == 3
     issued_tokens = (
         db.query(PasswordResetToken)
         .filter(PasswordResetToken.user_id == user_id)
         .count()
     )
     assert issued_tokens == 3
+    queued_reset_emails = (
+        db.query(NotificationOutbox)
+        .filter(
+            NotificationOutbox.user_id == user_id,
+            NotificationOutbox.event_type == "password_reset_requested",
+            NotificationOutbox.channel == "email",
+        )
+        .count()
+    )
+    assert queued_reset_emails == 3
 
 
 @pytest.mark.integration
 def test_password_reset_request_rate_limit_has_known_unknown_response_parity_under_retries(
     client,
     db,
-    monkeypatch,
 ):
     known_payload = {
         "email": "reset.parity@example.com",
@@ -685,14 +687,6 @@ def test_password_reset_request_rate_limit_has_known_unknown_response_parity_und
     assert register.status_code == 201, register.text
     user_id = register.json()["id"]
     unknown_email = "reset.unknown.parity@example.com"
-
-    sent_links: list[str] = []
-
-    def _capture_email(**kwargs):
-        sent_links.append(kwargs["reset_url"])
-        return True
-
-    monkeypatch.setattr("app.services.auth_service.EmailService.send_password_reset_email", _capture_email)
 
     for _ in range(3):
         known_response = client.post(
@@ -743,4 +737,104 @@ def test_password_reset_request_rate_limit_has_known_unknown_response_parity_und
         .count()
     )
     assert issued_tokens == 3
-    assert len(sent_links) == 3
+    queued_reset_emails = (
+        db.query(NotificationOutbox)
+        .filter(
+            NotificationOutbox.user_id == user_id,
+            NotificationOutbox.event_type == "password_reset_requested",
+            NotificationOutbox.channel == "email",
+        )
+        .count()
+    )
+    assert queued_reset_emails == 3
+
+
+@pytest.mark.integration
+def test_password_reset_request_enqueues_outbox_email_after_token_creation(client, db):
+    payload = {
+        "email": "reset.outbox@example.com",
+        "password": "ResetOutbox123!",
+        "name": "Reset Outbox",
+        "phone": "555-2020",
+    }
+    register = client.post("/api/v1/auth/register", json=payload)
+    assert register.status_code == 201, register.text
+    user_id = register.json()["id"]
+
+    response = client.post("/api/v1/auth/password-reset/request", json={"email": payload["email"]})
+    assert response.status_code == 202, response.text
+
+    outbox_row = (
+        db.query(NotificationOutbox)
+        .filter(
+            NotificationOutbox.user_id == user_id,
+            NotificationOutbox.channel == "email",
+            NotificationOutbox.event_type == "password_reset_requested",
+        )
+        .order_by(NotificationOutbox.id.desc())
+        .first()
+    )
+    assert outbox_row is not None
+    assert outbox_row.status == "pending"
+    assert outbox_row.attempt_count == 0
+    assert outbox_row.recipient == payload["email"]
+    assert "Reset your password:" in outbox_row.message_body
+    assert "/reset-password?token=" in outbox_row.message_body
+    assert isinstance(outbox_row.payload, dict)
+    assert "/reset-password?token=" in str(outbox_row.payload.get("html_body", ""))
+
+
+@pytest.mark.integration
+def test_password_reset_outbox_email_retries_then_sends_when_worker_recovers(client, db, monkeypatch):
+    payload = {
+        "email": "reset.outbox.retry@example.com",
+        "password": "ResetOutboxRetry123!",
+        "name": "Reset Outbox Retry",
+        "phone": "555-2121",
+    }
+    register = client.post("/api/v1/auth/register", json=payload)
+    assert register.status_code == 201, register.text
+    user_id = register.json()["id"]
+
+    request_reset = client.post("/api/v1/auth/password-reset/request", json={"email": payload["email"]})
+    assert request_reset.status_code == 202, request_reset.text
+
+    row = (
+        db.query(NotificationOutbox)
+        .filter(
+            NotificationOutbox.user_id == user_id,
+            NotificationOutbox.channel == "email",
+            NotificationOutbox.event_type == "password_reset_requested",
+        )
+        .order_by(NotificationOutbox.id.desc())
+        .first()
+    )
+    assert row is not None
+
+    monkeypatch.setattr(
+        NotificationService,
+        "_dispatch_row",
+        staticmethod(lambda _row: NotificationDispatchResult(success=False, error="smtp outage")),
+    )
+    first_attempt = NotificationService.process_outbox_batch(db=db, batch_size=10)
+    assert first_attempt["retried"] == 1
+    db.refresh(row)
+    assert row.status == "pending"
+    assert row.attempt_count == 1
+    assert row.last_error == "smtp outage"
+
+    row.next_retry_at = utcnow() - timedelta(seconds=1)
+    db.add(row)
+    db.commit()
+
+    monkeypatch.setattr(
+        NotificationService,
+        "_dispatch_row",
+        staticmethod(lambda _row: NotificationDispatchResult(success=True, provider_message_id="msg-reset-123")),
+    )
+    second_attempt = NotificationService.process_outbox_batch(db=db, batch_size=10)
+    assert second_attempt["sent"] == 1
+    db.refresh(row)
+    assert row.status == "sent"
+    assert row.attempt_count == 2
+    assert row.provider_message_id == "msg-reset-123"
