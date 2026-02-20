@@ -1002,6 +1002,103 @@ class SubscriptionService:
         }
 
     @staticmethod
+    def _fulfill_purchase_and_emit_audit_events(
+        db: Session,
+        *,
+        purchase: LeadPurchase,
+        previous_status: Optional[str],
+        stripe_event_id: Optional[str],
+        credits_total_for_grant: int,
+        grant_note: str,
+        grant_latency_source: str,
+        notification_source_event: str,
+    ) -> Dict[str, Any]:
+        grant_created = SubscriptionService._grant_purchase_credits_if_needed(
+            db=db,
+            purchase=purchase,
+            credits_total=credits_total_for_grant,
+            note=grant_note,
+        )
+        allocation_summary = LeadService.allocate_unsold_leads_for_purchase(
+            db=db,
+            purchase=purchase,
+        )
+        newly_assigned_lead_ids = [
+            int(lead_id)
+            for lead_id in (allocation_summary.get("newly_assigned_lead_ids") or [])
+        ]
+        notification_summary = {"enqueued_total": 0, "enqueued_email": 0, "enqueued_sms": 0}
+        if purchase.status == "completed" and newly_assigned_lead_ids:
+            notification_summary = NotificationService.enqueue_lead_delivery_notifications(
+                db=db,
+                user_id=int(purchase.user_id),
+                lead_ids=newly_assigned_lead_ids,
+                purchase_id=int(purchase.id) if purchase.id is not None else None,
+                source_event=notification_source_event,
+            )
+
+        db.add(purchase)
+        db.commit()
+        correlation_ids = SubscriptionService._build_purchase_correlation_ids(
+            stripe_event_id=stripe_event_id,
+            checkout_session_id=purchase.stripe_checkout_session_id,
+            payment_intent_id=purchase.stripe_payment_intent_id,
+            purchase_id=purchase.id,
+        )
+        if purchase.status == "completed" and previous_status != "completed":
+            AuditService.log_purchase_event(
+                actor_user_id=purchase.user_id,
+                action="purchase_confirmed",
+                purchase_id=purchase.id,
+                amount_cents=int(purchase.amount_cents or 0),
+                correlation_ids=correlation_ids,
+                meta_data={
+                    "previous_status": previous_status,
+                    "new_status": purchase.status,
+                },
+            )
+        if grant_created:
+            SubscriptionService._record_credit_grant_latency_metric(
+                purchase,
+                source_event=grant_latency_source,
+            )
+            AuditService.log_purchase_event(
+                actor_user_id=purchase.user_id,
+                action="purchase_credits_granted",
+                purchase_id=purchase.id,
+                credits_delta=credits_total_for_grant,
+                correlation_ids=correlation_ids,
+                meta_data={
+                    "grant_note": grant_note,
+                },
+            )
+        if purchase.status == "completed":
+            AuditService.log_purchase_event(
+                actor_user_id=purchase.user_id,
+                action="purchase_leads_allocated",
+                purchase_id=purchase.id,
+                correlation_ids=correlation_ids,
+                meta_data={
+                    "requested_count": int(allocation_summary.get("requested_count", 0)),
+                    "assigned_count": int(allocation_summary.get("assigned_count", 0)),
+                    "unfulfilled_count": int(allocation_summary.get("unfulfilled_count", 0)),
+                    "assigned_lead_ids": allocation_summary.get("assigned_lead_ids", []),
+                    "newly_assigned_lead_ids": newly_assigned_lead_ids,
+                    "notification_enqueued_total": int(notification_summary["enqueued_total"]),
+                    "notification_enqueued_email": int(notification_summary["enqueued_email"]),
+                    "notification_enqueued_sms": int(notification_summary["enqueued_sms"]),
+                },
+            )
+
+        return {
+            "grant_created": grant_created,
+            "allocation_summary": allocation_summary,
+            "newly_assigned_lead_ids": newly_assigned_lead_ids,
+            "notification_summary": notification_summary,
+            "correlation_ids": correlation_ids,
+        }
+
+    @staticmethod
     def _expected_stripe_event_livemode() -> bool:
         if settings.STRIPE_WEBHOOK_EXPECT_LIVEMODE is None:
             return bool(settings.is_production)
@@ -1270,82 +1367,17 @@ class SubscriptionService:
             db.add(purchase)
             db.flush()
 
-        grant_created = SubscriptionService._grant_purchase_credits_if_needed(
+        fulfillment_result = SubscriptionService._fulfill_purchase_and_emit_audit_events(
             db=db,
             purchase=purchase,
-            credits_total=credits_total,
-            note=f"Checkout session {session_id}",
-        )
-        allocation_summary = LeadService.allocate_unsold_leads_for_purchase(
-            db=db,
-            purchase=purchase,
-        )
-        newly_assigned_lead_ids = [
-            int(lead_id)
-            for lead_id in (allocation_summary.get("newly_assigned_lead_ids") or [])
-        ]
-        notification_summary = {"enqueued_total": 0, "enqueued_email": 0, "enqueued_sms": 0}
-        if purchase.status == "completed" and newly_assigned_lead_ids:
-            notification_summary = NotificationService.enqueue_lead_delivery_notifications(
-                db=db,
-                user_id=int(purchase.user_id),
-                lead_ids=newly_assigned_lead_ids,
-                purchase_id=int(purchase.id) if purchase.id is not None else None,
-                source_event="purchase_checkout_session",
-            )
-
-        db.add(purchase)
-        db.commit()
-        correlation_ids = SubscriptionService._build_purchase_correlation_ids(
+            previous_status=previous_status,
             stripe_event_id=stripe_event_id,
-            checkout_session_id=purchase.stripe_checkout_session_id,
-            payment_intent_id=purchase.stripe_payment_intent_id,
-            purchase_id=purchase.id,
+            credits_total_for_grant=credits_total,
+            grant_note=f"Checkout session {session_id}",
+            grant_latency_source="checkout_session",
+            notification_source_event="purchase_checkout_session",
         )
-        if purchase.status == "completed" and previous_status != "completed":
-            AuditService.log_purchase_event(
-                actor_user_id=purchase.user_id,
-                action="purchase_confirmed",
-                purchase_id=purchase.id,
-                amount_cents=int(purchase.amount_cents or 0),
-                correlation_ids=correlation_ids,
-                meta_data={
-                    "previous_status": previous_status,
-                    "new_status": purchase.status,
-                },
-            )
-        if grant_created:
-            SubscriptionService._record_credit_grant_latency_metric(
-                purchase,
-                source_event="checkout_session",
-            )
-            AuditService.log_purchase_event(
-                actor_user_id=purchase.user_id,
-                action="purchase_credits_granted",
-                purchase_id=purchase.id,
-                credits_delta=credits_total,
-                correlation_ids=correlation_ids,
-                meta_data={
-                    "grant_note": f"Checkout session {session_id}",
-                },
-            )
-        if purchase.status == "completed":
-            AuditService.log_purchase_event(
-                actor_user_id=purchase.user_id,
-                action="purchase_leads_allocated",
-                purchase_id=purchase.id,
-                correlation_ids=correlation_ids,
-                meta_data={
-                    "requested_count": int(allocation_summary.get("requested_count", 0)),
-                    "assigned_count": int(allocation_summary.get("assigned_count", 0)),
-                    "unfulfilled_count": int(allocation_summary.get("unfulfilled_count", 0)),
-                    "assigned_lead_ids": allocation_summary.get("assigned_lead_ids", []),
-                    "newly_assigned_lead_ids": newly_assigned_lead_ids,
-                    "notification_enqueued_total": int(notification_summary["enqueued_total"]),
-                    "notification_enqueued_email": int(notification_summary["enqueued_email"]),
-                    "notification_enqueued_sms": int(notification_summary["enqueued_sms"]),
-                },
-            )
+        allocation_summary = fulfillment_result["allocation_summary"]
 
         logger.info(
             (
@@ -1473,79 +1505,15 @@ class SubscriptionService:
                 purchase.credits_remaining = purchase.credits_total
                 db.add(purchase)
 
-                grant_created = SubscriptionService._grant_purchase_credits_if_needed(
+                SubscriptionService._fulfill_purchase_and_emit_audit_events(
                     db=db,
                     purchase=purchase,
-                    credits_total=purchase.credits_total,
-                    note=f"Payment intent {payment_intent_id}",
-                )
-                allocation_summary = LeadService.allocate_unsold_leads_for_purchase(
-                    db=db,
-                    purchase=purchase,
-                )
-                newly_assigned_lead_ids = [
-                    int(lead_id)
-                    for lead_id in (allocation_summary.get("newly_assigned_lead_ids") or [])
-                ]
-                notification_summary = {"enqueued_total": 0, "enqueued_email": 0, "enqueued_sms": 0}
-                if newly_assigned_lead_ids:
-                    notification_summary = NotificationService.enqueue_lead_delivery_notifications(
-                        db=db,
-                        user_id=int(purchase.user_id),
-                        lead_ids=newly_assigned_lead_ids,
-                        purchase_id=int(purchase.id) if purchase.id is not None else None,
-                        source_event="payment_intent_succeeded",
-                    )
-
-                db.commit()
-                correlation_ids = SubscriptionService._build_purchase_correlation_ids(
+                    previous_status=previous_status,
                     stripe_event_id=event_id,
-                    checkout_session_id=purchase.stripe_checkout_session_id,
-                    payment_intent_id=purchase.stripe_payment_intent_id,
-                    purchase_id=purchase.id,
-                )
-                if previous_status != "completed":
-                    AuditService.log_purchase_event(
-                        actor_user_id=purchase.user_id,
-                        action="purchase_confirmed",
-                        purchase_id=purchase.id,
-                        amount_cents=int(purchase.amount_cents or 0),
-                        correlation_ids=correlation_ids,
-                        meta_data={
-                            "previous_status": previous_status,
-                            "new_status": purchase.status,
-                        },
-                    )
-                if grant_created:
-                    SubscriptionService._record_credit_grant_latency_metric(
-                        purchase,
-                        source_event="payment_intent",
-                    )
-                    AuditService.log_purchase_event(
-                        actor_user_id=purchase.user_id,
-                        action="purchase_credits_granted",
-                        purchase_id=purchase.id,
-                        credits_delta=purchase.credits_total,
-                        correlation_ids=correlation_ids,
-                        meta_data={
-                            "grant_note": f"Payment intent {payment_intent_id}",
-                        },
-                    )
-                AuditService.log_purchase_event(
-                    actor_user_id=purchase.user_id,
-                    action="purchase_leads_allocated",
-                    purchase_id=purchase.id,
-                    correlation_ids=correlation_ids,
-                    meta_data={
-                        "requested_count": int(allocation_summary.get("requested_count", 0)),
-                        "assigned_count": int(allocation_summary.get("assigned_count", 0)),
-                        "unfulfilled_count": int(allocation_summary.get("unfulfilled_count", 0)),
-                        "assigned_lead_ids": allocation_summary.get("assigned_lead_ids", []),
-                        "newly_assigned_lead_ids": newly_assigned_lead_ids,
-                        "notification_enqueued_total": int(notification_summary["enqueued_total"]),
-                        "notification_enqueued_email": int(notification_summary["enqueued_email"]),
-                        "notification_enqueued_sms": int(notification_summary["enqueued_sms"]),
-                    },
+                    credits_total_for_grant=int(purchase.credits_total or 0),
+                    grant_note=f"Payment intent {payment_intent_id}",
+                    grant_latency_source="payment_intent",
+                    notification_source_event="payment_intent_succeeded",
                 )
                 logger.info("Lead purchase marked completed for payment_intent_id=%s", payment_intent_id)
 
