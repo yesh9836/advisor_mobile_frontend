@@ -3,6 +3,8 @@ Authentication service containing business logic for user registration and authe
 """
 
 import logging
+import hashlib
+import hmac
 from datetime import datetime, timedelta
 from typing import NamedTuple, Optional
 from urllib.parse import quote_plus
@@ -24,7 +26,7 @@ from app.core.security import (
 )
 from app.db.timezone import utcnow
 from app.models.auth_session import RefreshTokenSession
-from app.models.password_reset import PasswordResetToken
+from app.models.password_reset import PasswordResetRequestAttempt, PasswordResetToken
 from app.models.user import User
 from app.schemas.auth import PasswordResetConfirm, PasswordResetRequest, UserRegister, UserLogin
 from app.services.email_service import EmailService
@@ -439,29 +441,38 @@ class AuthService:
     def _is_password_reset_rate_limited(
         db: Session,
         *,
-        user_id: int,
+        subject_hash: str,
         now: datetime,
     ) -> tuple[bool, int]:
         window_start = now - timedelta(hours=1)
-        recent_requests = (
-            db.query(PasswordResetToken)
+        recent_requests_query = (
+            db.query(PasswordResetRequestAttempt)
             .filter(
-                PasswordResetToken.user_id == user_id,
-                PasswordResetToken.created_at >= window_start,
+                PasswordResetRequestAttempt.subject_hash == subject_hash,
+                PasswordResetRequestAttempt.created_at >= window_start,
             )
-            .order_by(PasswordResetToken.created_at.asc())
-            .all()
         )
-        issued_count = len(recent_requests)
+        issued_count = recent_requests_query.count()
         if issued_count < settings.PASSWORD_RESET_REQUESTS_PER_HOUR:
             return False, 0
 
-        oldest_request = recent_requests[0]
+        oldest_request = recent_requests_query.order_by(PasswordResetRequestAttempt.created_at.asc()).first()
+        if oldest_request is None:
+            return False, 0
         retry_after_seconds = max(
             1,
             int(((oldest_request.created_at + timedelta(hours=1)) - now).total_seconds()),
         )
         return True, retry_after_seconds
+
+    @staticmethod
+    def _password_reset_rate_limit_subject_hash(email: str) -> str:
+        normalized_email = email.strip().lower()
+        return hmac.new(
+            settings.SECRET_KEY.encode("utf-8"),
+            normalized_email.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
 
     @staticmethod
     def request_password_reset(
@@ -479,20 +490,14 @@ class AuthService:
         """
         try:
             now = utcnow()
-            user = db.query(User).filter(User.email == payload.email).first()
-            if not user or not user.is_active:
-                return
-
+            subject_hash = AuthService._password_reset_rate_limit_subject_hash(payload.email)
             is_rate_limited, retry_after_seconds = AuthService._is_password_reset_rate_limited(
                 db,
-                user_id=user.id,
+                subject_hash=subject_hash,
                 now=now,
             )
             if is_rate_limited:
-                logger.info(
-                    "Password reset request rate-limited for user_id=%s",
-                    user.id,
-                )
+                logger.info("Password reset request rate-limited for subject hash")
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                     detail=(
@@ -500,6 +505,12 @@ class AuthService:
                     ),
                     headers={"Retry-After": str(retry_after_seconds)},
                 )
+
+            db.add(PasswordResetRequestAttempt(subject_hash=subject_hash))
+            user = db.query(User).filter(User.email == payload.email).first()
+            if not user or not user.is_active:
+                db.commit()
+                return
 
             raw_token = create_password_reset_token()
             token_record = PasswordResetToken(
