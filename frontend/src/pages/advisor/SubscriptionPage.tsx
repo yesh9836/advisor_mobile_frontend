@@ -77,7 +77,7 @@ const buildCheckoutFulfillmentNotice = (
     return `Checkout completed. Your lead credits are available${checkoutSessionId ? ` (session ${checkoutSessionId})` : ""}.`;
   }
 
-  return `Checkout completed. Delivered now: ${purchase.assigned_count}/${purchase.credits_total}. Pending auto-delivery: ${Math.max(purchase.unfulfilled_count, 0)}.`;
+  return `Checkout completed. Delivered now: ${purchase.assigned_count}/${purchase.entitled_credits_total}. Pending auto-delivery: ${Math.max(purchase.unfulfilled_count, 0)}.`;
 };
 
 const buildCheckoutRetryToken = (scope: string): string => {

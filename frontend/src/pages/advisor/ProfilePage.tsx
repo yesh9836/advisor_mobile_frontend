@@ -161,7 +161,7 @@ const ProfilePage = () => {
                   </p>
                   <p>
                     <span className="font-semibold text-[#0a1633]">Delivered now:</span>{" "}
-                    {latestPurchase.assigned_count}/{latestPurchase.credits_total}
+                    {latestPurchase.assigned_count}/{latestPurchase.entitled_credits_total}
                   </p>
                   <p>
                     <span className="font-semibold text-[#0a1633]">Pending auto-delivery:</span>{" "}
