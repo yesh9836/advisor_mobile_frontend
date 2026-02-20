@@ -96,6 +96,12 @@ class Settings(BaseSettings):
     STRIPE_WEBHOOK_INBOX_MAX_ATTEMPTS: int = 10
     STRIPE_WEBHOOK_INBOX_RETRY_BASE_SECONDS: int = 30
     STRIPE_WEBHOOK_INBOX_RETRY_MAX_SECONDS: int = 1800
+    STRIPE_WEBHOOK_HEALTH_HEARTBEAT_MAX_AGE_SECONDS: int = 600
+    STRIPE_WEBHOOK_HEALTH_MAX_DUE_PENDING_COUNT: int = 1000
+    STRIPE_WEBHOOK_HEALTH_MAX_OLDEST_DUE_PENDING_SECONDS: int = 600
+    STRIPE_WEBHOOK_HEALTH_MAX_FAILED_COUNT: int = 0
+    STRIPE_WEBHOOK_HEALTH_STALE_LOCK_SECONDS: int = 900
+    STRIPE_WEBHOOK_HEALTH_MAX_STALE_LOCK_COUNT: int = 0
     STRIPE_RECONCILIATION_LOOKBACK_SECONDS: int = 86400
     STRIPE_RECONCILIATION_SAFETY_WINDOW_SECONDS: int = 300
     STRIPE_RECONCILIATION_PAGE_SIZE: int = 100
@@ -309,12 +315,27 @@ class Settings(BaseSettings):
         "STRIPE_WEBHOOK_INBOX_MAX_ATTEMPTS",
         "STRIPE_WEBHOOK_INBOX_RETRY_BASE_SECONDS",
         "STRIPE_WEBHOOK_INBOX_RETRY_MAX_SECONDS",
+        "STRIPE_WEBHOOK_HEALTH_HEARTBEAT_MAX_AGE_SECONDS",
+        "STRIPE_WEBHOOK_HEALTH_MAX_OLDEST_DUE_PENDING_SECONDS",
+        "STRIPE_WEBHOOK_HEALTH_STALE_LOCK_SECONDS",
         mode="after",
     )
     @classmethod
     def validate_rate_limit_bounds(cls, value: int) -> int:
         if value <= 0:
             raise ValueError("Configuration values must be greater than 0")
+        return value
+
+    @field_validator(
+        "STRIPE_WEBHOOK_HEALTH_MAX_DUE_PENDING_COUNT",
+        "STRIPE_WEBHOOK_HEALTH_MAX_FAILED_COUNT",
+        "STRIPE_WEBHOOK_HEALTH_MAX_STALE_LOCK_COUNT",
+        mode="after",
+    )
+    @classmethod
+    def validate_non_negative_bounds(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("Configuration values must be greater than or equal to 0")
         return value
 
     @field_validator("AUTH_COOKIE_SAMESITE", mode="after")
