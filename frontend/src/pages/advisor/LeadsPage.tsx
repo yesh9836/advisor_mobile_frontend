@@ -31,6 +31,7 @@ const STAGE_TO_STATUS: Record<LeadStage, LeadOutcomeStatus> = {
 };
 
 const PAGE_SIZE = 25;
+const SEARCH_DEBOUNCE_MS = 300;
 
 const DELIVERY_FILTER_TO_QUERY: Record<
   DeliveryFilter,
@@ -128,6 +129,7 @@ const LeadsPage = () => {
   const [stageFilter, setStageFilter] = useState<StageFilter>("All");
   const [deliveryFilter, setDeliveryFilter] = useState<DeliveryFilter>("All");
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [totalLeads, setTotalLeads] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -136,6 +138,15 @@ const LeadsPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery.trim());
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [searchQuery]);
 
   useEffect(() => {
     let cancelled = false;
@@ -148,7 +159,7 @@ const LeadsPage = () => {
         const response = await getLeads(currentPage, PAGE_SIZE, {
           delivery_status: DELIVERY_FILTER_TO_QUERY[deliveryFilter],
           outcome_status: STAGE_FILTER_TO_QUERY[stageFilter],
-          ...(searchQuery.trim() ? { search: searchQuery.trim() } : {}),
+          ...(debouncedSearchQuery ? { search: debouncedSearchQuery } : {}),
         });
         if (cancelled) return;
 
@@ -197,7 +208,7 @@ const LeadsPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [currentPage, deliveryFilter, stageFilter, searchQuery, reloadTick]);
+  }, [currentPage, deliveryFilter, stageFilter, debouncedSearchQuery, reloadTick]);
 
   const selectedLead = useMemo(() => {
     if (selectedLeadId === null) {
