@@ -7,7 +7,7 @@ from app.core.config import settings
 from app.core.security import create_access_token, hash_password_reset_token, hash_refresh_token
 from app.db.timezone import utcnow
 from app.models.auth_session import RefreshTokenSession
-from app.models.password_reset import PasswordResetToken
+from app.models.password_reset import PasswordResetRequestAttempt, PasswordResetToken
 from app.schemas.auth import UserLogin
 from app.services.auth_service import AuthService
 
@@ -622,7 +622,7 @@ def test_password_reset_confirm_rejects_expired_token(client, db, monkeypatch):
 
 
 @pytest.mark.integration
-def test_password_reset_request_is_rate_limited_per_account_to_three_per_hour(
+def test_password_reset_request_is_rate_limited_per_submitted_email_to_three_per_hour(
     client,
     db,
     monkeypatch,
@@ -667,3 +667,80 @@ def test_password_reset_request_is_rate_limited_per_account_to_three_per_hour(
         .count()
     )
     assert issued_tokens == 3
+
+
+@pytest.mark.integration
+def test_password_reset_request_rate_limit_has_known_unknown_response_parity_under_retries(
+    client,
+    db,
+    monkeypatch,
+):
+    known_payload = {
+        "email": "reset.parity@example.com",
+        "password": "ResetParity123!",
+        "name": "Reset Parity",
+        "phone": "555-1919",
+    }
+    register = client.post("/api/v1/auth/register", json=known_payload)
+    assert register.status_code == 201, register.text
+    user_id = register.json()["id"]
+    unknown_email = "reset.unknown.parity@example.com"
+
+    sent_links: list[str] = []
+
+    def _capture_email(**kwargs):
+        sent_links.append(kwargs["reset_url"])
+        return True
+
+    monkeypatch.setattr("app.services.auth_service.EmailService.send_password_reset_email", _capture_email)
+
+    for _ in range(3):
+        known_response = client.post(
+            "/api/v1/auth/password-reset/request",
+            json={"email": known_payload["email"]},
+        )
+        assert known_response.status_code == 202, known_response.text
+
+        unknown_response = client.post(
+            "/api/v1/auth/password-reset/request",
+            json={"email": unknown_email},
+        )
+        assert unknown_response.status_code == 202, unknown_response.text
+
+    known_limited = client.post(
+        "/api/v1/auth/password-reset/request",
+        json={"email": known_payload["email"]},
+    )
+    unknown_limited = client.post(
+        "/api/v1/auth/password-reset/request",
+        json={"email": unknown_email},
+    )
+
+    assert known_limited.status_code == 429, known_limited.text
+    assert unknown_limited.status_code == 429, unknown_limited.text
+    assert known_limited.json()["detail"] == unknown_limited.json()["detail"]
+    assert known_limited.headers.get("retry-after")
+    assert unknown_limited.headers.get("retry-after")
+
+    known_attempt_hash = AuthService._password_reset_rate_limit_subject_hash(known_payload["email"])
+    unknown_attempt_hash = AuthService._password_reset_rate_limit_subject_hash(unknown_email)
+    known_attempts = (
+        db.query(PasswordResetRequestAttempt)
+        .filter(PasswordResetRequestAttempt.subject_hash == known_attempt_hash)
+        .count()
+    )
+    unknown_attempts = (
+        db.query(PasswordResetRequestAttempt)
+        .filter(PasswordResetRequestAttempt.subject_hash == unknown_attempt_hash)
+        .count()
+    )
+    assert known_attempts == 3
+    assert unknown_attempts == 3
+
+    issued_tokens = (
+        db.query(PasswordResetToken)
+        .filter(PasswordResetToken.user_id == user_id)
+        .count()
+    )
+    assert issued_tokens == 3
+    assert len(sent_links) == 3
