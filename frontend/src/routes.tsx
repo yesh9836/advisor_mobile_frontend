@@ -1,27 +1,33 @@
+import { Suspense, lazy } from "react";
 import { Link, Navigate, Route, Routes } from "react-router-dom";
 
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import Layout from "@/components/layout/Layout";
 import { useAuth } from "@/context/AuthContext";
-import BillingPage from "@/pages/advisor/BillingPage";
-import DashboardPage from "@/pages/advisor/DashboardPage";
-import LeadsPage from "@/pages/advisor/LeadsPage";
-import ProfilePage from "@/pages/advisor/ProfilePage";
-import SubscriptionPage from "@/pages/advisor/SubscriptionPage";
-import AdminDashboard from "@/pages/admin/AdminDashboard";
-import AnalyticsPage from "@/pages/admin/AnalyticsPage";
-import FirstPurchaseOfferPage from "@/pages/admin/FirstPurchaseOfferPage";
-import ImportsPage from "@/pages/admin/ImportsPage";
-import LeadInventoryPage from "@/pages/admin/LeadInventoryPage";
-import LicenseReviewsPage from "@/pages/admin/LicenseReviewsPage";
-import OrdersPage from "@/pages/admin/OrdersPage";
-import UserDetailsPage from "@/pages/admin/UserDetailsPage";
-import UsersPage from "@/pages/admin/UsersPage";
-import LoginPage from "@/pages/auth/LoginPage";
-import RegisterPage from "@/pages/auth/RegisterPage";
-import ForgotPasswordPage from "@/pages/auth/ForgotPasswordPage";
-import ResetPasswordPage from "@/pages/auth/ResetPasswordPage";
 import { getHomeRouteByRole } from "@/utils/role-routing";
+
+const BillingPage = lazy(() => import("@/pages/advisor/BillingPage"));
+const DashboardPage = lazy(() => import("@/pages/advisor/DashboardPage"));
+const LeadsPage = lazy(() => import("@/pages/advisor/LeadsPage"));
+const ProfilePage = lazy(() => import("@/pages/advisor/ProfilePage"));
+const SubscriptionPage = lazy(() => import("@/pages/advisor/SubscriptionPage"));
+
+const AdminDashboard = lazy(() => import("@/pages/admin/AdminDashboard"));
+const AnalyticsPage = lazy(() => import("@/pages/admin/AnalyticsPage"));
+const FirstPurchaseOfferPage = lazy(
+  () => import("@/pages/admin/FirstPurchaseOfferPage"),
+);
+const ImportsPage = lazy(() => import("@/pages/admin/ImportsPage"));
+const LeadInventoryPage = lazy(() => import("@/pages/admin/LeadInventoryPage"));
+const LicenseReviewsPage = lazy(() => import("@/pages/admin/LicenseReviewsPage"));
+const OrdersPage = lazy(() => import("@/pages/admin/OrdersPage"));
+const UserDetailsPage = lazy(() => import("@/pages/admin/UserDetailsPage"));
+const UsersPage = lazy(() => import("@/pages/admin/UsersPage"));
+
+const ForgotPasswordPage = lazy(() => import("@/pages/auth/ForgotPasswordPage"));
+const LoginPage = lazy(() => import("@/pages/auth/LoginPage"));
+const RegisterPage = lazy(() => import("@/pages/auth/RegisterPage"));
+const ResetPasswordPage = lazy(() => import("@/pages/auth/ResetPasswordPage"));
 
 const HomeRedirect = () => {
   const { user, loading } = useAuth();
@@ -62,133 +68,143 @@ const NotFoundPage = () => (
   </div>
 );
 
+const RouteLoadingFallback = () => (
+  <div className="flex min-h-[60vh] items-center justify-center">
+    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
+      Loading...
+    </div>
+  </div>
+);
+
 export const AppRoutes = () => {
   return (
-    <Routes>
-      <Route path="/" element={<HomeRedirect />} />
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
-      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-      <Route path="/reset-password" element={<ResetPasswordPage />} />
+    <Suspense fallback={<RouteLoadingFallback />}>
+      <Routes>
+        <Route path="/" element={<HomeRedirect />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
 
-      <Route element={<ProtectedRoute />}>
-        <Route element={<Layout />}>
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute allowedRoles={["advisor"]}>
-                <DashboardPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/leads"
-            element={
-              <ProtectedRoute allowedRoles={["advisor"]}>
-                <LeadsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/subscription"
-            element={
-              <ProtectedRoute allowedRoles={["advisor"]}>
-                <SubscriptionPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/profile"
-            element={
-              <ProtectedRoute allowedRoles={["advisor"]}>
-                <ProfilePage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/billing"
-            element={
-              <ProtectedRoute allowedRoles={["advisor"]}>
-                <BillingPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin"
-            element={
-              <ProtectedRoute allowedRoles={["admin"]}>
-                <AdminDashboard />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/lead-inventory"
-            element={
-              <ProtectedRoute allowedRoles={["admin"]}>
-                <LeadInventoryPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/users"
-            element={
-              <ProtectedRoute allowedRoles={["admin"]}>
-                <UsersPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/users/:userId"
-            element={
-              <ProtectedRoute allowedRoles={["admin"]}>
-                <UserDetailsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/orders"
-            element={
-              <ProtectedRoute allowedRoles={["admin"]}>
-                <OrdersPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/imports"
-            element={
-              <ProtectedRoute allowedRoles={["admin"]}>
-                <ImportsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/analytics"
-            element={
-              <ProtectedRoute allowedRoles={["admin"]}>
-                <AnalyticsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/first-purchase-offer"
-            element={
-              <ProtectedRoute allowedRoles={["admin"]}>
-                <FirstPurchaseOfferPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/license-reviews"
-            element={
-              <ProtectedRoute allowedRoles={["admin"]}>
-                <LicenseReviewsPage />
-              </ProtectedRoute>
-            }
-          />
+        <Route element={<ProtectedRoute />}>
+          <Route element={<Layout />}>
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute allowedRoles={["advisor"]}>
+                  <DashboardPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/leads"
+              element={
+                <ProtectedRoute allowedRoles={["advisor"]}>
+                  <LeadsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/subscription"
+              element={
+                <ProtectedRoute allowedRoles={["advisor"]}>
+                  <SubscriptionPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/profile"
+              element={
+                <ProtectedRoute allowedRoles={["advisor"]}>
+                  <ProfilePage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/billing"
+              element={
+                <ProtectedRoute allowedRoles={["advisor"]}>
+                  <BillingPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute allowedRoles={["admin"]}>
+                  <AdminDashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/lead-inventory"
+              element={
+                <ProtectedRoute allowedRoles={["admin"]}>
+                  <LeadInventoryPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/users"
+              element={
+                <ProtectedRoute allowedRoles={["admin"]}>
+                  <UsersPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/users/:userId"
+              element={
+                <ProtectedRoute allowedRoles={["admin"]}>
+                  <UserDetailsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/orders"
+              element={
+                <ProtectedRoute allowedRoles={["admin"]}>
+                  <OrdersPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/imports"
+              element={
+                <ProtectedRoute allowedRoles={["admin"]}>
+                  <ImportsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/analytics"
+              element={
+                <ProtectedRoute allowedRoles={["admin"]}>
+                  <AnalyticsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/first-purchase-offer"
+              element={
+                <ProtectedRoute allowedRoles={["admin"]}>
+                  <FirstPurchaseOfferPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/license-reviews"
+              element={
+                <ProtectedRoute allowedRoles={["admin"]}>
+                  <LicenseReviewsPage />
+                </ProtectedRoute>
+              }
+            />
+          </Route>
         </Route>
-      </Route>
 
-      <Route path="*" element={<NotFoundPage />} />
-    </Routes>
+        <Route path="*" element={<NotFoundPage />} />
+      </Routes>
+    </Suspense>
   );
 };
