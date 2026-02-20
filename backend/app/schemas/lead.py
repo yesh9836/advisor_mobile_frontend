@@ -60,6 +60,7 @@ class LeadUpdate(LeadBase):
 
 class LeadResponse(LeadBase):
     id: int
+    source: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 
