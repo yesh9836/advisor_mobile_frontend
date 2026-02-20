@@ -109,6 +109,8 @@ def test_purchase_checkout_uses_idempotency_key_and_metadata(
     assert checkout_metadata["purchase_currency"] == str((plan.currency or "USD")).upper()
     assert checkout_metadata["purchase_credits_total"] == str(int(plan.daily_download_limit or 0))
     assert captured_checkout_kwargs["payment_intent_data"]["metadata"] == checkout_metadata
+    assert captured_checkout_kwargs["invoice_creation"]["enabled"] is True
+    assert captured_checkout_kwargs["invoice_creation"]["invoice_data"]["metadata"] == checkout_metadata
     assert captured_checkout_kwargs["idempotency_key"] == PaymentService.checkout_session_idempotency_key(
         user_id=advisor.id,
         package_id=plan.id,

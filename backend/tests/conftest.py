@@ -283,12 +283,14 @@ def purchase_factory(db: Session) -> Callable[..., LeadPurchase]:
         status: str = "completed",
         stripe_checkout_session_id: str | None = None,
         stripe_payment_intent_id: str | None = None,
+        stripe_invoice_id: str | None = None,
     ) -> LeadPurchase:
         purchase = LeadPurchase(
             user_id=user_id,
             package_id=package_id,
             stripe_checkout_session_id=stripe_checkout_session_id or f"cs_{uuid4().hex[:12]}",
             stripe_payment_intent_id=stripe_payment_intent_id,
+            stripe_invoice_id=stripe_invoice_id,
             amount_cents=10000,
             currency="USD",
             credits_total=credits_total,
