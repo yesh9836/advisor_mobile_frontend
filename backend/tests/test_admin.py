@@ -1,8 +1,12 @@
 from datetime import datetime, timedelta, timezone
 
+from app.core.config import settings
 from app.models.audit_log import AuditLog
+from app.models.auth_session import RefreshTokenSession
 from app.models.lead import LeadDownload, LeadOwnership
+from app.models.purchase import FirstPurchaseAddonOffer
 from app.models.user import User
+from app.services.first_purchase_offer_service import FirstPurchaseOfferService
 
 
 def _create_admin_and_headers(user_factory, auth_headers):
@@ -258,6 +262,82 @@ def test_admin_can_configure_first_purchase_addon_offer(
     assert (audit_event.meta_data or {}).get("after", {}).get("is_enabled") is True
 
 
+def test_admin_first_purchase_offer_update_preserves_client_http_errors(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+    plan_factory,
+):
+    admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+    trigger_package = plan_factory(name="TriggerConfig", price_cents=11000, daily_download_limit=5)
+    unmanaged_offer_package = plan_factory(name="LegacyOffer", price_cents=9000, daily_download_limit=3)
+
+    db.add(
+        FirstPurchaseAddonOffer(
+            is_enabled=True,
+            trigger_package_id=trigger_package.id,
+            offer_package_id=unmanaged_offer_package.id,
+            offer_credits_total=4,
+            offer_price_cents=5500,
+            offer_currency="USD",
+            updated_by=admin.id,
+        )
+    )
+    db.commit()
+
+    response = client.put(
+        "/api/v1/admin/first-purchase-offer",
+        headers=admin_headers,
+        json={
+            "is_enabled": True,
+            "trigger_package_id": trigger_package.id,
+            "offer_credits_total": 6,
+            "offer_price_cents": 6500,
+            "offer_currency": "USD",
+        },
+    )
+    assert response.status_code == 400, response.text
+    assert response.json() == {
+        "detail": "Configured offer_package_id is not a managed first-purchase add-on package"
+    }
+
+
+def test_admin_first_purchase_offer_update_maps_unknown_errors_to_500(
+    client,
+    user_factory,
+    auth_headers,
+    plan_factory,
+    monkeypatch,
+):
+    _admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+    trigger_package = plan_factory(name="TriggerRuntime", price_cents=10000, daily_download_limit=8)
+
+    def _raise_runtime_error(*args, **kwargs):
+        _ = (args, kwargs)
+        raise RuntimeError("forced runtime failure")
+
+    monkeypatch.setattr(
+        FirstPurchaseOfferService,
+        "_upsert_internal_offer_package",
+        staticmethod(_raise_runtime_error),
+    )
+
+    response = client.put(
+        "/api/v1/admin/first-purchase-offer",
+        headers=admin_headers,
+        json={
+            "is_enabled": True,
+            "trigger_package_id": trigger_package.id,
+            "offer_credits_total": 5,
+            "offer_price_cents": 6000,
+            "offer_currency": "USD",
+        },
+    )
+    assert response.status_code == 500, response.text
+    assert response.json() == {"detail": "Failed to save first-purchase add-on offer"}
+
+
 def test_admin_dashboard_counts_match_seeded_data(
     client,
     db,
@@ -487,7 +567,7 @@ def test_admin_lead_inventory_filters_and_license_status_summary(
         email="inventory.advisor@example.com",
         name="Inventory Advisor",
     )
-    advisor_two = user_factory(
+    user_factory(
         role="advisor",
         password="LeadInventory456!",
         email="inventory.advisor.two@example.com",
@@ -701,7 +781,27 @@ def test_admin_deactivate_user_and_block_deactivated_user_auth(
         email="deactivate.advisor@example.com",
         name="Deactivate Advisor",
     )
-    advisor_headers = auth_headers(advisor.email, "Deactivate123!")
+    login_response = client.post(
+        "/api/v1/auth/login",
+        json={"email": advisor.email, "password": "Deactivate123!"},
+    )
+    assert login_response.status_code == 204, login_response.text
+    advisor_access = login_response.cookies.get(settings.AUTH_ACCESS_COOKIE_NAME)
+    advisor_refresh = login_response.cookies.get(settings.AUTH_REFRESH_COOKIE_NAME)
+    advisor_csrf = login_response.cookies.get(settings.AUTH_CSRF_COOKIE_NAME)
+    assert advisor_access
+    assert advisor_refresh
+    assert advisor_csrf
+
+    advisor_cookie_header = (
+        f"{settings.AUTH_ACCESS_COOKIE_NAME}={advisor_access}; "
+        f"{settings.AUTH_REFRESH_COOKIE_NAME}={advisor_refresh}; "
+        f"{settings.AUTH_CSRF_COOKIE_NAME}={advisor_csrf}"
+    )
+    advisor_headers = {
+        "Cookie": advisor_cookie_header,
+        settings.AUTH_CSRF_HEADER_NAME: advisor_csrf,
+    }
 
     deactivate_response = client.post(
         f"/api/v1/admin/users/{advisor.id}/deactivate",
@@ -742,9 +842,83 @@ def test_admin_deactivate_user_and_block_deactivated_user_auth(
     assert already_inactive.status_code == 400
     assert already_inactive.json() == {"detail": "User already inactive"}
 
+    refresh_response = client.post("/api/v1/auth/refresh", headers=advisor_headers)
+    assert refresh_response.status_code == 401
+
     me_response = client.get("/api/v1/auth/me", headers=advisor_headers)
-    assert me_response.status_code == 403
-    assert me_response.json() == {"detail": "Inactive user account"}
+    assert me_response.status_code == 401
+
+    login_after_deactivation = client.post(
+        "/api/v1/auth/login",
+        json={"email": advisor.email, "password": "Deactivate123!"},
+    )
+    assert login_after_deactivation.status_code == 403
+    assert login_after_deactivation.json() == {"detail": "Inactive user account"}
+
+    db.expire_all()
+    sessions = (
+        db.query(RefreshTokenSession)
+        .filter(RefreshTokenSession.user_id == advisor.id)
+        .all()
+    )
+    assert sessions
+    assert all(session.revoked_at is not None for session in sessions)
+    assert all(session.revoked_reason == "user_deactivated" for session in sessions)
+
+
+def test_admin_deactivate_blocks_self_and_admin_targets(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+):
+    admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+    peer_admin = user_factory(
+        role="admin",
+        password="PeerAdmin123!",
+        email="peer.admin@example.com",
+        name="Peer Admin",
+    )
+
+    self_response = client.post(
+        f"/api/v1/admin/users/{admin.id}/deactivate",
+        headers=admin_headers,
+        json={"reason": "Self attempt"},
+    )
+    assert self_response.status_code == 400, self_response.text
+    assert self_response.json() == {"detail": "Admins cannot deactivate their own account"}
+
+    peer_response = client.post(
+        f"/api/v1/admin/users/{peer_admin.id}/deactivate",
+        headers=admin_headers,
+        json={"reason": "Peer attempt"},
+    )
+    assert peer_response.status_code == 400, peer_response.text
+    assert peer_response.json() == {
+        "detail": "Admin accounts cannot be deactivated from this endpoint"
+    }
+
+    db.expire_all()
+    refreshed_admin = db.query(User).filter(User.id == admin.id).first()
+    refreshed_peer_admin = db.query(User).filter(User.id == peer_admin.id).first()
+    assert refreshed_admin is not None
+    assert refreshed_peer_admin is not None
+    assert refreshed_admin.is_active is True
+    assert refreshed_peer_admin.is_active is True
+    assert refreshed_admin.deactivated_at is None
+    assert refreshed_peer_admin.deactivated_at is None
+
+    deactivation_audits = (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.actor_user_id == admin.id,
+            AuditLog.action == "user_deactivated",
+            AuditLog.entity_type == "User",
+            AuditLog.entity_id.in_([admin.id, peer_admin.id]),
+        )
+        .all()
+    )
+    assert deactivation_audits == []
 
 
 def test_admin_audit_logs_filters_and_ordering(client, db, user_factory, auth_headers):

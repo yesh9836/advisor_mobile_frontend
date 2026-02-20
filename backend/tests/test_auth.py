@@ -132,6 +132,65 @@ def test_login_with_invalid_password_returns_401(client):
 
 
 @pytest.mark.integration
+def test_login_with_inactive_user_returns_403(client, db, user_factory):
+    user = user_factory(
+        email="inactive.login@example.com",
+        password="InactiveLogin123!",
+        name="Inactive Login",
+    )
+    user.is_active = False
+    db.add(user)
+    db.commit()
+
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"email": "inactive.login@example.com", "password": "InactiveLogin123!"},
+    )
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Inactive user account"}
+    assert response.cookies.get(settings.AUTH_ACCESS_COOKIE_NAME) is None
+    assert response.cookies.get(settings.AUTH_REFRESH_COOKIE_NAME) is None
+    assert response.cookies.get(settings.AUTH_CSRF_COOKIE_NAME) is None
+
+
+@pytest.mark.integration
+def test_refresh_with_inactive_user_returns_401_and_revokes_family(client, db, user_factory):
+    user = user_factory(
+        email="inactive.refresh@example.com",
+        password="InactiveRefresh123!",
+        name="Inactive Refresh",
+    )
+    login_response = client.post(
+        "/api/v1/auth/login",
+        json={"email": "inactive.refresh@example.com", "password": "InactiveRefresh123!"},
+    )
+    assert login_response.status_code == 204, login_response.text
+    csrf = login_response.cookies.get(settings.AUTH_CSRF_COOKIE_NAME)
+    assert csrf
+
+    user.is_active = False
+    db.add(user)
+    db.commit()
+
+    refresh_response = client.post(
+        "/api/v1/auth/refresh",
+        headers={settings.AUTH_CSRF_HEADER_NAME: csrf},
+    )
+    assert refresh_response.status_code == 401
+    assert refresh_response.json() == {"detail": "Invalid refresh token"}
+
+    db.expire_all()
+    sessions = (
+        db.query(RefreshTokenSession)
+        .filter(RefreshTokenSession.user_id == user.id)
+        .all()
+    )
+    assert sessions
+    assert all(session.revoked_at is not None for session in sessions)
+    assert all(session.revoked_reason == "inactive_user" for session in sessions)
+
+
+@pytest.mark.integration
 def test_admin_only_endpoint_forbidden_for_advisor(client, auth_headers):
     advisor_payload = {
         "email": "advisor.only@example.com",
