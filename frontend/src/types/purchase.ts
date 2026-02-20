@@ -28,6 +28,7 @@ export interface PurchaseOrderItem {
   amount_cents: number;
   currency: string;
   credits_total: number;
+  entitled_credits_total: number;
   credits_remaining: number;
   status: string;
   assigned_count: number;
