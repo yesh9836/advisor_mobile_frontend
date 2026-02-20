@@ -316,12 +316,19 @@ class SubscriptionService:
                 payment_intent_data={
                     "metadata": checkout_metadata
                 },
+                invoice_creation={
+                    "enabled": True,
+                    "invoice_data": {
+                        "metadata": checkout_metadata,
+                    },
+                },
                 success_url=success_url,
                 cancel_url=cancel_url,
                 idempotency_key=idempotency_key,
             )
             session_id = str(session["id"])
             payment_intent_id = SubscriptionService._extract_payment_intent_id(session)
+            invoice_id = SubscriptionService._extract_checkout_invoice_id(session)
 
             purchase = (
                 db.query(LeadPurchase)
@@ -340,12 +347,15 @@ class SubscriptionService:
                     purchase.stripe_checkout_session_id = session_id
                 if payment_intent_id and not purchase.stripe_payment_intent_id:
                     purchase.stripe_payment_intent_id = payment_intent_id
+                if invoice_id and not purchase.stripe_invoice_id:
+                    purchase.stripe_invoice_id = invoice_id
             else:
                 purchase = LeadPurchase(
                     user_id=int(user.id),
                     package_id=int(package.id),
                     stripe_checkout_session_id=session_id,
                     stripe_payment_intent_id=payment_intent_id,
+                    stripe_invoice_id=invoice_id,
                     amount_cents=int(purchase_terms["amount_cents"]),
                     currency=str(purchase_terms["currency"]),
                     credits_total=int(purchase_terms["credits_total"]),
@@ -431,6 +441,18 @@ class SubscriptionService:
 
         payment_method: Optional[Dict[str, Any]] = None
         invoices: List[Dict[str, Any]] = []
+        now = datetime.now(timezone.utc)
+        purchase_rows = (
+            db.query(LeadPurchase, LeadPackage)
+            .outerjoin(LeadPackage, LeadPackage.id == LeadPurchase.package_id)
+            .filter(
+                LeadPurchase.user_id == user.id,
+                LeadPurchase.status.in_(("completed", "refunded")),
+            )
+            .order_by(LeadPurchase.purchased_at.desc(), LeadPurchase.id.desc())
+            .limit(50)
+            .all()
+        )
 
         try:
             customer = stripe.Customer.retrieve(
@@ -458,27 +480,116 @@ class SubscriptionService:
                     "is_placeholder": False,
                 }
 
-            invoice_result = stripe.Invoice.list(
+            invoice_rows = (stripe.Invoice.list(
                 customer=user.stripe_customer_id,
-                limit=10,
-            )
+                limit=50,
+            )).get("data", [])
 
-            for inv in invoice_result.get("data", []):
+            invoice_by_id: Dict[str, Dict[str, Any]] = {}
+            invoice_by_payment_intent: Dict[str, Dict[str, Any]] = {}
+
+            for inv in invoice_rows:
+                invoice_id = str(inv.get("id") or "").strip()
+                if invoice_id:
+                    invoice_by_id[invoice_id] = inv
+                payment_intent = inv.get("payment_intent")
+                if isinstance(payment_intent, dict):
+                    payment_intent_id = str(payment_intent.get("id") or "").strip()
+                else:
+                    payment_intent_id = str(payment_intent or "").strip()
+                if payment_intent_id and payment_intent_id not in invoice_by_payment_intent:
+                    invoice_by_payment_intent[payment_intent_id] = inv
+
+            linked_invoice_ids: set[str] = set()
+            did_backfill_purchase_invoice_id = False
+
+            for purchase, package in purchase_rows:
+                purchase_invoice_id = str(purchase.stripe_invoice_id or "").strip()
+                purchase_payment_intent_id = str(purchase.stripe_payment_intent_id or "").strip()
+                matched_invoice: Optional[Dict[str, Any]] = None
+
+                if purchase_invoice_id:
+                    matched_invoice = invoice_by_id.get(purchase_invoice_id)
+                    if matched_invoice is None:
+                        try:
+                            matched_invoice = stripe.Invoice.retrieve(purchase_invoice_id)
+                        except stripe.error.StripeError:
+                            logger.warning(
+                                "Unable to retrieve Stripe invoice_id=%s for user_id=%s",
+                                purchase_invoice_id,
+                                user.id,
+                            )
+                            matched_invoice = None
+                elif purchase_payment_intent_id:
+                    matched_invoice = invoice_by_payment_intent.get(purchase_payment_intent_id)
+
+                if not matched_invoice:
+                    continue
+
+                matched_invoice_id = str(matched_invoice.get("id") or "").strip()
+                if not matched_invoice_id:
+                    continue
+
+                if not purchase_invoice_id:
+                    purchase.stripe_invoice_id = matched_invoice_id
+                    db.add(purchase)
+                    did_backfill_purchase_invoice_id = True
+
+                linked_invoice_ids.add(matched_invoice_id)
                 invoices.append(
                     {
-                        "stripe_invoice_id": inv.get("id", ""),
-                        "amount_paid_cents": int(inv.get("amount_paid") or 0),
+                        "stripe_invoice_id": matched_invoice_id,
+                        "amount_paid_cents": int(
+                            matched_invoice.get("amount_paid")
+                            or matched_invoice.get("amount_due")
+                            or purchase.amount_cents
+                            or 0
+                        ),
+                        "currency": str(
+                            matched_invoice.get("currency")
+                            or purchase.currency
+                            or "usd"
+                        ).upper(),
+                        "status": str(matched_invoice.get("status") or purchase.status or "unknown"),
+                        "created_at": _to_datetime(matched_invoice.get("created")) or purchase.purchased_at or now,
+                        "package_name": package.name if package else None,
+                        "hosted_invoice_url": matched_invoice.get("hosted_invoice_url"),
+                        "invoice_pdf": matched_invoice.get("invoice_pdf"),
+                        "description": matched_invoice.get("description"),
+                    }
+                )
+
+            for inv in invoice_rows:
+                invoice_id = str(inv.get("id") or "").strip()
+                if not invoice_id or invoice_id in linked_invoice_ids:
+                    continue
+                invoices.append(
+                    {
+                        "stripe_invoice_id": invoice_id,
+                        "amount_paid_cents": int(inv.get("amount_paid") or inv.get("amount_due") or 0),
                         "currency": str(inv.get("currency") or "usd").upper(),
                         "status": str(inv.get("status") or "unknown"),
-                        "created_at": _to_datetime(inv.get("created")) or datetime.now(timezone.utc),
+                        "created_at": _to_datetime(inv.get("created")) or now,
+                        "package_name": None,
                         "hosted_invoice_url": inv.get("hosted_invoice_url"),
                         "invoice_pdf": inv.get("invoice_pdf"),
                         "description": inv.get("description"),
                     }
                 )
 
+            invoices.sort(
+                key=lambda row: (
+                    row.get("created_at") if isinstance(row.get("created_at"), datetime) else now
+                ),
+                reverse=True,
+            )
+
+            if did_backfill_purchase_invoice_id:
+                db.commit()
+
         except stripe.error.StripeError as exc:
             logger.error("Failed to fetch billing summary from Stripe for user_id=%s: %s", user.id, exc)
+            db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="Stripe billing provider unavailable",
@@ -677,6 +788,16 @@ class SubscriptionService:
         if isinstance(payment_intent, str):
             return payment_intent
         return None
+
+    @staticmethod
+    def _extract_checkout_invoice_id(checkout_session: Dict[str, Any]) -> Optional[str]:
+        invoice = checkout_session.get("invoice")
+        if isinstance(invoice, dict):
+            invoice_id = invoice.get("id")
+        else:
+            invoice_id = invoice
+        normalized_invoice_id = str(invoice_id or "").strip()
+        return normalized_invoice_id or None
 
     @staticmethod
     def _build_purchase_grant_idempotency_key(*, purchase_id: int) -> str:
@@ -1065,6 +1186,7 @@ class SubscriptionService:
             )
             purchase_status = "pending"
         payment_intent_id = SubscriptionService._extract_payment_intent_id(checkout_session)
+        invoice_id = SubscriptionService._extract_checkout_invoice_id(checkout_session)
         purchased_at = _to_datetime(checkout_session.get("created")) or datetime.now(timezone.utc)
 
         purchase = (
@@ -1127,6 +1249,8 @@ class SubscriptionService:
                 purchase.stripe_checkout_session_id = session_id
             if payment_intent_id:
                 purchase.stripe_payment_intent_id = payment_intent_id
+            if invoice_id and not purchase.stripe_invoice_id:
+                purchase.stripe_invoice_id = invoice_id
             purchase.credits_remaining = credits_remaining
             purchase.purchased_at = purchased_at
         else:
@@ -1135,6 +1259,7 @@ class SubscriptionService:
                 package_id=parsed_package_id,
                 stripe_checkout_session_id=session_id,
                 stripe_payment_intent_id=payment_intent_id,
+                stripe_invoice_id=invoice_id,
                 amount_cents=amount_cents,
                 currency=currency,
                 credits_total=credits_total,
