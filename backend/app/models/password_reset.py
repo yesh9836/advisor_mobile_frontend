@@ -60,3 +60,32 @@ class PasswordResetToken(Base):
 
     def __repr__(self) -> str:
         return f"<PasswordResetToken(id={self.id}, user_id={self.user_id})>"
+
+
+class PasswordResetRequestAttempt(Base):
+    """Submitted email hash attempts used for anti-enumeration throttling."""
+
+    __tablename__ = "password_reset_request_attempts"
+    __table_args__ = (
+        Index(
+            "ix_password_reset_request_attempts_subject_created_at",
+            "subject_hash",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+    )
+    subject_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        nullable=False,
+        default=utcnow,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<PasswordResetRequestAttempt(id={self.id}, subject_hash={self.subject_hash[:8]}...)>"
