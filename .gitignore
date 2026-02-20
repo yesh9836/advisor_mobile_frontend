@@ -27,3 +27,10 @@ Thumbs.db
 
 # Uploads
 uploads/
+
+dump.rdb
+*.rdb
+
+# Playwright artifacts
+frontend/test-results/
+frontend/playwright-report/
