@@ -11,7 +11,7 @@ from app.models.purchase import StripeReconciliationCheckpoint
 from app.services.metrics_service import MetricsService
 from app.services.payment_service import PaymentService
 from app.services.stripe_webhook_inbox_service import StripeWebhookInboxService
-from app.services.subscription_service import StripeWebhookProcessingError
+from app.services.subscription_service import StripeWebhookProcessingError, SubscriptionService
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +128,7 @@ class StripeReconciliationService:
         enqueued = 0
         duplicates = 0
         skipped_before_checkpoint = 0
+        skipped_livemode = 0
 
         high_water_created = int(checkpoint.last_event_created or 0)
         high_water_id = str(checkpoint.last_event_id or "")
@@ -152,10 +153,16 @@ class StripeReconciliationService:
                 continue
 
             considered += 1
-            if StripeWebhookInboxService.enqueue_event(db=db, event=payload):
-                enqueued += 1
+            if not SubscriptionService.is_stripe_event_livemode_allowed(
+                event=payload,
+                source="reconciliation_enqueue",
+            ):
+                skipped_livemode += 1
             else:
-                duplicates += 1
+                if StripeWebhookInboxService.enqueue_event(db=db, event=payload):
+                    enqueued += 1
+                else:
+                    duplicates += 1
 
             if StripeReconciliationService._is_newer_event(
                 candidate_created=event_created,
@@ -204,16 +211,23 @@ class StripeReconciliationService:
             value=skipped_before_checkpoint,
             tags={"outcome": "skipped_before_checkpoint"},
         )
+        MetricsService.increment(
+            "purchase_webhook_reconciliation_events_total",
+            value=skipped_livemode,
+            tags={"outcome": "skipped_livemode"},
+        )
         logger.info(
             (
                 "Stripe reconciliation run complete: scanned=%s considered=%s "
-                "enqueued=%s duplicates=%s skipped_before_checkpoint=%s high_watermark=(%s,%s)"
+                "enqueued=%s duplicates=%s skipped_before_checkpoint=%s skipped_livemode=%s "
+                "high_watermark=(%s,%s)"
             ),
             scanned,
             considered,
             enqueued,
             duplicates,
             skipped_before_checkpoint,
+            skipped_livemode,
             high_water_created,
             high_water_id,
         )
@@ -223,6 +237,7 @@ class StripeReconciliationService:
             "enqueued": enqueued,
             "duplicates": duplicates,
             "skipped_before_checkpoint": skipped_before_checkpoint,
+            "skipped_livemode": skipped_livemode,
             "start_created": start_created,
             "high_water_created": high_water_created,
         }
