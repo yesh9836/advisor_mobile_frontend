@@ -50,32 +50,10 @@ async def stripe_webhook(
 
     logger.info(f"Stripe webhook verified: type={event.get('type')} id={event.get('id')}")
     event_type = str(event.get("type") or "unknown")
-    event_livemode = event.get("livemode")
-    expected_livemode = (
-        settings.STRIPE_WEBHOOK_EXPECT_LIVEMODE
-        if settings.STRIPE_WEBHOOK_EXPECT_LIVEMODE is not None
-        else settings.is_production
-    )
-    if isinstance(event_livemode, bool) and event_livemode != bool(expected_livemode):
-        logger.warning(
-            (
-                "Stripe webhook ignored due to livemode mismatch: type=%s id=%s "
-                "event_livemode=%s expected_livemode=%s"
-            ),
-            event_type,
-            event.get("id"),
-            event_livemode,
-            bool(expected_livemode),
-        )
-        MetricsService.increment(
-            "purchase_webhook_ignored_total",
-            tags={
-                "event_type": event_type,
-                "reason": "livemode_mismatch",
-                "event_livemode": str(event_livemode).lower(),
-                "expected_livemode": str(bool(expected_livemode)).lower(),
-            },
-        )
+    if not SubscriptionService.is_stripe_event_livemode_allowed(
+        event=event,
+        source="http_ingress",
+    ):
         return {"status": "ignored"}
 
     if settings.STRIPE_WEBHOOK_FAST_ACK_ENABLED:
