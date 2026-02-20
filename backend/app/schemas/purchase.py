@@ -45,6 +45,7 @@ class PurchaseOrderItem(BaseModel):
     amount_cents: int
     currency: str
     credits_total: int
+    entitled_credits_total: int
     credits_remaining: int
     status: str
     assigned_count: int
