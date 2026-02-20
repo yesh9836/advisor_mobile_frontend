@@ -151,6 +151,25 @@ describe("Advisor Dashboard delivery settings editor", () => {
     expect(getLeadDashboardSummaryMock).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps summary delivery settings visible when recent leads fails", async () => {
+    getLeadDashboardSummaryMock.mockResolvedValue(summaryWithSettings(true, false));
+    getLeadsMock.mockRejectedValue(
+      new Error("Unexpected response format from /leads"),
+    );
+
+    renderRoute();
+
+    await waitFor(() => {
+      expect(getLeadDashboardSummaryMock).toHaveBeenCalledTimes(1);
+    });
+
+    expect(screen.getByTestId("delivery-email-status")).toHaveTextContent("On");
+    expect(screen.getByTestId("delivery-sms-status")).toHaveTextContent("Off");
+    expect(
+      screen.getByText("Unexpected response format from /leads"),
+    ).toBeInTheDocument();
+  });
+
   it("opens settings editor automatically when redirected with openDeliverySettings query", async () => {
     getLeadDashboardSummaryMock.mockResolvedValue(summaryWithSettings(false, false));
     getMyDeliverySettingsMock.mockResolvedValue({
