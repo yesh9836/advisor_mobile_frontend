@@ -3,6 +3,7 @@ from uuid import uuid4
 import pytest
 
 from app.models.lead import LeadOwnership
+from app.services.payment_service import PaymentService
 
 
 def _create_advisor_with_verified_license(user_factory, license_factory, auth_headers):
@@ -75,6 +76,7 @@ def test_purchase_checkout_uses_idempotency_key_and_metadata(
     plan = plan_factory(stripe_price_id="price_purchase_checkout_success")
 
     captured_checkout_kwargs = {}
+    retry_token = "retry_purchase_pkg_checkout_1234"
 
     def _mock_checkout_create(**kwargs):
         captured_checkout_kwargs.update(kwargs)
@@ -95,7 +97,7 @@ def test_purchase_checkout_uses_idempotency_key_and_metadata(
     response = client.post(
         "/api/v1/purchases/checkout",
         headers=headers,
-        json={"package_id": plan.id},
+        json={"package_id": plan.id, "retry_token": retry_token},
     )
     assert response.status_code == 200, response.text
     assert response.json()["session_id"] == "cs_purchase_checkout"
@@ -107,9 +109,42 @@ def test_purchase_checkout_uses_idempotency_key_and_metadata(
     assert checkout_metadata["purchase_currency"] == str((plan.currency or "USD")).upper()
     assert checkout_metadata["purchase_credits_total"] == str(int(plan.daily_download_limit or 0))
     assert captured_checkout_kwargs["payment_intent_data"]["metadata"] == checkout_metadata
-    assert captured_checkout_kwargs["idempotency_key"].startswith(
-        f"checkout-create:{advisor.id}:{plan.id}:"
+    assert captured_checkout_kwargs["idempotency_key"] == PaymentService.checkout_session_idempotency_key(
+        user_id=advisor.id,
+        package_id=plan.id,
+        retry_token=retry_token,
     )
+
+
+@pytest.mark.integration
+def test_purchase_checkout_rejects_invalid_retry_token(
+    client,
+    user_factory,
+    license_factory,
+    plan_factory,
+    auth_headers,
+    monkeypatch,
+):
+    _, headers = _create_advisor_with_verified_license(
+        user_factory,
+        license_factory,
+        auth_headers,
+    )
+    plan = plan_factory(stripe_price_id="price_purchase_checkout_retry_token_invalid")
+
+    monkeypatch.setattr(
+        "app.services.payment_service.PaymentService.create_or_get_stripe_customer",
+        lambda db, user: "cus_purchase_checkout_retry_token_invalid",
+    )
+
+    response = client.post(
+        "/api/v1/purchases/checkout",
+        headers=headers,
+        json={"package_id": plan.id, "retry_token": "bad token with spaces"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid checkout retry token"
 
 
 @pytest.mark.integration

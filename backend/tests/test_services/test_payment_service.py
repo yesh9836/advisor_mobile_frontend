@@ -90,3 +90,66 @@ def test_init_stripe_applies_timeout_and_network_retry_policy(monkeypatch):
     assert PaymentService._initialized is True
     assert stripe.max_network_retries == 4
     assert isinstance(stripe.default_http_client, _FakeRequestsClient)
+
+
+@pytest.mark.unit
+def test_checkout_session_idempotency_key_is_stable_for_same_retry_token():
+    first = PaymentService.checkout_session_idempotency_key(
+        user_id=42,
+        package_id=11,
+        retry_token="retry_checkout_pkg11_attempt1",
+    )
+    second = PaymentService.checkout_session_idempotency_key(
+        user_id=42,
+        package_id=11,
+        retry_token="retry_checkout_pkg11_attempt1",
+    )
+
+    assert first == second
+    assert first.startswith("checkout-create:42:11:")
+    assert first.endswith(":v2")
+
+
+@pytest.mark.unit
+def test_checkout_session_idempotency_key_changes_for_distinct_retry_tokens():
+    first = PaymentService.checkout_session_idempotency_key(
+        user_id=42,
+        package_id=11,
+        retry_token="retry_checkout_pkg11_attempt1",
+    )
+    second = PaymentService.checkout_session_idempotency_key(
+        user_id=42,
+        package_id=11,
+        retry_token="retry_checkout_pkg11_attempt2",
+    )
+
+    assert first != second
+
+
+@pytest.mark.unit
+def test_checkout_session_idempotency_key_defaults_to_new_intent_without_retry_token():
+    first = PaymentService.checkout_session_idempotency_key(
+        user_id=42,
+        package_id=11,
+        retry_token=None,
+    )
+    second = PaymentService.checkout_session_idempotency_key(
+        user_id=42,
+        package_id=11,
+        retry_token=None,
+    )
+
+    assert first != second
+
+
+@pytest.mark.unit
+def test_checkout_session_idempotency_key_rejects_invalid_retry_token():
+    with pytest.raises(HTTPException) as exc_info:
+        PaymentService.checkout_session_idempotency_key(
+            user_id=42,
+            package_id=11,
+            retry_token="bad token with spaces",
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "Invalid checkout retry token"
