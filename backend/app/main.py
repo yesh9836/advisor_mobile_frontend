@@ -2,6 +2,7 @@
 FastAPI application entry point.
 """
 
+from contextlib import asynccontextmanager
 import logging
 
 from fastapi import FastAPI
@@ -10,7 +11,7 @@ import uvicorn
 
 from app.api.v1 import api_router
 from app.core.config import settings
-from app.core.rate_limit import RateLimitMiddleware
+from app.core.rate_limit import init_rate_limiter, shutdown_rate_limiter
 
 logging.basicConfig(
     level=logging.INFO,
@@ -19,12 +20,23 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def app_lifespan(_: FastAPI):
+    await init_rate_limiter()
+    try:
+        yield
+    finally:
+        await shutdown_rate_limiter()
+
+
 app = FastAPI(
     title=settings.APP_NAME,
     description="One-time lead purchase platform for financial advisors to receive retirement planning leads",
     version="1.0.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
+    lifespan=app_lifespan,
 )
 
 app.add_middleware(
@@ -34,7 +46,6 @@ app.add_middleware(
     allow_methods=settings.CORS_ALLOW_METHODS,
     allow_headers=settings.CORS_ALLOW_HEADERS,
 )
-app.add_middleware(RateLimitMiddleware)
 
 app.include_router(api_router, prefix="/api/v1")
 
