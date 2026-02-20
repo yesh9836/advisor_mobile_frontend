@@ -179,6 +179,12 @@ class AuthService:
                 detail="Incorrect email or password",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+        if not user.is_active:
+            logger.warning("Login blocked for inactive account: %s", credentials.email)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Inactive user account",
+            )
         return user
 
     @staticmethod
@@ -232,7 +238,7 @@ class AuthService:
                 session.revoked_reason = reason
 
     @staticmethod
-    def _revoke_all_user_refresh_sessions(db: Session, *, user_id: int, reason: str) -> None:
+    def revoke_all_user_refresh_sessions(db: Session, *, user_id: int, reason: str) -> None:
         now = utcnow()
         sessions = (
             db.query(RefreshTokenSession)
@@ -351,6 +357,18 @@ class AuthService:
 
             user = db.query(User).filter(User.id == session.user_id).first()
             if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid refresh token",
+                )
+            if not user.is_active:
+                AuthService._revoke_family(
+                    db,
+                    user_id=session.user_id,
+                    family_id=session.family_id,
+                    reason="inactive_user",
+                )
+                db.commit()
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid refresh token",
@@ -657,7 +675,7 @@ class AuthService:
 
             user.password_hash = get_password_hash(payload.new_password)
             token_row.used_at = now
-            AuthService._revoke_all_user_refresh_sessions(
+            AuthService.revoke_all_user_refresh_sessions(
                 db,
                 user_id=user.id,
                 reason="password_reset",
