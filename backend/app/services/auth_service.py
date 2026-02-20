@@ -11,6 +11,7 @@ from urllib.parse import quote_plus
 from uuid import uuid4
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -46,6 +47,29 @@ class AuthService:
     Service class for authentication operations.
     """
     
+    @staticmethod
+    def _is_duplicate_email_integrity_error(exc: IntegrityError) -> bool:
+        details = " ".join(
+            [
+                str(exc).lower(),
+                str(getattr(exc, "orig", "")).lower(),
+                str(getattr(exc, "statement", "")).lower(),
+                str(getattr(exc, "params", "")).lower(),
+            ]
+        )
+        has_duplicate_marker = any(
+            marker in details
+            for marker in (
+                "duplicate",
+                "duplicate entry",
+                "duplicate key value",
+                "unique constraint",
+                "unique constraint failed",
+            )
+        )
+        has_email_marker = "email" in details
+        return has_duplicate_marker and has_email_marker
+
     @staticmethod
     def register_user(db: Session, user_data: UserRegister) -> User:
         """
@@ -91,6 +115,19 @@ class AuthService:
             
         except HTTPException:
             raise
+        except IntegrityError as exc:
+            db.rollback()
+            if AuthService._is_duplicate_email_integrity_error(exc):
+                logger.info("Registration rejected duplicate email at commit: %s", user_data.email)
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Email already registered",
+                ) from exc
+            logger.exception("Registration failed with integrity error")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Registration failed",
+            ) from exc
         except Exception as e:
             db.rollback()
             logger.error(f"Registration failed: {e}")
