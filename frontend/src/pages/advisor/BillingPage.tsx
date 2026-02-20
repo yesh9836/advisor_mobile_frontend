@@ -98,10 +98,14 @@ const BillingPage = () => {
                       color: "#0b1b49",
                     }}
                   >
-                    {formatAmount(invoice.amount_paid_cents, invoice.currency)}
+                    {invoice.package_name?.trim() ||
+                      formatAmount(invoice.amount_paid_cents, invoice.currency)}
                   </p>
                   <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
-                    {formatDate(invoice.created_at)} • {invoice.status}
+                    {formatDate(invoice.created_at)} •{" "}
+                    {invoice.invoice_pdf || invoice.hosted_invoice_url
+                      ? "Stripe receipt available"
+                      : "Stripe receipt pending"}
                   </p>
                 </div>
                 <button
@@ -162,7 +166,7 @@ const BillingPage = () => {
           )}
 
           <button type="button" className="btn btn-primary" disabled>
-            Update Card (Stripe Hosted)
+            Update Card
           </button>
         </aside>
       </section>
