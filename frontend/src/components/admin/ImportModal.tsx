@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { bulkImportLeadsAsAdmin } from "@/api/admin";
+import { toImportSummary } from "@/components/admin/import-summary";
 import type { LeadBulkImportResult } from "@/types/admin";
 import { getApiErrorMessage } from "@/utils/api-error";
 
@@ -9,12 +10,6 @@ interface ImportModalProps {
   onClose: () => void;
   onImportSuccess?: (result: LeadBulkImportResult) => void;
 }
-
-const countDuplicates = (result: LeadBulkImportResult): number => {
-  return result.errors.filter((entry) =>
-    entry.error.toLowerCase().includes("duplicate"),
-  ).length;
-};
 
 const ImportModal = ({ isOpen, onClose, onImportSuccess }: ImportModalProps) => {
   const [file, setFile] = useState<File | null>(null);
@@ -95,6 +90,8 @@ const ImportModal = ({ isOpen, onClose, onImportSuccess }: ImportModalProps) => 
   if (!isOpen) {
     return null;
   }
+
+  const summary = result ? toImportSummary(result) : null;
 
   return (
     <div
@@ -230,7 +227,7 @@ const ImportModal = ({ isOpen, onClose, onImportSuccess }: ImportModalProps) => 
               <div>
                 <div style={{ color: "#64748b", fontSize: 13 }}>Duplicates</div>
                 <div style={{ color: "#0b1b49", fontWeight: 700, fontSize: 24 }}>
-                  {countDuplicates(result)}
+                  {summary?.duplicateCount ?? 0}
                 </div>
               </div>
             </div>
@@ -266,22 +263,6 @@ const ImportModal = ({ isOpen, onClose, onImportSuccess }: ImportModalProps) => 
       </section>
     </div>
   );
-};
-
-export interface ImportSummary {
-  inserted: number;
-  failed: number;
-  duplicateCount: number;
-}
-
-export const toImportSummary = (
-  result: LeadBulkImportResult,
-): ImportSummary => {
-  return {
-    inserted: result.success,
-    failed: result.failed,
-    duplicateCount: countDuplicates(result),
-  };
 };
 
 export default ImportModal;
