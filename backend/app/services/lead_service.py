@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Literal, Optional, Tuple
 from uuid import uuid4
@@ -31,6 +32,7 @@ US_STATE_CODES = {
 }
 
 DEFAULT_DOWNLOAD_SIZE = 50
+SEARCH_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")
 
 
 class LeadService:
@@ -222,6 +224,30 @@ class LeadService:
             for purchase_id, refund_delta_total in rows
             if purchase_id is not None
         }
+
+    @staticmethod
+    def _tokenize_search_query(search: str) -> List[str]:
+        tokens = [token.strip() for token in SEARCH_TOKEN_PATTERN.findall(search or "")]
+        return [token for token in tokens if token]
+
+    @staticmethod
+    def _build_search_token_filter(token: str):
+        prefix_pattern = f"{token}%"
+        token_filters = [
+            Lead.first_name.ilike(prefix_pattern),
+            Lead.last_name.ilike(prefix_pattern),
+            Lead.source.ilike(prefix_pattern),
+        ]
+
+        if len(token) == 2 and token.isalpha():
+            token_filters.append(Lead.state_code == token.upper())
+        else:
+            token_filters.append(Lead.state_code.ilike(prefix_pattern))
+
+        if any(character.isdigit() for character in token):
+            token_filters.append(Lead.mobile_phone.ilike(f"%{token}%"))
+
+        return or_(*token_filters)
 
     @staticmethod
     def _compute_purchase_assignment_target(
@@ -924,17 +950,8 @@ class LeadService:
                 query = query.filter(LeadOutcome.status == outcome_status)
 
         normalized_search = (search or "").strip()
-        if normalized_search:
-            search_pattern = f"%{normalized_search}%"
-            query = query.filter(
-                or_(
-                    Lead.first_name.ilike(search_pattern),
-                    Lead.last_name.ilike(search_pattern),
-                    Lead.mobile_phone.ilike(search_pattern),
-                    Lead.state_code.ilike(search_pattern),
-                    Lead.source.ilike(search_pattern),
-                )
-            )
+        for token in LeadService._tokenize_search_query(normalized_search):
+            query = query.filter(LeadService._build_search_token_filter(token))
 
         if delivery_status == "available":
             query = query.filter(available_condition)
