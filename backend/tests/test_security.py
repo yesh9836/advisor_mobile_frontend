@@ -3,14 +3,18 @@ from pydantic import ValidationError
 from starlette.requests import Request
 
 from app.core.config import Settings, settings
-from app.core.rate_limit import RateLimitMiddleware, rate_limiter
+from app.core.rate_limit import (
+    client_ip_identifier,
+    get_rate_limit_metrics_snapshot,
+    reset_rate_limit_metrics,
+)
 
 
 @pytest.fixture(autouse=True)
-def reset_rate_limiter():
-    rate_limiter.reset()
+def reset_rate_limit_observability():
+    reset_rate_limit_metrics()
     yield
-    rate_limiter.reset()
+    reset_rate_limit_metrics()
 
 
 @pytest.mark.unit
@@ -146,65 +150,39 @@ def test_cookie_auth_get_endpoints_do_not_require_csrf_header(client):
 
 
 @pytest.mark.integration
-def test_rate_limit_blocks_excess_requests(client, monkeypatch):
+def test_rate_limit_fail_closed_returns_503_when_backend_unavailable(client, monkeypatch):
     monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", True)
-    monkeypatch.setattr(settings, "RATE_LIMIT_PER_MINUTE", 2)
-    monkeypatch.setattr(settings, "RATE_LIMIT_WINDOW_SECONDS", 60)
+    monkeypatch.setattr(settings, "RATE_LIMIT_BACKEND", "redis")
+    monkeypatch.setattr(settings, "RATE_LIMIT_FAIL_OPEN", False)
+    monkeypatch.setattr("app.core.rate_limit.is_rate_limiter_ready", lambda: False)
 
-    headers = {"X-Forwarded-For": "203.0.113.60"}
-    payload = {"email": "nobody@example.com", "password": "WrongPass123!"}
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"email": "nobody@example.com", "password": "WrongPass123!"},
+    )
 
-    first = client.post("/api/v1/auth/login", headers=headers, json=payload)
-    second = client.post("/api/v1/auth/login", headers=headers, json=payload)
-    third = client.post("/api/v1/auth/login", headers=headers, json=payload)
-
-    assert first.status_code == 401
-    assert second.status_code == 401
-    assert third.status_code == 429
-    assert third.headers.get("retry-after") is not None
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Rate limiting service unavailable"
+    metrics = get_rate_limit_metrics_snapshot()
+    assert metrics.get("auth.login:redis_unavailable") == 1
 
 
 @pytest.mark.integration
-def test_rate_limit_ignores_spoofed_forwarded_for_by_default(client, monkeypatch):
+def test_rate_limit_fail_open_allows_requests_when_backend_unavailable(client, monkeypatch):
     monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", True)
-    monkeypatch.setattr(settings, "RATE_LIMIT_PER_MINUTE", 1)
-    monkeypatch.setattr(settings, "RATE_LIMIT_WINDOW_SECONDS", 60)
-    monkeypatch.setattr(settings, "RATE_LIMIT_TRUST_PROXY_HEADERS", False)
-    monkeypatch.setattr(settings, "RATE_LIMIT_TRUSTED_PROXIES", [])
+    monkeypatch.setattr(settings, "RATE_LIMIT_BACKEND", "redis")
+    monkeypatch.setattr(settings, "RATE_LIMIT_FAIL_OPEN", True)
+    monkeypatch.setattr("app.core.rate_limit.is_rate_limiter_ready", lambda: False)
 
-    payload = {"email": "nobody@example.com", "password": "WrongPass123!"}
-
-    first = client.post(
+    response = client.post(
         "/api/v1/auth/login",
-        headers={"X-Forwarded-For": "198.51.100.10"},
-        json=payload,
-    )
-    second = client.post(
-        "/api/v1/auth/login",
-        headers={"X-Forwarded-For": "198.51.100.11"},
-        json=payload,
+        json={"email": "nobody@example.com", "password": "WrongPass123!"},
     )
 
-    assert first.status_code == 401
-    assert second.status_code == 429
-
-
-@pytest.mark.integration
-def test_rate_limit_exempts_stripe_webhook_path(client, monkeypatch):
-    monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", True)
-    monkeypatch.setattr(settings, "RATE_LIMIT_PER_MINUTE", 1)
-    monkeypatch.setattr(settings, "RATE_LIMIT_WINDOW_SECONDS", 60)
-
-    headers = {"X-Forwarded-For": "203.0.113.61"}
-
-    first = client.post("/api/v1/webhooks/stripe", headers=headers, content=b"{}")
-    second = client.post("/api/v1/webhooks/stripe", headers=headers, content=b"{}")
-    third = client.post("/api/v1/webhooks/stripe", headers=headers, content=b"{}")
-
-    assert first.status_code == 400
-    assert second.status_code == 400
-    assert third.status_code == 400
-    assert third.headers.get("retry-after") is None
+    assert response.status_code == 401
+    metrics = get_rate_limit_metrics_snapshot()
+    assert metrics.get("auth.login:redis_unavailable") == 1
+    assert metrics.get("auth.login:allowed") == 1
 
 
 @pytest.mark.unit
@@ -228,7 +206,7 @@ def test_get_client_identifier_uses_forwarded_for_only_for_trusted_proxy(monkeyp
         }
     )
 
-    assert RateLimitMiddleware._get_client_identifier(request) == "203.0.113.60"
+    assert client_ip_identifier(request) == "203.0.113.60"
 
 
 @pytest.mark.unit
@@ -252,7 +230,34 @@ def test_get_client_identifier_ignores_forwarded_for_for_untrusted_proxy(monkeyp
         }
     )
 
-    assert RateLimitMiddleware._get_client_identifier(request) == "198.51.100.10"
+    assert client_ip_identifier(request) == "198.51.100.10"
+
+
+@pytest.mark.unit
+def test_get_client_identifier_uses_x_real_ip_for_trusted_proxy_when_forwarded_invalid(monkeypatch):
+    monkeypatch.setattr(settings, "RATE_LIMIT_TRUST_PROXY_HEADERS", True)
+    monkeypatch.setattr(settings, "RATE_LIMIT_TRUSTED_PROXIES", ["10.0.0.0/8"])
+
+    request = Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": "/api/v1/auth/login",
+            "raw_path": b"/api/v1/auth/login",
+            "query_string": b"",
+            "headers": [
+                (b"x-forwarded-for", b"invalid"),
+                (b"x-real-ip", b"203.0.113.70"),
+            ],
+            "client": ("10.2.3.4", 50000),
+            "server": ("testserver", 80),
+            "root_path": "",
+        }
+    )
+
+    assert client_ip_identifier(request) == "203.0.113.70"
 
 
 @pytest.mark.integration

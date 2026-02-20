@@ -165,6 +165,11 @@ def test_settings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setattr(settings, "STRIPE_WEBHOOK_FAST_ACK_ENABLED", False)
     monkeypatch.setattr(settings, "FRONTEND_URL", "http://localhost:5173")
     monkeypatch.setattr(settings, "UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", False)
+    monkeypatch.setattr(settings, "RATE_LIMIT_BACKEND", "redis")
+    monkeypatch.setattr(settings, "REDIS_URL", "redis://127.0.0.1:6379/15")
+    monkeypatch.setattr(settings, "RATE_LIMIT_PREFIX", "lm:test:rl")
+    monkeypatch.setattr(settings, "RATE_LIMIT_FAIL_OPEN", False)
 
 
 @pytest.fixture
