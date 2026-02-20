@@ -8,6 +8,7 @@ from .purchase import (
     ProcessedStripeEvent,
     StripeReconciliationCheckpoint,
     StripeWebhookInbox,
+    StripeWebhookWorkerHeartbeat,
     StripePoisonEvent,
 )
 from .license import License
@@ -29,6 +30,7 @@ __all__ = [
     "ProcessedStripeEvent",
     "StripeReconciliationCheckpoint",
     "StripeWebhookInbox",
+    "StripeWebhookWorkerHeartbeat",
     "StripePoisonEvent",
     "FirstPurchaseAddonOffer",
     "License",

@@ -370,6 +370,61 @@ class StripeWebhookInbox(Base):
     )
 
 
+class StripeWebhookWorkerHeartbeat(Base):
+    """Worker heartbeat state for Stripe webhook inbox processing."""
+
+    __tablename__ = "stripe_webhook_worker_heartbeats"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+    )
+    source: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    last_started_at: Mapped[Optional[datetime]] = mapped_column(
+        UTCDateTime(),
+        nullable=True,
+        index=True,
+    )
+    last_completed_at: Mapped[Optional[datetime]] = mapped_column(
+        UTCDateTime(),
+        nullable=True,
+        index=True,
+    )
+    last_success_at: Mapped[Optional[datetime]] = mapped_column(
+        UTCDateTime(),
+        nullable=True,
+        index=True,
+    )
+    last_summary: Mapped[Optional[dict]] = mapped_column(
+        JSON,
+        nullable=True,
+    )
+    last_error: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        nullable=False,
+        default=utcnow,
+        server_default=text("CURRENT_TIMESTAMP"),
+        index=True,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        nullable=False,
+        default=utcnow,
+        onupdate=utcnow,
+        server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"),
+    )
+
+
 class StripeReconciliationCheckpoint(Base):
     """Durable checkpoint for Stripe reconciliation backfill scans."""
 
