@@ -1243,6 +1243,138 @@ def test_webhook_checkout_completed_defers_credit_grant_when_toggle_disabled(
 
 
 @pytest.mark.integration
+def test_webhook_checkout_and_payment_intent_completion_paths_emit_equivalent_fulfillment_audits(
+    client,
+    db,
+    user_factory,
+    license_factory,
+    plan_factory,
+    lead_factory,
+    purchase_factory,
+    monkeypatch,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="AdvisorWebhookParity123!",
+        email="advisor.webhook.parity@example.com",
+        name="Webhook Parity Advisor",
+    )
+    license_factory(user_id=advisor.id, state="CA", status="verified")
+    plan = plan_factory(
+        stripe_price_id="price_webhook_parity",
+        state_limit=1,
+        daily_download_limit=1,
+    )
+    lead_factory(state_code="CA", mobile_phone="555-888-4001")
+    lead_factory(state_code="CA", mobile_phone="555-888-4002")
+
+    checkout_event = _build_purchase_webhook_event(
+        event_id="evt_checkout_parity",
+        event_type="checkout.session.completed",
+        session_id="cs_parity_checkout",
+        payment_intent_id="pi_parity_checkout",
+        user_id=advisor.id,
+        package_id=plan.id,
+        amount_cents=plan.price_cents,
+    )
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: checkout_event,
+    )
+    checkout_response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert checkout_response.status_code == 200, checkout_response.text
+
+    pending_pi_purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        stripe_checkout_session_id="cs_parity_pi",
+        stripe_payment_intent_id="pi_parity_succeeded",
+        credits_total=plan.daily_download_limit,
+        credits_remaining=0,
+        status="pending",
+    )
+    db.commit()
+
+    payment_intent_event = {
+        "id": "evt_pi_parity",
+        "type": "payment_intent.succeeded",
+        "data": {
+            "object": {
+                "id": "pi_parity_succeeded",
+            }
+        },
+    }
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: payment_intent_event,
+    )
+    pi_response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert pi_response.status_code == 200, pi_response.text
+
+    checkout_purchase = (
+        db.query(LeadPurchase)
+        .filter(LeadPurchase.stripe_checkout_session_id == "cs_parity_checkout")
+        .first()
+    )
+    assert checkout_purchase is not None
+    pi_purchase = db.query(LeadPurchase).filter(LeadPurchase.id == pending_pi_purchase.id).first()
+    assert pi_purchase is not None
+
+    def _audit_meta(purchase_id: int, action: str):
+        row = (
+            db.query(AuditLog)
+            .filter(
+                AuditLog.action == action,
+                AuditLog.entity_id == purchase_id,
+            )
+            .first()
+        )
+        assert row is not None
+        return row.meta_data or {}
+
+    checkout_confirmed = _audit_meta(checkout_purchase.id, "purchase_confirmed")
+    pi_confirmed = _audit_meta(pi_purchase.id, "purchase_confirmed")
+    assert checkout_confirmed.get("correlation_ids", {}).get("stripe_event_id") == "evt_checkout_parity"
+    assert pi_confirmed.get("correlation_ids", {}).get("stripe_event_id") == "evt_pi_parity"
+
+    checkout_granted = _audit_meta(checkout_purchase.id, "purchase_credits_granted")
+    pi_granted = _audit_meta(pi_purchase.id, "purchase_credits_granted")
+    assert checkout_granted.get("credits_delta") == plan.daily_download_limit
+    assert pi_granted.get("credits_delta") == plan.daily_download_limit
+    assert checkout_granted.get("grant_note") == "Checkout session cs_parity_checkout"
+    assert pi_granted.get("grant_note") == "Payment intent pi_parity_succeeded"
+
+    checkout_allocated = _audit_meta(checkout_purchase.id, "purchase_leads_allocated")
+    pi_allocated = _audit_meta(pi_purchase.id, "purchase_leads_allocated")
+    assert checkout_allocated.get("requested_count") == pi_allocated.get("requested_count")
+    assert checkout_allocated.get("assigned_count") == pi_allocated.get("assigned_count")
+    assert checkout_allocated.get("unfulfilled_count") == pi_allocated.get("unfulfilled_count")
+    assert checkout_allocated.get("notification_enqueued_total") == pi_allocated.get(
+        "notification_enqueued_total"
+    )
+    assert checkout_allocated.get("notification_enqueued_email") == pi_allocated.get(
+        "notification_enqueued_email"
+    )
+    assert checkout_allocated.get("notification_enqueued_sms") == pi_allocated.get(
+        "notification_enqueued_sms"
+    )
+    assert len(checkout_allocated.get("newly_assigned_lead_ids") or []) == int(
+        checkout_allocated.get("assigned_count") or 0
+    )
+    assert len(pi_allocated.get("newly_assigned_lead_ids") or []) == int(
+        pi_allocated.get("assigned_count") or 0
+    )
+
+
+@pytest.mark.integration
 def test_webhook_payment_intent_succeeded_defers_credit_grant_when_toggle_disabled(
     client,
     db,
