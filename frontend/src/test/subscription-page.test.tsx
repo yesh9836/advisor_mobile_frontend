@@ -242,7 +242,7 @@ describe("SubscriptionPage license gate", () => {
 
     await waitFor(() => {
       expect(getFirstPurchaseOfferEligibility).toHaveBeenCalledWith("cs_test_123");
-      expect(createCheckout).toHaveBeenCalledWith(2);
+      expect(createCheckout).toHaveBeenCalledWith(2, expect.any(String));
     });
     expect(await screen.findByText("checkout unavailable")).toBeInTheDocument();
   });
