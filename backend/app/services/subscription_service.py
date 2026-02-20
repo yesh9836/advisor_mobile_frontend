@@ -237,7 +237,12 @@ class SubscriptionService:
         return [row for row in rows if SubscriptionService._is_catalog_visible_package(row)]
 
     @staticmethod
-    def create_purchase_checkout_session(db: Session, user: User, package_id: int) -> Dict[str, str]:
+    def create_purchase_checkout_session(
+        db: Session,
+        user: User,
+        package_id: int,
+        retry_token: Optional[str] = None,
+    ) -> Dict[str, str]:
         """
         Create Stripe checkout session for one-time package purchase.
         """
@@ -300,6 +305,7 @@ class SubscriptionService:
             idempotency_key = PaymentService.checkout_session_idempotency_key(
                 user_id=user.id,
                 package_id=package.id,
+                retry_token=retry_token,
             )
             session = stripe.checkout.Session.create(
                 customer=customer_id,
