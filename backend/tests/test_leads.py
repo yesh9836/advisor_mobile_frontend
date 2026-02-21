@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.models.lead import LeadDownload, LeadOwnership
+from app.models.lead import LeadDownload, LeadOutcome, LeadOwnership
 from app.models.purchase import LeadCreditLedger, LeadPurchase
 
 
@@ -885,3 +885,162 @@ def test_dashboard_summary_excludes_downloads_outside_allowed_states(
     body = response.json()
     assert body["settings"]["target_states"] == ["CA"]
     assert body["leads_delivered_7_days"] == 2
+
+
+@pytest.mark.integration
+def test_dashboard_summary_appointments_count_uses_recent_deliveries_not_outcome_update_time(
+    client,
+    db,
+    user_factory,
+    lead_factory,
+    license_factory,
+    plan_factory,
+    purchase_factory,
+    auth_headers,
+):
+    advisor, _plan, headers = _create_advisor_with_access(
+        user_factory,
+        license_factory,
+        plan_factory,
+        purchase_factory,
+        auth_headers,
+    )
+
+    recent_appt_lead = lead_factory(
+        state_code="CA",
+        mobile_phone="555-CA-5401",
+        first_name="Recent",
+        last_name="Appointment",
+    )
+    recent_contacted_lead = lead_factory(
+        state_code="CA",
+        mobile_phone="555-CA-5402",
+        first_name="Recent",
+        last_name="Contacted",
+    )
+    old_delivery_appt_lead = lead_factory(
+        state_code="CA",
+        mobile_phone="555-CA-5403",
+        first_name="Old",
+        last_name="Delivery",
+    )
+
+    db.add(
+        LeadDownload(
+            user_id=advisor.id,
+            lead_id=recent_appt_lead.id,
+            downloaded_at=datetime.now(timezone.utc),
+            csv_batch_id="batch_appt_scope",
+        )
+    )
+    db.add(
+        LeadDownload(
+            user_id=advisor.id,
+            lead_id=recent_contacted_lead.id,
+            downloaded_at=datetime.now(timezone.utc),
+            csv_batch_id="batch_appt_scope",
+        )
+    )
+    db.add(
+        LeadDownload(
+            user_id=advisor.id,
+            lead_id=old_delivery_appt_lead.id,
+            downloaded_at=datetime.now(timezone.utc) - timedelta(days=8),
+            csv_batch_id="batch_appt_scope",
+        )
+    )
+
+    db.add(
+        LeadOutcome(
+            user_id=advisor.id,
+            lead_id=recent_appt_lead.id,
+            status="appointment_set",
+            notes="Set before this week window",
+            updated_at=datetime.now(timezone.utc) - timedelta(days=30),
+        )
+    )
+    db.add(
+        LeadOutcome(
+            user_id=advisor.id,
+            lead_id=recent_contacted_lead.id,
+            status="contacted",
+            notes="Still contacted",
+            updated_at=datetime.now(timezone.utc),
+        )
+    )
+    db.add(
+        LeadOutcome(
+            user_id=advisor.id,
+            lead_id=old_delivery_appt_lead.id,
+            status="appointment_set",
+            notes="Old delivered lead should be excluded",
+            updated_at=datetime.now(timezone.utc),
+        )
+    )
+    db.commit()
+
+    response = client.get("/api/v1/leads/dashboard/summary", headers=headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["leads_delivered_7_days"] == 2
+    assert body["appointments_set_7_days"] == 1
+
+
+@pytest.mark.integration
+def test_dashboard_summary_cost_uses_latest_completed_purchase_amount(
+    client,
+    db,
+    user_factory,
+    lead_factory,
+    license_factory,
+    plan_factory,
+    purchase_factory,
+    auth_headers,
+):
+    advisor, _plan, headers = _create_advisor_with_access(
+        user_factory,
+        license_factory,
+        plan_factory,
+        purchase_factory,
+        auth_headers,
+    )
+
+    purchase = (
+        db.query(LeadPurchase)
+        .filter(LeadPurchase.user_id == advisor.id, LeadPurchase.status == "completed")
+        .first()
+    )
+    assert purchase is not None
+    purchase.purchased_at = datetime.now(timezone.utc) - timedelta(days=8)
+    db.add(purchase)
+
+    lead = lead_factory(
+        state_code="CA",
+        mobile_phone="555-CA-5501",
+        first_name="Cost",
+        last_name="Metric",
+    )
+    db.add(
+        LeadDownload(
+            user_id=advisor.id,
+            lead_id=lead.id,
+            downloaded_at=datetime.now(timezone.utc),
+            csv_batch_id="batch_cost_scope",
+        )
+    )
+    db.add(
+        LeadOutcome(
+            user_id=advisor.id,
+            lead_id=lead.id,
+            status="appointment_set",
+            notes="Booked appointment",
+            updated_at=datetime.now(timezone.utc),
+        )
+    )
+    db.commit()
+
+    response = client.get("/api/v1/leads/dashboard/summary", headers=headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["appointments_set_7_days"] == 1
+    assert body["cost_per_appointment"] == 100.0
