@@ -84,6 +84,13 @@ describe("Advisor LeadsPage server query state", () => {
       });
     });
     expect(await screen.findByText("Leads (51)")).toBeInTheDocument();
+    expect(screen.queryByText("Email")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Call" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Text" }),
+    ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await waitFor(() => {
