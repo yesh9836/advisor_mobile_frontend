@@ -1329,22 +1329,21 @@ class LeadService:
             .scalar()
         ) or 0
 
+        recent_delivered_lead_ids = (
+            select(LeadDownload.lead_id)
+            .filter(
+                LeadDownload.user_id == user.id,
+                LeadDownload.downloaded_at >= seven_days_ago,
+            )
+            .distinct()
+        )
+
         appointments_set_7_days = (
-            db.query(func.count(LeadOutcome.id))
+            db.query(func.count(func.distinct(LeadOutcome.lead_id)))
             .filter(
                 LeadOutcome.user_id == user.id,
                 LeadOutcome.status == "appointment_set",
-                LeadOutcome.updated_at >= seven_days_ago,
-            )
-            .scalar()
-        ) or 0
-
-        spend_cents_7_days = (
-            db.query(func.coalesce(func.sum(LeadPurchase.amount_cents), 0))
-            .filter(
-                LeadPurchase.user_id == user.id,
-                LeadPurchase.status == "completed",
-                LeadPurchase.purchased_at >= seven_days_ago,
+                LeadOutcome.lead_id.in_(recent_delivered_lead_ids),
             )
             .scalar()
         ) or 0
@@ -1360,7 +1359,7 @@ class LeadService:
         )
 
         cost_per_appointment = LeadService._calculate_cost_per_appointment(
-            total_spend_cents=int(spend_cents_7_days),
+            total_spend_cents=int(latest_completed_purchase.amount_cents) if latest_completed_purchase else 0,
             appointments_set=appointments_set_7_days,
         )
 
