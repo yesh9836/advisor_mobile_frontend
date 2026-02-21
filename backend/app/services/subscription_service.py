@@ -1509,6 +1509,28 @@ class SubscriptionService:
                     db.rollback()
                     raise
 
+            elif event_type == "checkout.session.expired":
+                session = data_object
+                mode = str(session.get("mode") or "").lower()
+                if mode == "subscription" or session.get("subscription"):
+                    logger.info(
+                        "Ignoring retired subscription checkout event: type=%s id=%s",
+                        event_type,
+                        event_id,
+                    )
+                    SubscriptionService._commit_if_transaction_active(db)
+                    return
+                try:
+                    SubscriptionService._create_or_update_purchase_from_checkout_session(
+                        db=db,
+                        checkout_session=session,
+                        forced_status="canceled",
+                        stripe_event_id=event_id,
+                    )
+                except Exception:
+                    db.rollback()
+                    raise
+
             elif event_type == "payment_intent.succeeded":
                 payment_intent_id = data_object.get("id")
                 if not payment_intent_id:
