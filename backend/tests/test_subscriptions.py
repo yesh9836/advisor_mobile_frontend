@@ -1140,6 +1140,69 @@ def test_webhook_out_of_order_and_retry_events_grant_credit_once(
 
 
 @pytest.mark.integration
+def test_webhook_checkout_session_expired_cancels_pending_purchase(
+    client,
+    db,
+    user_factory,
+    plan_factory,
+    purchase_factory,
+    monkeypatch,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="AdvisorWebhookExpired123!",
+        email="advisor.webhook.expired.pending@example.com",
+        name="Webhook Expired Pending Advisor",
+    )
+    plan = plan_factory(stripe_price_id="price_checkout_expired_pending")
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=4,
+        credits_remaining=0,
+        status="pending",
+        stripe_checkout_session_id="cs_checkout_expired_pending_1",
+        stripe_payment_intent_id="pi_checkout_expired_pending_1",
+    )
+
+    event = _build_purchase_webhook_event(
+        event_id="evt_checkout_expired_pending_1",
+        event_type="checkout.session.expired",
+        session_id="cs_checkout_expired_pending_1",
+        payment_intent_id="pi_checkout_expired_pending_1",
+        user_id=advisor.id,
+        package_id=plan.id,
+        amount_cents=plan.price_cents,
+        payment_status="unpaid",
+    )
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: event,
+    )
+
+    response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"status": "ok"}
+
+    db.refresh(purchase)
+    assert purchase.status == "canceled"
+    assert purchase.credits_remaining == 0
+    assert (
+        db.query(LeadCreditLedger)
+        .filter(
+            LeadCreditLedger.purchase_id == purchase.id,
+            LeadCreditLedger.movement_type == "purchase_grant",
+        )
+        .count()
+        == 0
+    )
+
+
+@pytest.mark.integration
 def test_webhook_checkout_completed_defers_credit_grant_when_toggle_disabled(
     client,
     db,

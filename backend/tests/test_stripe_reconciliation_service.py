@@ -69,6 +69,7 @@ def test_reconciliation_enqueues_new_events_and_updates_checkpoint(db, monkeypat
     assert summary["enqueued"] == 2
     assert list_call["limit"] == 50
     assert set(list_call["types"]) == set(StripeReconciliationService.RELEVANT_EVENT_TYPES)
+    assert "checkout.session.expired" in list_call["types"]
 
     inbox_rows = (
         db.query(StripeWebhookInbox)
