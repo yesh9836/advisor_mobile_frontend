@@ -480,29 +480,6 @@ const LeadsPage = () => {
                   <span>Phone</span>
                   <strong>{selectedLead.phone}</strong>
                 </div>
-                <div
-                  style={{ display: "flex", justifyContent: "space-between" }}
-                >
-                  <span>Email</span>
-                  <strong>Not available</strong>
-                </div>
-              </div>
-
-              <div className="row">
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  style={{ flex: 1 }}
-                >
-                  Call
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  style={{ flex: 1 }}
-                >
-                  Text
-                </button>
               </div>
 
               <div className="field">
