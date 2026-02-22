@@ -142,6 +142,107 @@ def test_license_rejection_requires_admin_and_reason(client, user_factory, auth_
 
 
 @pytest.mark.integration
+def test_license_submission_rejects_duplicate_state_for_same_advisor(
+    client,
+    user_factory,
+    auth_headers,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LicenseStateDupAdvisor123!",
+        email="advisor.state.dup@example.com",
+        name="State Dup Advisor",
+    )
+    advisor_headers = auth_headers(advisor.email, "LicenseStateDupAdvisor123!")
+
+    first_submit = client.post(
+        "/api/v1/licenses/",
+        headers=advisor_headers,
+        data={"state": "ca", "license_number": "CA-STATE-DUP-001", "license_type": "Series 65"},
+        files={"document": ("license.pdf", b"%PDF-1.4 first-state", "application/pdf")},
+    )
+    assert first_submit.status_code == 201, first_submit.text
+
+    duplicate_submit = client.post(
+        "/api/v1/licenses/",
+        headers=advisor_headers,
+        data={"state": "CA", "license_number": "CA-STATE-DUP-002", "license_type": "Series 66"},
+        files={"document": ("license_retry.pdf", b"%PDF-1.4 second-state", "application/pdf")},
+    )
+    assert duplicate_submit.status_code == 400
+    assert duplicate_submit.json()["detail"] == "You already have a license for state CA"
+
+
+@pytest.mark.integration
+def test_license_submission_allows_same_state_for_different_advisors(
+    client,
+    user_factory,
+    auth_headers,
+):
+    advisor_a = user_factory(
+        role="advisor",
+        password="LicenseStateSharedA123!",
+        email="advisor.state.shared.a@example.com",
+        name="State Shared Advisor A",
+    )
+    advisor_b = user_factory(
+        role="advisor",
+        password="LicenseStateSharedB123!",
+        email="advisor.state.shared.b@example.com",
+        name="State Shared Advisor B",
+    )
+    advisor_a_headers = auth_headers(advisor_a.email, "LicenseStateSharedA123!")
+    advisor_b_headers = auth_headers(advisor_b.email, "LicenseStateSharedB123!")
+
+    first_submit = client.post(
+        "/api/v1/licenses/",
+        headers=advisor_a_headers,
+        data={"state": "TX", "license_number": "TX-SHARED-ADVISOR-A-001", "license_type": "Series 65"},
+        files={"document": ("license_a.pdf", b"%PDF-1.4 shared-a", "application/pdf")},
+    )
+    assert first_submit.status_code == 201, first_submit.text
+
+    second_submit = client.post(
+        "/api/v1/licenses/",
+        headers=advisor_b_headers,
+        data={"state": "tx", "license_number": "TX-SHARED-ADVISOR-B-001", "license_type": "Series 7"},
+        files={"document": ("license_b.pdf", b"%PDF-1.4 shared-b", "application/pdf")},
+    )
+    assert second_submit.status_code == 201, second_submit.text
+
+
+@pytest.mark.integration
+def test_license_submission_allows_multiple_states_for_same_advisor(
+    client,
+    user_factory,
+    auth_headers,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LicenseMultiStateAdvisor123!",
+        email="advisor.state.multi@example.com",
+        name="Multi State Advisor",
+    )
+    advisor_headers = auth_headers(advisor.email, "LicenseMultiStateAdvisor123!")
+
+    first_submit = client.post(
+        "/api/v1/licenses/",
+        headers=advisor_headers,
+        data={"state": "WA", "license_number": "WA-MULTI-001", "license_type": "Series 65"},
+        files={"document": ("license_wa.pdf", b"%PDF-1.4 wa", "application/pdf")},
+    )
+    assert first_submit.status_code == 201, first_submit.text
+
+    second_submit = client.post(
+        "/api/v1/licenses/",
+        headers=advisor_headers,
+        data={"state": "OR", "license_number": "OR-MULTI-001", "license_type": "Series 66"},
+        files={"document": ("license_or.pdf", b"%PDF-1.4 or", "application/pdf")},
+    )
+    assert second_submit.status_code == 201, second_submit.text
+
+
+@pytest.mark.integration
 def test_license_document_download_permissions_and_content(client, user_factory, auth_headers):
     advisor = user_factory(
         role="advisor",
