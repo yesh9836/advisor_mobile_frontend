@@ -229,3 +229,11 @@ export interface LeadBulkImportResult {
   failed: number;
   errors: Array<{ row: number; error: string }>;
 }
+
+export interface LeadBulkImportSchema {
+  headers: string[];
+  required_values: string[];
+  system_fields: {
+    source: string;
+  };
+}
