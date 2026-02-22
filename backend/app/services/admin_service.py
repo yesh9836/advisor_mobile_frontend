@@ -626,6 +626,7 @@ class AdminService:
         recent_activity = [
             UserRecentActivityItem(
                 id=activity.id,
+                actor_user_id=activity.actor_user_id,
                 action=activity.action,
                 entity_type=activity.entity_type,
                 entity_id=activity.entity_id,
