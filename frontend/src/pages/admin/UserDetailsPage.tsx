@@ -87,6 +87,8 @@ const licenseStatusBadgeStyle = (status: string): CSSProperties => {
   };
 };
 
+const HISTORY_PREVIEW_LIMIT = 5;
+
 const renderCreditSummary = (summary: UserCreditSummary) => {
   return (
     <div className="grid-3">
@@ -264,6 +266,10 @@ const UserDetailsPage = () => {
   const [deactivateSubmitting, setDeactivateSubmitting] = useState(false);
   const [deactivateError, setDeactivateError] = useState<string | null>(null);
   const [deactivateSuccess, setDeactivateSuccess] = useState<string | null>(null);
+  const [showAllPurchaseHistory, setShowAllPurchaseHistory] = useState(false);
+  const [showAllLicenses, setShowAllLicenses] = useState(false);
+  const [showAllDownloadHistory, setShowAllDownloadHistory] = useState(false);
+  const [showAllRecentActivity, setShowAllRecentActivity] = useState(false);
 
   const loadDetails = useCallback(async () => {
     if (!parsedUserId) {
@@ -290,6 +296,53 @@ const UserDetailsPage = () => {
   useEffect(() => {
     void loadDetails();
   }, [loadDetails]);
+
+  useEffect(() => {
+    setShowAllPurchaseHistory(false);
+    setShowAllLicenses(false);
+    setShowAllDownloadHistory(false);
+    setShowAllRecentActivity(false);
+  }, [parsedUserId]);
+
+  const visiblePurchaseHistory = useMemo(() => {
+    if (!details) {
+      return [];
+    }
+
+    return showAllPurchaseHistory
+      ? details.purchase_history
+      : details.purchase_history.slice(0, HISTORY_PREVIEW_LIMIT);
+  }, [details, showAllPurchaseHistory]);
+
+  const visibleLicenses = useMemo(() => {
+    if (!details) {
+      return [];
+    }
+
+    return showAllLicenses
+      ? details.licenses
+      : details.licenses.slice(0, HISTORY_PREVIEW_LIMIT);
+  }, [details, showAllLicenses]);
+
+  const visibleDownloadHistory = useMemo(() => {
+    if (!details) {
+      return [];
+    }
+
+    return showAllDownloadHistory
+      ? details.download_history
+      : details.download_history.slice(0, HISTORY_PREVIEW_LIMIT);
+  }, [details, showAllDownloadHistory]);
+
+  const visibleRecentActivity = useMemo(() => {
+    if (!details) {
+      return [];
+    }
+
+    return showAllRecentActivity
+      ? details.recent_activity
+      : details.recent_activity.slice(0, HISTORY_PREVIEW_LIMIT);
+  }, [details, showAllRecentActivity]);
 
   const handleDeactivate = async () => {
     if (!parsedUserId || !details || !details.is_active) {
@@ -436,28 +489,45 @@ const UserDetailsPage = () => {
             {details.purchase_history.length === 0 ? (
               <p style={{ color: "#475569", margin: 0 }}>No purchases found.</p>
             ) : (
-              <div
-                style={{
-                  overflowX: "auto",
-                  border: "1px solid #dbe4f0",
-                  borderRadius: 12,
-                }}
-              >
-                <table className="min-w-full bg-white text-left text-sm">
-                  <thead style={{ background: "#f8fafc", color: "#1f3a6b" }}>
-                    <tr>
-                      <th style={{ padding: "10px 12px" }}>Order</th>
-                      <th style={{ padding: "10px 12px" }}>Package</th>
-                      <th style={{ padding: "10px 12px" }}>Status</th>
-                      <th style={{ padding: "10px 12px" }}>Amount</th>
-                      <th style={{ padding: "10px 12px" }}>Credits</th>
-                      <th style={{ padding: "10px 12px" }}>Remaining</th>
-                      <th style={{ padding: "10px 12px" }}>Purchased At</th>
-                    </tr>
-                  </thead>
-                  <tbody>{details.purchase_history.map(renderPurchaseRow)}</tbody>
-                </table>
-              </div>
+              <>
+                <div
+                  style={{
+                    overflowX: "auto",
+                    border: "1px solid #dbe4f0",
+                    borderRadius: 12,
+                  }}
+                >
+                  <table className="min-w-full bg-white text-left text-sm">
+                    <thead style={{ background: "#f8fafc", color: "#1f3a6b" }}>
+                      <tr>
+                        <th style={{ padding: "10px 12px" }}>Order</th>
+                        <th style={{ padding: "10px 12px" }}>Package</th>
+                        <th style={{ padding: "10px 12px" }}>Status</th>
+                        <th style={{ padding: "10px 12px" }}>Amount</th>
+                        <th style={{ padding: "10px 12px" }}>Credits</th>
+                        <th style={{ padding: "10px 12px" }}>Remaining</th>
+                        <th style={{ padding: "10px 12px" }}>Purchased At</th>
+                      </tr>
+                    </thead>
+                    <tbody>{visiblePurchaseHistory.map(renderPurchaseRow)}</tbody>
+                  </table>
+                </div>
+
+                {details.purchase_history.length > HISTORY_PREVIEW_LIMIT && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setShowAllPurchaseHistory((current) => !current)}
+                    style={{ alignSelf: "flex-start" }}
+                  >
+                    {showAllPurchaseHistory
+                      ? "Show Less Purchase History"
+                      : `Show Remaining Purchase History (${
+                          details.purchase_history.length - HISTORY_PREVIEW_LIMIT
+                        })`}
+                  </button>
+                )}
+              </>
             )}
           </section>
 
@@ -472,9 +542,26 @@ const UserDetailsPage = () => {
             {details.licenses.length === 0 ? (
               <p style={{ color: "#475569", margin: 0 }}>No licenses found.</p>
             ) : (
-              details.licenses.map((license, index) =>
-                renderLicense(license as UserLicenseItem, index),
-              )
+              <>
+                {visibleLicenses.map((license, index) =>
+                  renderLicense(license as UserLicenseItem, index),
+                )}
+
+                {details.licenses.length > HISTORY_PREVIEW_LIMIT && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setShowAllLicenses((current) => !current)}
+                    style={{ alignSelf: "flex-start" }}
+                  >
+                    {showAllLicenses
+                      ? "Show Less Licenses"
+                      : `Show Remaining Licenses (${
+                          details.licenses.length - HISTORY_PREVIEW_LIMIT
+                        })`}
+                  </button>
+                )}
+              </>
             )}
           </section>
 
@@ -489,25 +576,42 @@ const UserDetailsPage = () => {
             {details.download_history.length === 0 ? (
               <p style={{ color: "#475569", margin: 0 }}>No lead downloads recorded.</p>
             ) : (
-              <div
-                style={{
-                  overflowX: "auto",
-                  border: "1px solid #dbe4f0",
-                  borderRadius: 12,
-                }}
-              >
-                <table className="min-w-full bg-white text-left text-sm">
-                  <thead style={{ background: "#f8fafc", color: "#1f3a6b" }}>
-                    <tr>
-                      <th style={{ padding: "10px 12px" }}>Lead ID</th>
-                      <th style={{ padding: "10px 12px" }}>State</th>
-                      <th style={{ padding: "10px 12px" }}>Downloaded At</th>
-                      <th style={{ padding: "10px 12px" }}>Batch ID</th>
-                    </tr>
-                  </thead>
-                  <tbody>{details.download_history.map(renderDownloadRow)}</tbody>
-                </table>
-              </div>
+              <>
+                <div
+                  style={{
+                    overflowX: "auto",
+                    border: "1px solid #dbe4f0",
+                    borderRadius: 12,
+                  }}
+                >
+                  <table className="min-w-full bg-white text-left text-sm">
+                    <thead style={{ background: "#f8fafc", color: "#1f3a6b" }}>
+                      <tr>
+                        <th style={{ padding: "10px 12px" }}>Lead ID</th>
+                        <th style={{ padding: "10px 12px" }}>State</th>
+                        <th style={{ padding: "10px 12px" }}>Downloaded At</th>
+                        <th style={{ padding: "10px 12px" }}>Batch ID</th>
+                      </tr>
+                    </thead>
+                    <tbody>{visibleDownloadHistory.map(renderDownloadRow)}</tbody>
+                  </table>
+                </div>
+
+                {details.download_history.length > HISTORY_PREVIEW_LIMIT && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setShowAllDownloadHistory((current) => !current)}
+                    style={{ alignSelf: "flex-start" }}
+                  >
+                    {showAllDownloadHistory
+                      ? "Show Less Download History"
+                      : `Show Remaining Download History (${
+                          details.download_history.length - HISTORY_PREVIEW_LIMIT
+                        })`}
+                  </button>
+                )}
+              </>
             )}
           </section>
 
@@ -522,7 +626,24 @@ const UserDetailsPage = () => {
             {details.recent_activity.length === 0 ? (
               <p style={{ color: "#475569", margin: 0 }}>No recent activity found.</p>
             ) : (
-              details.recent_activity.map(renderActivityRow)
+              <>
+                {visibleRecentActivity.map(renderActivityRow)}
+
+                {details.recent_activity.length > HISTORY_PREVIEW_LIMIT && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setShowAllRecentActivity((current) => !current)}
+                    style={{ alignSelf: "flex-start" }}
+                  >
+                    {showAllRecentActivity
+                      ? "Show Less Recent Activity"
+                      : `Show Remaining Recent Activity (${
+                          details.recent_activity.length - HISTORY_PREVIEW_LIMIT
+                        })`}
+                  </button>
+                )}
+              </>
             )}
           </section>
         </>
