@@ -761,6 +761,7 @@ def test_admin_user_details_200_and_404(
     assert payload["purchase_history"][0]["status"] == "completed"
     assert len(payload["download_history"]) == 1
     assert len(payload["recent_activity"]) == 1
+    assert payload["recent_activity"][0]["actor_user_id"] == advisor.id
 
     not_found = client.get("/api/v1/admin/users/999999", headers=admin_headers)
     assert not_found.status_code == 404
