@@ -9,6 +9,7 @@ from uuid import uuid4
 from fastapi import HTTPException, UploadFile
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func
+from sqlalchemy.exc import IntegrityError
 
 from app.models.license import License
 from app.models.license_resubmission import LicenseResubmission
@@ -40,6 +41,44 @@ class LicenseService:
     @staticmethod
     def _upload_root() -> Path:
         return settings.UPLOAD_ROOT
+
+    @staticmethod
+    def _is_unique_constraint_error(
+        exc: IntegrityError,
+        *,
+        constraint_names: tuple[str, ...] = (),
+        required_terms: tuple[str, ...] = (),
+    ) -> bool:
+        details = " ".join(
+            [
+                str(exc).lower(),
+                str(getattr(exc, "orig", "")).lower(),
+                str(getattr(exc, "statement", "")).lower(),
+                str(getattr(exc, "params", "")).lower(),
+            ]
+        )
+        has_duplicate_marker = any(
+            marker in details
+            for marker in (
+                "duplicate",
+                "duplicate entry",
+                "duplicate key value",
+                "unique constraint",
+                "unique constraint failed",
+            )
+        )
+        if not has_duplicate_marker:
+            return False
+
+        has_named_constraint = any(name.lower() in details for name in constraint_names)
+        has_required_terms = bool(required_terms) and all(term.lower() in details for term in required_terms)
+        if constraint_names and required_terms:
+            return has_named_constraint or has_required_terms
+        if constraint_names:
+            return has_named_constraint
+        if required_terms:
+            return has_required_terms
+        return False
 
     @staticmethod
     def _resolve_stored_document_path(document_path: str) -> Path:
@@ -214,14 +253,13 @@ class LicenseService:
         """
         LicenseService._validate_file(file)
 
-        # Check for duplicate pending license for same user + state
+        # Check for any existing license for same advisor + state.
         existing = (
             db.query(License)
             .filter(
                 and_(
                     License.user_id == user_id,
                     License.state == data.state.upper(),
-                    License.verification_status == "pending",
                 )
             )
             .first()
@@ -230,7 +268,7 @@ class LicenseService:
         if existing:
             raise HTTPException(
                 status_code=400,
-                detail=f"You already have a pending license for state {data.state}",
+                detail=f"You already have a license for state {data.state.upper()}",
             )
 
         # Check for duplicate license_number + state (across all users)
@@ -270,7 +308,35 @@ class LicenseService:
             
             logger.info(f"License submitted: {license.id}")
             return license
-        
+        except IntegrityError as exc:
+            db.rollback()
+            try:
+                if document_path:
+                    LicenseService._delete_document_if_safe(document_path)
+            except Exception as cleanup_error:
+                logger.error(f"Failed to cleanup document after error: {cleanup_error}")
+
+            if LicenseService._is_unique_constraint_error(
+                exc,
+                constraint_names=("uq_licenses_user_state",),
+                required_terms=("licenses.user_id", "licenses.state"),
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"You already have a license for state {data.state.upper()}",
+                ) from exc
+            if LicenseService._is_unique_constraint_error(
+                exc,
+                constraint_names=("uq_licenses_state_number",),
+                required_terms=("licenses.state", "licenses.license_number"),
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"License {data.license_number} for state {data.state.upper()} already exists",
+                ) from exc
+
+            logger.error(f"Failed to create license due to integrity error: {exc}")
+            raise HTTPException(status_code=500, detail="Failed to create license") from exc
         except Exception as e:
             db.rollback()
             # Try to delete uploaded file if database operation failed
