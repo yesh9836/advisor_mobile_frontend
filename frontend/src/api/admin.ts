@@ -13,6 +13,7 @@ import type {
   DashboardStats,
   DeactivateUserRequest,
   ImportStats,
+  LeadBulkImportSchema,
   LeadInventoryFilters,
   LeadBulkImportResult,
   LicenseStatusSummaryItem,
@@ -369,6 +370,18 @@ const leadBulkImportResultSchema: z.ZodType<LeadBulkImportResult> = z
   })
   .passthrough();
 
+const leadBulkImportSchemaSchema: z.ZodType<LeadBulkImportSchema> = z
+  .object({
+    headers: z.array(z.string()),
+    required_values: z.array(z.string()),
+    system_fields: z
+      .object({
+        source: z.string(),
+      })
+      .passthrough(),
+  })
+  .passthrough();
+
 const deactivateAdminUserResponseSchema = z
   .object({
     detail: z.string(),
@@ -582,6 +595,15 @@ export const bulkImportLeadsAsAdmin = async (
     leadBulkImportResultSchema,
     response.data,
     "/leads/bulk",
+  );
+};
+
+export const getLeadBulkImportSchemaAsAdmin = async (): Promise<LeadBulkImportSchema> => {
+  const response = await apiClient.get<LeadBulkImportSchema>("/leads/bulk/schema");
+  return parseApiContract(
+    leadBulkImportSchemaSchema,
+    response.data,
+    "/leads/bulk/schema",
   );
 };
 
