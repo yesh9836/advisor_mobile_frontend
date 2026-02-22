@@ -122,6 +122,88 @@ describe("UserDetailsPage", () => {
     confirmSpy.mockRestore();
   });
 
+  it("shows first 5 records per history section and reveals remaining records", async () => {
+    getUser.mockResolvedValueOnce({
+      id: 7,
+      name: "Detail Advisor",
+      email: "detail@example.com",
+      role: "advisor",
+      is_active: true,
+      created_at: "2026-02-10T12:00:00Z",
+      deactivated_at: null,
+      deactivated_by: null,
+      licenses: Array.from({ length: 12 }, (_, index) => ({
+        id: 2000 + index,
+        state: "CA",
+        license_number: `LIC-${1000 + index}`,
+        license_type: "resident",
+        verification_status: "verified",
+        created_at: `2026-02-${String(index + 1).padStart(2, "0")}T00:00:00Z`,
+        verified_at: `2026-02-${String(index + 1).padStart(2, "0")}T12:00:00Z`,
+        rejection_reason: null,
+      })),
+      credit_summary: {
+        total_credits: 20,
+        remaining_credits: 12,
+        completed_purchases: 2,
+      },
+      purchase_history: Array.from({ length: 12 }, (_, index) => ({
+        id: 3000 + index,
+        order_reference: `order-${1000 + index}`,
+        status: "completed",
+        package_name: "Starter Pack",
+        amount_cents: 15000,
+        currency: "USD",
+        credits_total: 10,
+        credits_remaining: 4,
+        purchased_at: `2026-02-${String(index + 1).padStart(2, "0")}T00:00:00Z`,
+      })),
+      download_history: Array.from({ length: 12 }, (_, index) => ({
+        lead_id: 1000 + index,
+        state_code: "CA",
+        downloaded_at: `2026-02-${String(index + 1).padStart(2, "0")}T00:00:00Z`,
+        csv_batch_id: `batch-${index + 1}`,
+      })),
+      recent_activity: Array.from({ length: 12 }, (_, index) => ({
+        id: 900 + index,
+        actor_user_id: 7,
+        action: `activity_${index + 1}`,
+        entity_type: "Lead",
+        entity_id: 5000 + index,
+        meta_data: null,
+        ip_address: null,
+        created_at: `2026-02-${String(index + 1).padStart(2, "0")}T00:00:00Z`,
+      })),
+    });
+
+    renderPage();
+
+    await screen.findByText("Detail Advisor");
+
+    expect(screen.getByText("order-1000")).toBeInTheDocument();
+    expect(screen.queryByText("order-1011")).not.toBeInTheDocument();
+    expect(screen.getByText("CA • LIC-1000")).toBeInTheDocument();
+    expect(screen.queryByText("CA • LIC-1011")).not.toBeInTheDocument();
+    expect(screen.getByText("1000")).toBeInTheDocument();
+    expect(screen.queryByText("1011")).not.toBeInTheDocument();
+    expect(screen.getByText("Entity: Lead #5000")).toBeInTheDocument();
+    expect(screen.queryByText("Entity: Lead #5011")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show Remaining Purchase History (7)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show Remaining Licenses (7)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show Remaining Download History (7)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show Remaining Recent Activity (7)" }));
+
+    expect(screen.getByText("order-1011")).toBeInTheDocument();
+    expect(screen.getByText("CA • LIC-1011")).toBeInTheDocument();
+    expect(screen.getByText("1011")).toBeInTheDocument();
+    expect(screen.getByText("Entity: Lead #5011")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show Less Purchase History" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show Less Licenses" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show Less Download History" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show Less Recent Activity" })).toBeInTheDocument();
+  });
+
   it("shows invalid id state for malformed route params", async () => {
     renderPage("/admin/users/invalid");
 
