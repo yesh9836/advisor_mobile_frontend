@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { bulkImportLeadsAsAdmin } from "@/api/admin";
+import {
+  bulkImportLeadsAsAdmin,
+  getLeadBulkImportSchemaAsAdmin,
+} from "@/api/admin";
 import { toImportSummary } from "@/components/admin/import-summary";
-import type { LeadBulkImportResult } from "@/types/admin";
+import type { LeadBulkImportResult, LeadBulkImportSchema } from "@/types/admin";
 import { getApiErrorMessage } from "@/utils/api-error";
 
 interface ImportModalProps {
@@ -18,6 +21,9 @@ const ImportModal = ({ isOpen, onClose, onImportSuccess }: ImportModalProps) => 
   const [progress, setProgress] = useState(0);
   const [result, setResult] = useState<LeadBulkImportResult | null>(null);
   const [progressLabel, setProgressLabel] = useState("Waiting for file upload.");
+  const [importSchema, setImportSchema] = useState<LeadBulkImportSchema | null>(null);
+  const [schemaLoading, setSchemaLoading] = useState(false);
+  const [schemaError, setSchemaError] = useState<string | null>(null);
   const progressTimerRef = useRef<number | null>(null);
 
   const stopProgressTimer = () => {
@@ -36,7 +42,44 @@ const ImportModal = ({ isOpen, onClose, onImportSuccess }: ImportModalProps) => 
       setProgress(0);
       setResult(null);
       setProgressLabel("Waiting for file upload.");
+      setSchemaError(null);
     }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    let isMounted = true;
+    setSchemaLoading(true);
+    setImportSchema(null);
+    setSchemaError(null);
+
+    void getLeadBulkImportSchemaAsAdmin()
+      .then((schema) => {
+        if (!isMounted) {
+          return;
+        }
+        setImportSchema(schema);
+      })
+      .catch((schemaLoadError) => {
+        if (!isMounted) {
+          return;
+        }
+        setSchemaError(
+          getApiErrorMessage(schemaLoadError, "Failed to load CSV schema from backend."),
+        );
+      })
+      .finally(() => {
+        if (isMounted) {
+          setSchemaLoading(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, [isOpen]);
 
   useEffect(() => {
@@ -128,7 +171,7 @@ const ImportModal = ({ isOpen, onClose, onImportSuccess }: ImportModalProps) => 
               Run Lead Import
             </h2>
             <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
-              CSV columns: state_code, mobile_phone, first_name, last_name, source
+              CSV schema below is synced from backend validation rules.
             </p>
           </div>
 
@@ -136,6 +179,82 @@ const ImportModal = ({ isOpen, onClose, onImportSuccess }: ImportModalProps) => 
             Close
           </button>
         </div>
+
+        <section className="panel stack" style={{ background: "#f8fafc", gap: 10 }}>
+          <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+            <strong style={{ color: "#0b1b49" }}>CSV Schema</strong>
+            <span style={{ color: "#475569", fontSize: 13 }}>
+              {schemaLoading
+                ? "Syncing..."
+                : importSchema
+                  ? `${importSchema.headers.length} headers`
+                  : "Unavailable"}
+            </span>
+          </div>
+
+          {schemaError && (
+            <p style={{ margin: 0, color: "#9f1239", fontSize: 13 }}>
+              {schemaError}
+            </p>
+          )}
+
+          {importSchema ? (
+            <>
+              <p style={{ margin: 0, color: "#334155", fontSize: 13 }}>
+                Header row must exactly match this order:
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {importSchema.headers.map((column) => (
+                  <code
+                    key={column}
+                    style={{
+                      background: "#e2e8f0",
+                      borderRadius: 6,
+                      padding: "4px 8px",
+                      fontSize: 12,
+                      color: "#0f172a",
+                    }}
+                  >
+                    {column}
+                  </code>
+                ))}
+              </div>
+
+              <p style={{ margin: 0, color: "#334155", fontSize: 13 }}>
+                Required non-empty values per row:
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {importSchema.required_values.map((column) => (
+                  <code
+                    key={column}
+                    style={{
+                      background: "#dbeafe",
+                      borderRadius: 6,
+                      padding: "4px 8px",
+                      fontSize: 12,
+                      color: "#1e3a8a",
+                    }}
+                  >
+                    {column}
+                  </code>
+                ))}
+              </div>
+
+              <p style={{ margin: 0, color: "#334155", fontSize: 13 }}>
+                Set automatically by system:{" "}
+                <code style={{ background: "#e2e8f0", borderRadius: 6, padding: "2px 6px" }}>
+                  source={importSchema.system_fields.source}
+                </code>
+              </p>
+            </>
+          ) : (
+            !schemaLoading && (
+              <p style={{ margin: 0, color: "#475569", fontSize: 13 }}>
+                Could not load schema preview. Import still enforces backend rules at upload time.
+              </p>
+            )
+          )}
+        </section>
 
         {error && <div className="alert">{error}</div>}
 
