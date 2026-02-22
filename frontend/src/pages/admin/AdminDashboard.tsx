@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { getAuditLogs, getDashboardStats } from "@/api/admin";
@@ -32,6 +32,8 @@ const formatTimestamp = (isoTimestamp: string): string => {
 const formatActionLabel = (value: string): string =>
   value.replace(/_/g, " ").trim().toUpperCase();
 
+const ACTIVITY_PREVIEW_LIMIT = 5;
+
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -39,6 +41,7 @@ const AdminDashboard = () => {
   const [statsError, setStatsError] = useState<string | null>(null);
 
   const [recentActivity, setRecentActivity] = useState<AuditLog[]>([]);
+  const [showAllRecentActivity, setShowAllRecentActivity] = useState(false);
   const [activityLoading, setActivityLoading] = useState(true);
   const [activityError, setActivityError] = useState<string | null>(null);
 
@@ -53,7 +56,7 @@ const AdminDashboard = () => {
 
       const [statsResult, activityResult] = await Promise.allSettled([
         getDashboardStats(),
-        getAuditLogs({}, 1, 6),
+        getAuditLogs({}, 1, 20),
       ]);
 
       if (cancelled) return;
@@ -73,8 +76,10 @@ const AdminDashboard = () => {
 
       if (activityResult.status === "fulfilled") {
         setRecentActivity(activityResult.value.items);
+        setShowAllRecentActivity(false);
       } else {
         setRecentActivity([]);
+        setShowAllRecentActivity(false);
         setActivityError(
           getApiErrorMessage(
             activityResult.reason,
@@ -91,6 +96,12 @@ const AdminDashboard = () => {
       cancelled = true;
     };
   }, []);
+
+  const visibleRecentActivity = useMemo(() => {
+    return showAllRecentActivity
+      ? recentActivity
+      : recentActivity.slice(0, ACTIVITY_PREVIEW_LIMIT);
+  }, [recentActivity, showAllRecentActivity]);
 
   return (
     <div className="page">
@@ -254,7 +265,7 @@ const AdminDashboard = () => {
 
         {!activityLoading && recentActivity.length > 0 && (
           <div className="stack">
-            {recentActivity.map((entry) => (
+            {visibleRecentActivity.map((entry) => (
               <section
                 key={entry.id}
                 className="panel"
@@ -275,6 +286,21 @@ const AdminDashboard = () => {
                 </p>
               </section>
             ))}
+
+            {recentActivity.length > ACTIVITY_PREVIEW_LIMIT && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ alignSelf: "flex-start" }}
+                onClick={() => setShowAllRecentActivity((current) => !current)}
+              >
+                {showAllRecentActivity
+                  ? "Show Less Recent Activity"
+                  : `Show Remaining Recent Activity (${
+                      recentActivity.length - ACTIVITY_PREVIEW_LIMIT
+                    })`}
+              </button>
+            )}
           </div>
         )}
       </section>
