@@ -18,7 +18,7 @@ from app.services.audit_service import AuditService
 from app.services.delivery_settings_service import DeliverySettingsService
 from app.services.metrics_service import MetricsService
 from app.services.notification_service import NotificationService
-from app.utils.csv_generator import generate_leads_csv_stream
+from app.utils.csv_generator import LEAD_CSV_REQUIRED_VALUE_FIELDS, generate_leads_csv_stream
 
 logger = logging.getLogger(__name__)
 
@@ -1179,9 +1179,9 @@ class LeadService:
             state_code = (row.get("state_code") or "").strip().upper()
             mobile_phone = (row.get("mobile_phone") or "").strip()
 
-            if not state_code:
+            if not state_code and "state_code" in LEAD_CSV_REQUIRED_VALUE_FIELDS:
                 row_errors.append("Missing state_code")
-            if not mobile_phone:
+            if not mobile_phone and "mobile_phone" in LEAD_CSV_REQUIRED_VALUE_FIELDS:
                 row_errors.append("Missing mobile_phone")
 
             if state_code and (len(state_code) != 2 or state_code not in US_STATE_CODES):
