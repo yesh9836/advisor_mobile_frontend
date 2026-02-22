@@ -35,7 +35,8 @@ class License(Base):
     __tablename__ = "licenses"
 
     __table_args__ = (
-        UniqueConstraint('state', 'license_number', name='uq_licenses_state_number'),
+        UniqueConstraint("state", "license_number", name="uq_licenses_state_number"),
+        UniqueConstraint("user_id", "state", name="uq_licenses_user_state"),
     )
 
     # Primary key
