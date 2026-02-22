@@ -11,7 +11,7 @@ from app.models.user import User
 from app.schemas.lead import LeadCreate, LeadDashboardSummaryResponse, LeadListResponse, LeadOutcomeResponse, LeadOutcomeUpdateRequest, LeadResponse 
 from app.services.audit_service import AuditService
 from app.services.lead_service import LeadService
-from app.utils.csv_generator import parse_leads_csv
+from app.utils.csv_generator import LEAD_CSV_HEADERS, LEAD_CSV_REQUIRED_VALUE_FIELDS, parse_leads_csv
 
 logger = logging.getLogger(__name__)
 
@@ -177,3 +177,20 @@ def bulk_import_leads(
     )
 
     return result
+
+
+@router.get(
+    "/bulk/schema",
+    summary="Get lead bulk import CSV schema (admin only)",
+)
+def get_bulk_import_schema(
+    current_admin: User = Depends(require_admin),
+) -> Dict[str, object]:
+    _ = current_admin
+    return {
+        "headers": LEAD_CSV_HEADERS,
+        "required_values": LEAD_CSV_REQUIRED_VALUE_FIELDS,
+        "system_fields": {
+            "source": "csv_import",
+        },
+    }
