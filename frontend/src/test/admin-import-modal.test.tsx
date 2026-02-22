@@ -4,9 +4,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import ImportModal from "@/components/admin/ImportModal";
 
 const bulkImportLeadsAsAdmin = vi.fn();
+const getLeadBulkImportSchemaAsAdmin = vi.fn();
 
 vi.mock("@/api/admin", () => ({
   bulkImportLeadsAsAdmin: (...args: unknown[]) => bulkImportLeadsAsAdmin(...args),
+  getLeadBulkImportSchemaAsAdmin: (...args: unknown[]) =>
+    getLeadBulkImportSchemaAsAdmin(...args),
 }));
 
 const setup = () =>
@@ -29,12 +32,21 @@ const selectFile = (file: File) => {
 describe("ImportModal", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    getLeadBulkImportSchemaAsAdmin.mockResolvedValue({
+      headers: ["state_code", "zip_code", "mobile_phone"],
+      required_values: ["state_code", "mobile_phone"],
+      system_fields: {
+        source: "csv_import",
+      },
+    });
   });
 
   it("renders idle state before a file is selected", async () => {
     setup();
 
     expect(screen.getByText("Upload CSV file")).toBeInTheDocument();
+    expect(await screen.findByText("Header row must exactly match this order:")).toBeInTheDocument();
+    expect(screen.getAllByText("state_code").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Run Import" })).toBeDisabled();
   });
 

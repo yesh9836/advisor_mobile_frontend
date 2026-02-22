@@ -15,6 +15,7 @@ import {
   getAdminUsers,
   getAuditLogs,
   getDashboardStats,
+  getLeadBulkImportSchemaAsAdmin,
   getLeadInventory,
   getLicenseStatusSummary,
   getOrders,
@@ -388,6 +389,18 @@ describe("admin API contract", () => {
         },
       },
     );
+  });
+
+  it("getLeadBulkImportSchemaAsAdmin fetches backend import schema", async () => {
+    const payload = {
+      headers: ["state_code", "zip_code", "mobile_phone"],
+      required_values: ["state_code", "mobile_phone"],
+      system_fields: { source: "csv_import" },
+    };
+    mockedApiClient.get.mockResolvedValueOnce({ data: payload });
+
+    await expect(getLeadBulkImportSchemaAsAdmin()).resolves.toEqual(payload);
+    expect(mockedApiClient.get).toHaveBeenCalledWith("/leads/bulk/schema");
   });
 
   it("license approval calls keep existing endpoint contracts", async () => {
