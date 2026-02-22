@@ -150,6 +150,7 @@ class UserDownloadHistoryItem(BaseModel):
 
 class UserRecentActivityItem(BaseModel):
     id: int
+    actor_user_id: int
     action: str
     entity_type: str
     entity_id: Optional[int] = None
