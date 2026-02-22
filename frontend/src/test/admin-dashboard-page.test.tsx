@@ -53,7 +53,7 @@ describe("AdminDashboard", () => {
       ],
       total: 1,
       page: 1,
-      size: 6,
+      size: 20,
     });
   });
 
@@ -66,7 +66,39 @@ describe("AdminDashboard", () => {
 
     expect(await screen.findByText("10")).toBeInTheDocument();
     expect(screen.getByText("LEAD BULK IMPORT")).toBeInTheDocument();
-    expect(getAuditLogs).toHaveBeenCalledWith({}, 1, 6);
+    expect(getAuditLogs).toHaveBeenCalledWith({}, 1, 20);
+  });
+
+  it("shows first 5 recent activity entries and reveals remaining", async () => {
+    getAuditLogs.mockResolvedValueOnce({
+      items: Array.from({ length: 7 }, (_, index) => ({
+        id: index + 1,
+        actor_user_id: 8,
+        action: `activity_${index + 1}`,
+        entity_type: "LeadImport",
+        entity_id: 100 + index,
+        meta_data: null,
+        ip_address: null,
+        created_at: `2026-02-${String(index + 1).padStart(2, "0")}T12:00:00Z`,
+      })),
+      total: 7,
+      page: 1,
+      size: 20,
+    });
+
+    render(
+      <MemoryRouter>
+        <AdminDashboard />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("ACTIVITY 1")).toBeInTheDocument();
+    expect(screen.queryByText("ACTIVITY 7")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show Remaining Recent Activity (2)" }));
+
+    expect(screen.getByText("ACTIVITY 7")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show Less Recent Activity" })).toBeInTheDocument();
   });
 
   it("shows loading state before data resolves", async () => {
@@ -88,7 +120,7 @@ describe("AdminDashboard", () => {
       items: [],
       total: 0,
       page: 1,
-      size: 6,
+      size: 20,
     });
 
     render(
