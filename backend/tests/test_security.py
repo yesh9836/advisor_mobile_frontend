@@ -20,6 +20,7 @@ from app.db.timezone import utcnow
 from app.main import _resolve_openapi_docs_config
 from app.models.notification import NotificationOutbox, NotificationOutboxWorkerHeartbeat
 from app.models.purchase import StripeWebhookInbox, StripeWebhookWorkerHeartbeat
+from app.utils.csv_generator import LEAD_CSV_HEADERS, LEAD_CSV_REQUIRED_VALUE_FIELDS
 
 
 @pytest.fixture(autouse=True)
@@ -698,3 +699,37 @@ def test_bulk_import_rejects_non_csv_upload(client, user_factory, auth_headers):
     )
     assert response.status_code == 400
     assert "Expected .csv file" in response.json()["detail"]
+
+
+@pytest.mark.integration
+def test_bulk_import_schema_requires_admin(client, user_factory, auth_headers):
+    advisor = user_factory(
+        role="advisor",
+        password="AdvisorSchema123!",
+        email="advisor.bulk.schema@example.com",
+        name="Bulk Schema Advisor",
+    )
+    advisor_headers = auth_headers(advisor.email, "AdvisorSchema123!")
+
+    response = client.get("/api/v1/leads/bulk/schema", headers=advisor_headers)
+
+    assert response.status_code == 403
+
+
+@pytest.mark.integration
+def test_bulk_import_schema_returns_backend_truth(client, user_factory, auth_headers):
+    admin = user_factory(
+        role="admin",
+        password="AdminSchema123!",
+        email="admin.bulk.schema@example.com",
+        name="Bulk Schema Admin",
+    )
+    admin_headers = auth_headers(admin.email, "AdminSchema123!")
+
+    response = client.get("/api/v1/leads/bulk/schema", headers=admin_headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["headers"] == LEAD_CSV_HEADERS
+    assert payload["required_values"] == LEAD_CSV_REQUIRED_VALUE_FIELDS
+    assert payload["system_fields"] == {"source": "csv_import"}
