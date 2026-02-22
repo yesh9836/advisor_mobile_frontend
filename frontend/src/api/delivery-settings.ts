@@ -17,14 +17,13 @@ export interface DeliverySettingsUpdatePayload {
 }
 
 const deliverySettingsResponseSchema: z.ZodType<DeliverySettingsResponse> = z
-  .object({
+  .looseObject({
     email_alerts_enabled: z.boolean(),
     sms_alerts_enabled: z.boolean(),
     version: z.number(),
     updated_at: z.string(),
     warnings: z.array(z.string()),
-  })
-  .passthrough();
+  });
 
 export const getMyDeliverySettings =
   async (): Promise<DeliverySettingsResponse> => {

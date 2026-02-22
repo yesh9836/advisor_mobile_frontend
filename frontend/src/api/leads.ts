@@ -14,7 +14,7 @@ const nullableString = z.string().nullable();
 const nullableStringArray = z.array(z.string()).nullable();
 
 export const leadSchema: z.ZodType<Lead> = z
-  .object({
+  .looseObject({
     id: z.number(),
     source: z.string().nullable(),
     state_code: z.string(),
@@ -51,20 +51,18 @@ export const leadSchema: z.ZodType<Lead> = z
     outcome_updated_at: z.string().nullable().optional(),
     is_downloaded: z.boolean().optional(),
     downloaded_at: z.string().nullable().optional(),
-  })
-  .passthrough();
+  });
 
 const paginatedLeadsSchema: z.ZodType<PaginatedLeads> = z
-  .object({
+  .looseObject({
     items: z.array(leadSchema),
     total: z.number(),
     page: z.number(),
     size: z.number(),
-  })
-  .passthrough();
+  });
 
 const leadOutcomeSchema: z.ZodType<LeadOutcome> = z
-  .object({
+  .looseObject({
     id: z.number(),
     user_id: z.number(),
     lead_id: z.number(),
@@ -72,26 +70,23 @@ const leadOutcomeSchema: z.ZodType<LeadOutcome> = z
     notes: z.string().nullable(),
     created_at: z.string(),
     updated_at: z.string(),
-  })
-  .passthrough();
+  });
 
 const leadDashboardSummarySchema: z.ZodType<LeadDashboardSummary> = z
-  .object({
+  .looseObject({
     leads_delivered_7_days: z.number(),
     appointments_set_7_days: z.number(),
     cost_per_appointment: z.number(),
     currency: z.string(),
     settings: z
-      .object({
+      .looseObject({
         email_alerts_enabled: z.boolean(),
         sms_alerts_enabled: z.boolean(),
         target_states: z.array(z.string()),
         min_assets: z.string().nullable(),
         daily_download_limit: z.number().nullable(),
-      })
-      .passthrough(),
-  })
-  .passthrough();
+      }),
+  });
 
 const normalizeFilters = (filters: LeadFilters): Record<string, string> => {
   const params: Record<string, string> = {};

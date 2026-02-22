@@ -2,7 +2,7 @@ import type { AdminLicenseDecisionRow, License, LicenseWithUser } from "@/types/
 import { z } from "zod";
 
 const baseLicenseSchema = z
-  .object({
+  .looseObject({
     id: z.number(),
     user_id: z.number(),
     state: z.string(),
@@ -14,8 +14,7 @@ const baseLicenseSchema = z
     verified_by: z.number().nullable(),
     rejection_reason: z.string().nullable(),
     created_at: z.string(),
-  })
-  .passthrough();
+  });
 
 export const licenseSchema: z.ZodType<License> = baseLicenseSchema;
 
@@ -26,7 +25,7 @@ export const licenseWithUserSchema: z.ZodType<LicenseWithUser> =
 });
 
 export const adminLicenseDecisionRowSchema: z.ZodType<AdminLicenseDecisionRow> = z
-  .object({
+  .looseObject({
     license_id: z.number(),
     user_id: z.number(),
     user_name: z.string(),
@@ -40,5 +39,4 @@ export const adminLicenseDecisionRowSchema: z.ZodType<AdminLicenseDecisionRow> =
     review_cycle: z.number(),
     rejection_reason: z.string().nullable(),
     created_at: z.string(),
-  })
-  .passthrough();
+  });

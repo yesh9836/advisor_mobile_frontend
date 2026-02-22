@@ -98,7 +98,7 @@ const parseFilename = (
 };
 
 const dashboardStatsSchema: z.ZodType<DashboardStats> = z
-  .object({
+  .looseObject({
     total_users: z.number(),
     completed_purchases: z.number(),
     advisors_with_credits: z.number(),
@@ -106,11 +106,10 @@ const dashboardStatsSchema: z.ZodType<DashboardStats> = z
     total_leads: z.number(),
     total_revenue_cents: z.number(),
     currency: z.string(),
-  })
-  .passthrough();
+  });
 
 const firstPurchaseOfferConfigSchema: z.ZodType<FirstPurchaseAddonOfferConfig> = z
-  .object({
+  .looseObject({
     id: z.number().nullable(),
     is_enabled: z.boolean(),
     trigger_package_id: z.number().nullable(),
@@ -127,51 +126,45 @@ const firstPurchaseOfferConfigSchema: z.ZodType<FirstPurchaseAddonOfferConfig> =
     ends_at: z.string().nullable(),
     updated_at: z.string().nullable(),
     updated_by: z.number().nullable(),
-  })
-  .passthrough();
+  });
 
 const adminAnalyticsOverviewSchema: z.ZodType<AdminAnalyticsOverview> = z
-  .object({
+  .looseObject({
     monthly_revenue: z.array(
       z
-        .object({
+        .looseObject({
           month: z.string(),
           revenue_cents: z.number(),
-        })
-        .passthrough(),
+        }),
     ),
     plan_breakdown: z.array(
       z
-        .object({
+        .looseObject({
           package_name: z.string(),
           purchases: z.number(),
           credits_granted: z.number(),
           credits_remaining: z.number(),
           revenue_cents: z.number(),
-        })
-        .passthrough(),
+        }),
     ),
     state_distribution: z.array(
       z
-        .object({
+        .looseObject({
           state_code: z.string(),
           lead_count: z.number(),
-        })
-        .passthrough(),
+        }),
     ),
     user_growth: z.array(
       z
-        .object({
+        .looseObject({
           month: z.string(),
           new_users: z.number(),
-        })
-        .passthrough(),
+        }),
     ),
-  })
-  .passthrough();
+  });
 
 const adminUserListItemSchema = z
-  .object({
+  .looseObject({
     id: z.number(),
     name: z.string(),
     email: z.string(),
@@ -181,20 +174,18 @@ const adminUserListItemSchema = z
     license_count: z.number(),
     current_credits: z.number(),
     total_purchases: z.number(),
-  })
-  .passthrough();
+  });
 
 const paginatedUsersSchema: z.ZodType<PaginatedUsers> = z
-  .object({
+  .looseObject({
     items: z.array(adminUserListItemSchema),
     total: z.number(),
     page: z.number(),
     size: z.number(),
-  })
-  .passthrough();
+  });
 
 const adminOrderListItemSchema = z
-  .object({
+  .looseObject({
     id: z.number(),
     order_reference: z.string(),
     advisor_name: z.string(),
@@ -206,20 +197,18 @@ const adminOrderListItemSchema = z
     created_at: z.string(),
     amount_cents: z.number(),
     currency: z.string(),
-  })
-  .passthrough();
+  });
 
 const paginatedOrdersSchema: z.ZodType<PaginatedOrders> = z
-  .object({
+  .looseObject({
     items: z.array(adminOrderListItemSchema),
     total: z.number(),
     page: z.number(),
     size: z.number(),
-  })
-  .passthrough();
+  });
 
 const adminLeadInventoryItemSchema = z
-  .object({
+  .looseObject({
     id: z.number(),
     state_code: z.string(),
     first_name: z.string().nullable(),
@@ -233,29 +222,26 @@ const adminLeadInventoryItemSchema = z
     assigned_advisor_email: z.string().nullable(),
     purchase_id: z.number().nullable(),
     purchase_reference: z.string().nullable(),
-  })
-  .passthrough();
+  });
 
 const paginatedLeadInventorySchema: z.ZodType<PaginatedLeadInventory> = z
-  .object({
+  .looseObject({
     items: z.array(adminLeadInventoryItemSchema),
     total: z.number(),
     page: z.number(),
     size: z.number(),
-  })
-  .passthrough();
+  });
 
 const licenseStatusSummarySchema: z.ZodType<LicenseStatusSummaryItem[]> = z.array(
   z
-    .object({
+    .looseObject({
       status: z.enum(["pending", "verified", "rejected"]),
       count: z.number(),
-    })
-    .passthrough(),
+    }),
 );
 
 const auditLogSchema = z
-  .object({
+  .looseObject({
     id: z.number(),
     actor_user_id: z.number().nullable(),
     action: z.string(),
@@ -264,11 +250,10 @@ const auditLogSchema = z
     meta_data: z.record(z.string(), z.unknown()).nullable(),
     ip_address: z.string().nullable(),
     created_at: z.string(),
-  })
-  .passthrough();
+  });
 
 const userLicenseItemSchema = z
-  .object({
+  .looseObject({
     id: z.number(),
     state: z.string(),
     license_number: z.string(),
@@ -277,19 +262,17 @@ const userLicenseItemSchema = z
     created_at: z.string(),
     verified_at: z.string().nullable(),
     rejection_reason: z.string().nullable(),
-  })
-  .passthrough();
+  });
 
 const userCreditSummarySchema = z
-  .object({
+  .looseObject({
     total_credits: z.number(),
     remaining_credits: z.number(),
     completed_purchases: z.number(),
-  })
-  .passthrough();
+  });
 
 const userPurchaseItemSchema = z
-  .object({
+  .looseObject({
     id: z.number(),
     order_reference: z.string(),
     status: z.string(),
@@ -299,20 +282,18 @@ const userPurchaseItemSchema = z
     credits_total: z.number(),
     credits_remaining: z.number(),
     purchased_at: z.string(),
-  })
-  .passthrough();
+  });
 
 const userDownloadHistoryItemSchema = z
-  .object({
+  .looseObject({
     lead_id: z.number(),
     state_code: z.string(),
     downloaded_at: z.string(),
     csv_batch_id: z.string().nullable(),
-  })
-  .passthrough();
+  });
 
 const userDetailsSchema: z.ZodType<UserDetails> = z
-  .object({
+  .looseObject({
     id: z.number(),
     name: z.string(),
     email: z.string(),
@@ -326,67 +307,58 @@ const userDetailsSchema: z.ZodType<UserDetails> = z
     purchase_history: z.array(userPurchaseItemSchema),
     download_history: z.array(userDownloadHistoryItemSchema),
     recent_activity: z.array(auditLogSchema),
-  })
-  .passthrough();
+  });
 
 const paginatedAuditLogsSchema: z.ZodType<PaginatedAuditLogs> = z
-  .object({
+  .looseObject({
     items: z.array(auditLogSchema),
     total: z.number(),
     page: z.number(),
     size: z.number(),
-  })
-  .passthrough();
+  });
 
 const importStatsSchema: z.ZodType<ImportStats> = z
-  .object({
+  .looseObject({
     scanned: z.number(),
     inserted: z.number(),
     skipped_duplicates: z.number(),
     failed: z.number(),
     errors: z.array(
       z
-        .object({
+        .looseObject({
           row: z.number().optional(),
           error: z.string(),
-        })
-        .passthrough(),
+        }),
     ),
-  })
-  .passthrough();
+  });
 
 const leadBulkImportResultSchema: z.ZodType<LeadBulkImportResult> = z
-  .object({
+  .looseObject({
     success: z.number(),
     failed: z.number(),
     errors: z.array(
       z
-        .object({
+        .looseObject({
           row: z.number(),
           error: z.string(),
-        })
-        .passthrough(),
+        }),
     ),
-  })
-  .passthrough();
+  });
 
 const leadBulkImportSchemaSchema: z.ZodType<LeadBulkImportSchema> = z
-  .object({
+  .looseObject({
     headers: z.array(z.string()),
     required_values: z.array(z.string()),
     system_fields: z
-      .object({
+      .looseObject({
         source: z.string(),
-      })
-      .passthrough(),
-  })
-  .passthrough();
+      }),
+  });
 
 const deactivateAdminUserResponseSchema = z
-  .object({
+  .looseObject({
     detail: z.string(),
-  })
-  .passthrough();
+  });
 
 export const getDashboardStats = async (): Promise<DashboardStats> => {
   const response = await apiClient.get<DashboardStats>("/admin/dashboard");

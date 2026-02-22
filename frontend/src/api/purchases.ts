@@ -20,7 +20,7 @@ const featuresSchema = z.union([
 ]);
 
 const purchasePackageSchema: z.ZodType<PurchasePackage> = z
-  .object({
+  .looseObject({
     id: z.number(),
     name: z.string(),
     price_cents: z.number(),
@@ -30,26 +30,23 @@ const purchasePackageSchema: z.ZodType<PurchasePackage> = z
     features: featuresSchema,
     stripe_price_id: z.string(),
     created_at: z.string(),
-  })
-  .passthrough();
+  });
 
 const purchaseCheckoutSchema: z.ZodType<PurchaseCheckoutSession> = z
-  .object({
+  .looseObject({
     session_id: z.string(),
     url: z.string(),
-  })
-  .passthrough();
+  });
 
 const purchaseBalanceSchema: z.ZodType<PurchaseBalance> = z
-  .object({
+  .looseObject({
     total_credits: z.number(),
     remaining_credits: z.number(),
     completed_purchases: z.number(),
-  })
-  .passthrough();
+  });
 
 const purchaseOrderItemSchema: z.ZodType<PurchaseOrderItem> = z
-  .object({
+  .looseObject({
     id: z.number(),
     order_reference: z.string(),
     package_name: z.string().nullable(),
@@ -71,28 +68,25 @@ const purchaseOrderItemSchema: z.ZodType<PurchaseOrderItem> = z
     purchased_at: z.string(),
     stripe_checkout_session_id: z.string(),
     stripe_payment_intent_id: z.string().nullable(),
-  })
-  .passthrough();
+  });
 
 const paginatedPurchaseOrdersSchema: z.ZodType<PaginatedPurchaseOrders> = z
-  .object({
+  .looseObject({
     items: z.array(purchaseOrderItemSchema),
     total: z.number(),
     page: z.number(),
     size: z.number(),
-  })
-  .passthrough();
+  });
 
 const purchaseHistorySchema: z.ZodType<PurchaseHistory> = z
-  .object({
+  .looseObject({
     items: z.array(purchaseOrderItemSchema),
-  })
-  .passthrough();
+  });
 
 const billingSummarySchema: z.ZodType<BillingSummary> = z
-  .object({
+  .looseObject({
     payment_method: z
-      .object({
+      .looseObject({
         brand: z.string(),
         last4: z.string(),
         exp_month: z.number(),
@@ -101,11 +95,10 @@ const billingSummarySchema: z.ZodType<BillingSummary> = z
         country: z.string().nullable(),
         is_placeholder: z.boolean(),
       })
-      .passthrough()
       .nullable(),
     invoices: z.array(
       z
-        .object({
+        .looseObject({
           stripe_invoice_id: z.string(),
           amount_paid_cents: z.number(),
           currency: z.string(),
@@ -115,14 +108,12 @@ const billingSummarySchema: z.ZodType<BillingSummary> = z
           hosted_invoice_url: z.string().nullable(),
           invoice_pdf: z.string().nullable(),
           description: z.string().nullable(),
-        })
-        .passthrough(),
+        }),
     ),
-  })
-  .passthrough();
+  });
 
 const firstPurchaseOfferSchema: z.ZodType<FirstPurchaseAddonOfferAdvisor> = z
-  .object({
+  .looseObject({
     trigger_package_id: z.number(),
     offer_package_id: z.number(),
     offer_package_name: z.string(),
@@ -132,16 +123,14 @@ const firstPurchaseOfferSchema: z.ZodType<FirstPurchaseAddonOfferAdvisor> = z
     headline: z.string(),
     message: z.string(),
     cta_label: z.string(),
-  })
-  .passthrough();
+  });
 
 const firstPurchaseOfferEligibilitySchema: z.ZodType<FirstPurchaseAddonOfferEligibility> =
   z
-    .object({
+    .looseObject({
       eligible: z.boolean(),
       offer: firstPurchaseOfferSchema.nullable(),
-    })
-    .passthrough();
+    });
 
 export const getPackages = async (): Promise<PurchasePackage[]> => {
   const response = await apiClient.get<PurchasePackage[]>("/purchases/packages");

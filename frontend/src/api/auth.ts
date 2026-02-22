@@ -4,7 +4,7 @@ import type { LoginCredentials, RegisterData, User } from "@/types/auth";
 import { z } from "zod";
 
 const userSchema: z.ZodType<User> = z
-  .object({
+  .looseObject({
     id: z.number(),
     email: z.string(),
     name: z.string(),
@@ -12,14 +12,12 @@ const userSchema: z.ZodType<User> = z
     role: z.string(),
     stripe_customer_id: z.string().nullable(),
     created_at: z.string(),
-  })
-  .passthrough();
+  });
 
 const passwordResetResponseSchema = z
-  .object({
+  .looseObject({
     message: z.string(),
-  })
-  .passthrough();
+  });
 
 export const register = async (data: RegisterData): Promise<User> => {
   const response = await apiClient.post<User>("/auth/register", data);
