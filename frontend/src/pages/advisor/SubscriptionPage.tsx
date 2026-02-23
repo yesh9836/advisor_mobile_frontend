@@ -88,6 +88,9 @@ const buildCheckoutRetryToken = (scope: string): string => {
   return `retry_${scope}_${Date.now().toString(36)}_${uuidEntropy}`;
 };
 
+const CHECKOUT_SYNC_MAX_ATTEMPTS = 6;
+const CHECKOUT_SYNC_RETRY_DELAY_MS = 1500;
+
 const SubscriptionPage = () => {
   const navigate = useNavigate();
   const [plans, setPlans] = useState<DisplayPlan[]>([]);
@@ -204,6 +207,8 @@ const SubscriptionPage = () => {
 
   useEffect(() => {
     let active = true;
+    let syncAttempt = 0;
+    let retryTimerId: ReturnType<typeof setTimeout> | null = null;
 
     const loadCheckoutNotice = async () => {
       if (checkoutState === "cancel") {
@@ -232,6 +237,12 @@ const SubscriptionPage = () => {
         setCheckoutNotice(buildCheckoutFulfillmentNotice(matched ?? null, checkoutSessionId));
         if (!matched) {
           setAddOnOffer(null);
+          if (syncAttempt < CHECKOUT_SYNC_MAX_ATTEMPTS - 1) {
+            syncAttempt += 1;
+            retryTimerId = setTimeout(() => {
+              void loadCheckoutNotice();
+            }, CHECKOUT_SYNC_RETRY_DELAY_MS);
+          }
           return;
         }
 
@@ -246,6 +257,12 @@ const SubscriptionPage = () => {
         if (!active) return;
         setCheckoutNotice(buildCheckoutFulfillmentNotice(null, checkoutSessionId));
         setAddOnOffer(null);
+        if (syncAttempt < CHECKOUT_SYNC_MAX_ATTEMPTS - 1) {
+          syncAttempt += 1;
+          retryTimerId = setTimeout(() => {
+            void loadCheckoutNotice();
+          }, CHECKOUT_SYNC_RETRY_DELAY_MS);
+        }
       }
     };
 
@@ -253,6 +270,9 @@ const SubscriptionPage = () => {
 
     return () => {
       active = false;
+      if (retryTimerId !== null) {
+        clearTimeout(retryTimerId);
+      }
     };
   }, [checkoutSessionId, checkoutState]);
 
