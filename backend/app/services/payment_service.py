@@ -57,6 +57,31 @@ class PaymentService:
             )
         return cleaned
 
+    @staticmethod
+    def _stripe_http_client_candidates() -> list[tuple[str, object]]:
+        candidates: list[tuple[str, object]] = []
+        seen_ids: set[int] = set()
+        namespaces = (
+            stripe,
+            getattr(stripe, "http_client", None),
+            getattr(stripe, "_http_client", None),
+        )
+
+        for namespace in namespaces:
+            if namespace is None:
+                continue
+            for class_name in ("RequestsClient", "HTTPXClient"):
+                client_cls = getattr(namespace, class_name, None)
+                if client_cls is None:
+                    continue
+                identity = id(client_cls)
+                if identity in seen_ids:
+                    continue
+                seen_ids.add(identity)
+                candidates.append((class_name, client_cls))
+
+        return candidates
+
     @classmethod
     def _init_stripe(cls) -> None:
         """Initialize Stripe client with API key and version."""
@@ -75,11 +100,22 @@ class PaymentService:
         stripe.max_network_retries = max(int(settings.STRIPE_MAX_NETWORK_RETRIES or 0), 0)
 
         timeout_seconds = max(float(settings.STRIPE_REQUEST_TIMEOUT_SECONDS or 0), 1.0)
-        requests_client = getattr(getattr(stripe, "http_client", None), "RequestsClient", None)
-        if requests_client is not None:
-            stripe.default_http_client = requests_client(timeout=timeout_seconds)
-        else:
-            logger.warning("Stripe RequestsClient unavailable; timeout policy not applied")
+        timeout_applied = False
+        for client_name, client_cls in cls._stripe_http_client_candidates():
+            try:
+                stripe.default_http_client = client_cls(timeout=timeout_seconds)
+                timeout_applied = True
+                logger.info(
+                    "Stripe timeout policy applied via %s(timeout=%s)",
+                    client_name,
+                    timeout_seconds,
+                )
+                break
+            except Exception as exc:  # pragma: no cover - defensive across Stripe SDK versions
+                logger.debug("Stripe %s unavailable for timeout policy: %s", client_name, exc)
+
+        if not timeout_applied:
+            logger.warning("Stripe timeout policy not applied; using Stripe SDK default HTTP client")
         cls._initialized = True
         logger.info("Stripe client initialized")
 
