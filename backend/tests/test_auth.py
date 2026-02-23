@@ -67,6 +67,32 @@ def test_register_login_and_me_roundtrip(client):
 
 
 @pytest.mark.integration
+def test_register_normalizes_email_and_rejects_case_variant_duplicate(client):
+    first_payload = {
+        "email": " Mixed.Case+Advisor@Example.COM ",
+        "password": "StrongPass123!",
+        "name": "Mixed Case Advisor",
+        "phone": "555-1112",
+    }
+
+    first = client.post("/api/v1/auth/register", json=first_payload)
+    assert first.status_code == 201, first.text
+    assert first.json()["email"] == "mixed.case+advisor@example.com"
+
+    duplicate = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "mixed.case+advisor@example.com",
+            "password": "StrongPass123!",
+            "name": "Duplicate Mixed Case Advisor",
+            "phone": "555-1113",
+        },
+    )
+    assert duplicate.status_code == 400
+    assert duplicate.json()["detail"] == "Email already registered"
+
+
+@pytest.mark.integration
 def test_register_duplicate_email_is_rejected(client):
     payload = {
         "email": "dupe@example.com",
@@ -110,6 +136,28 @@ def test_register_duplicate_email_integrity_race_is_mapped_to_400(db, monkeypatc
 
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == "Email already registered"
+
+
+@pytest.mark.integration
+def test_login_is_case_insensitive_and_canonicalizes_legacy_mixed_case_email(
+    client,
+    db,
+    user_factory,
+):
+    user = user_factory(
+        email="Legacy.MixedCase@example.com",
+        password="LegacyPass123!",
+        name="Legacy Mixed Case",
+    )
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": " legacy.mixedcase@EXAMPLE.com ", "password": "LegacyPass123!"},
+    )
+    assert login.status_code == 204, login.text
+
+    db.refresh(user)
+    assert user.email == "legacy.mixedcase@example.com"
 
 
 @pytest.mark.integration
@@ -761,6 +809,57 @@ def test_password_reset_request_is_rate_limited_per_submitted_email_to_three_per
         .count()
     )
     assert queued_reset_emails == 3
+
+
+@pytest.mark.integration
+def test_password_reset_request_lookup_and_rate_limit_are_case_insensitive(
+    client,
+    db,
+):
+    payload = {
+        "email": "reset.canonical@example.com",
+        "password": "ResetCanonical123!",
+        "name": "Reset Canonical",
+        "phone": "555-1819",
+    }
+    register = client.post("/api/v1/auth/register", json=payload)
+    assert register.status_code == 201, register.text
+    user_id = register.json()["id"]
+
+    for requested_email in (
+        "RESET.CANONICAL@example.com",
+        " reset.canonical@EXAMPLE.com ",
+        "Reset.Canonical@example.com",
+    ):
+        response = client.post(
+            "/api/v1/auth/password-reset/request",
+            json={"email": requested_email},
+        )
+        assert response.status_code == 202, response.text
+
+    rate_limited_response = client.post(
+        "/api/v1/auth/password-reset/request",
+        json={"email": "reset.canonical@example.com"},
+    )
+    assert rate_limited_response.status_code == 429, rate_limited_response.text
+    assert rate_limited_response.headers.get("retry-after")
+
+    issued_tokens = (
+        db.query(PasswordResetToken)
+        .filter(PasswordResetToken.user_id == user_id)
+        .count()
+    )
+    assert issued_tokens == 3
+
+    canonical_attempt_hash = AuthService._password_reset_rate_limit_subject_hash(
+        " RESET.CANONICAL@EXAMPLE.COM "
+    )
+    attempts = (
+        db.query(PasswordResetRequestAttempt)
+        .filter(PasswordResetRequestAttempt.subject_hash == canonical_attempt_hash)
+        .count()
+    )
+    assert attempts == 3
 
 
 @pytest.mark.integration

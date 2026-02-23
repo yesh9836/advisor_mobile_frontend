@@ -582,7 +582,7 @@ def test_admin_orders_export_returns_csv_with_dollar_amounts(
         credits_remaining=5,
         stripe_checkout_session_id="cs_orders_export_completed_1",
     )
-    _canceled_purchase = purchase_factory(
+    purchase_factory(
         user_id=advisor.id,
         package_id=pro_plan.id,
         status="canceled",
