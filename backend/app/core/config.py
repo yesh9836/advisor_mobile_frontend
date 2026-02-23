@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     DB_POOL_SIZE: int = 10
     DB_MAX_OVERFLOW: int = 20
     DB_ECHO: bool = False
+    HEALTH_READY_DB_TIMEOUT_SECONDS: float = 2.0
 
     # Security - JWT
     SECRET_KEY: str = "change-this-to-a-secure-random-key-in-production"
@@ -361,6 +362,13 @@ class Settings(BaseSettings):
             raise ValueError(
                 "STRIPE_CHECKOUT_SESSION_EXPIRES_MINUTES must be between 30 and 1440"
             )
+        return value
+
+    @field_validator("HEALTH_READY_DB_TIMEOUT_SECONDS", mode="after")
+    @classmethod
+    def validate_health_ready_db_timeout_seconds(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("HEALTH_READY_DB_TIMEOUT_SECONDS must be greater than 0")
         return value
 
     @field_validator("AUTH_COOKIE_SAMESITE", mode="after")
