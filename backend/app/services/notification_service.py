@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Dict, List, Optional
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -60,6 +61,29 @@ class NotificationService:
     ) -> str:
         purchase_part = int(purchase_id) if purchase_id is not None else 0
         return f"{event_type}:{channel}:u{int(user_id)}:l{int(lead_id)}:p{purchase_part}"
+
+    @staticmethod
+    def _is_duplicate_outbox_idempotency_integrity_error(exc: IntegrityError) -> bool:
+        details = " ".join(
+            [
+                str(exc).lower(),
+                str(getattr(exc, "orig", "")).lower(),
+                str(getattr(exc, "statement", "")).lower(),
+                str(getattr(exc, "params", "")).lower(),
+            ]
+        )
+        has_duplicate_marker = any(
+            marker in details
+            for marker in (
+                "duplicate",
+                "duplicate entry",
+                "duplicate key value",
+                "unique constraint",
+                "unique constraint failed",
+            )
+        )
+        has_idempotency_marker = "idempotency" in details
+        return has_duplicate_marker and has_idempotency_marker
 
     @staticmethod
     def enqueue_lead_delivery_notifications(
@@ -179,20 +203,22 @@ class NotificationService:
         if not pending_rows:
             return {"enqueued_total": 0, "enqueued_email": 0, "enqueued_sms": 0}
 
-        candidate_keys = [row.idempotency_key for row in pending_rows]
-        existing_keys = {
-            row[0]
-            for row in db.query(NotificationOutbox.idempotency_key)
-            .filter(NotificationOutbox.idempotency_key.in_(candidate_keys))
-            .all()
-        }
-
         enqueued_email = 0
         enqueued_sms = 0
         for row in pending_rows:
-            if row.idempotency_key in existing_keys:
-                continue
-            db.add(row)
+            try:
+                # Savepoint keeps parent transaction alive if this row collides concurrently.
+                with db.begin_nested():
+                    db.add(row)
+                    db.flush()
+            except IntegrityError as exc:
+                if NotificationService._is_duplicate_outbox_idempotency_integrity_error(exc):
+                    logger.info(
+                        "Skipping duplicate notification enqueue idempotency_key=%s",
+                        row.idempotency_key,
+                    )
+                    continue
+                raise
             if row.channel == "email":
                 enqueued_email += 1
             elif row.channel == "sms":
