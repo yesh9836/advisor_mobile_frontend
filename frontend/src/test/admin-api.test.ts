@@ -7,6 +7,7 @@ import {
   createLeadAsAdmin,
   deactivateAdminUser,
   deactivateUser,
+  downloadOrdersExport,
   downloadLicenseDocument,
   getAnalyticsOverview,
   getAdminAuditLogs,
@@ -165,6 +166,30 @@ describe("admin API contract", () => {
         size: 20,
         status: "active",
       },
+    });
+  });
+
+  it("downloadOrdersExport fetches blob with normalized optional status and filename", async () => {
+    const blob = new Blob(["order_reference,amount_dollars\ncs_1,100.00\n"], {
+      type: "text/csv",
+    });
+    mockedApiClient.get.mockResolvedValueOnce({
+      data: blob,
+      headers: {
+        "content-disposition": "attachment; filename=admin_orders_20260223_103000.csv",
+      },
+    });
+
+    await expect(downloadOrdersExport("  completed ")).resolves.toEqual({
+      blob,
+      filename: "admin_orders_20260223_103000.csv",
+    });
+
+    expect(mockedApiClient.get).toHaveBeenCalledWith("/admin/orders/export", {
+      params: {
+        status: "completed",
+      },
+      responseType: "blob",
     });
   });
 

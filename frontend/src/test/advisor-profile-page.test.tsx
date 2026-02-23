@@ -92,4 +92,54 @@ describe("ProfilePage purchase fulfillment summary", () => {
       ),
     ).toBeInTheDocument();
   });
+
+  it("shows latest completed purchase even when newest purchase is still pending", async () => {
+    const { getPurchaseHistory } = await import("@/api/purchases");
+    vi.mocked(getPurchaseHistory).mockResolvedValueOnce({
+      items: [
+        {
+          id: 201,
+          order_reference: "cs_profile_201",
+          package_name: "First Purchase Add-on",
+          amount_cents: 1000,
+          currency: "USD",
+          credits_total: 5,
+          entitled_credits_total: 5,
+          credits_remaining: 0,
+          status: "pending",
+          assigned_count: 0,
+          unfulfilled_count: 0,
+          fulfillment_status: "pending",
+          purchased_at: "2026-02-20T00:00:00Z",
+          stripe_checkout_session_id: "cs_profile_201",
+          stripe_payment_intent_id: "pi_profile_201",
+        },
+        {
+          id: 200,
+          order_reference: "cs_profile_200",
+          package_name: "Starter",
+          amount_cents: 20000,
+          currency: "USD",
+          credits_total: 10,
+          entitled_credits_total: 10,
+          credits_remaining: 8,
+          status: "completed",
+          assigned_count: 6,
+          unfulfilled_count: 4,
+          fulfillment_status: "partially_fulfilled",
+          purchased_at: "2026-02-19T00:00:00Z",
+          stripe_checkout_session_id: "cs_profile_200",
+          stripe_payment_intent_id: "pi_profile_200",
+        },
+      ],
+    });
+
+    render(<ProfilePage />);
+
+    expect(
+      await screen.findByText(/Latest completed purchase:/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Starter on/)).toBeInTheDocument();
+    expect(screen.queryByText(/First Purchase Add-on on/)).not.toBeInTheDocument();
+  });
 });
