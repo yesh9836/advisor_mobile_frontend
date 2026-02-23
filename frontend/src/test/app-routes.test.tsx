@@ -83,14 +83,11 @@ describe("AppRoutes advisor page mapping", () => {
 
     expect(await screen.findByRole("heading", { name: "Billing" })).toBeInTheDocument();
     expect(
-      screen.getByText("Invoices, payment methods, and purchase history."),
+      screen.getByText("Invoices and purchase history."),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { name: "Advisor Profile" }),
     ).not.toBeInTheDocument();
     expect(await screen.findByText("No invoices yet.")).toBeInTheDocument();
-    expect(
-      await screen.findByText("No payment method available."),
-    ).toBeInTheDocument();
   });
 });
