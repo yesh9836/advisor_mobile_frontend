@@ -92,6 +92,7 @@ class Settings(BaseSettings):
     STRIPE_API_VERSION: str = "2023-10-16"
     STRIPE_REQUEST_TIMEOUT_SECONDS: float = 30.0
     STRIPE_MAX_NETWORK_RETRIES: int = 2
+    STRIPE_CHECKOUT_SESSION_EXPIRES_MINUTES: int = 30
     STRIPE_WEBHOOK_EXPECT_LIVEMODE: Optional[bool] = None
     STRIPE_WEBHOOK_FAST_ACK_ENABLED: bool = True
     STRIPE_WEBHOOK_INBOX_BATCH_SIZE: int = 100
@@ -350,6 +351,16 @@ class Settings(BaseSettings):
     def validate_non_negative_bounds(cls, value: int) -> int:
         if value < 0:
             raise ValueError("Configuration values must be greater than or equal to 0")
+        return value
+
+    @field_validator("STRIPE_CHECKOUT_SESSION_EXPIRES_MINUTES", mode="after")
+    @classmethod
+    def validate_checkout_session_expiration_minutes(cls, value: int) -> int:
+        # Stripe checkout sessions must expire between 30 minutes and 24 hours.
+        if value < 30 or value > 1440:
+            raise ValueError(
+                "STRIPE_CHECKOUT_SESSION_EXPIRES_MINUTES must be between 30 and 1440"
+            )
         return value
 
     @field_validator("AUTH_COOKIE_SAMESITE", mode="after")
