@@ -28,6 +28,16 @@ const getLeadsMock = vi.mocked(getLeads);
 const getMyDeliverySettingsMock = vi.mocked(getMyDeliverySettings);
 const updateMyDeliverySettingsMock = vi.mocked(updateMyDeliverySettings);
 
+const createDeferred = <T,>() => {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+};
+
 const summaryWithSettings = (emailEnabled: boolean, smsEnabled: boolean) => ({
   leads_delivered_7_days: 0,
   appointments_set_7_days: 0,
@@ -43,7 +53,7 @@ const summaryWithSettings = (emailEnabled: boolean, smsEnabled: boolean) => ({
 });
 
 const renderRoute = (route = "/dashboard") => {
-  render(
+  return render(
     <MemoryRouter initialEntries={[route]}>
       <Routes>
         <Route path="/dashboard" element={<DashboardPage />} />
@@ -208,5 +218,45 @@ describe("Advisor Dashboard delivery settings editor", () => {
     await waitFor(() => {
       expect(screen.queryByLabelText("Email alerts")).not.toBeInTheDocument();
     });
+  });
+
+  it("does not attempt state updates after unmount when initial load resolves late", async () => {
+    const summaryDeferred = createDeferred<ReturnType<typeof summaryWithSettings>>();
+    const leadsDeferred = createDeferred<{
+      items: [];
+      total: number;
+      page: number;
+      size: number;
+    }>();
+    getLeadDashboardSummaryMock.mockReturnValueOnce(summaryDeferred.promise);
+    getLeadsMock.mockReturnValueOnce(leadsDeferred.promise);
+
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const { unmount } = renderRoute();
+    unmount();
+
+    summaryDeferred.resolve(summaryWithSettings(false, false));
+    leadsDeferred.resolve({
+      items: [],
+      total: 0,
+      page: 1,
+      size: 3,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const hasUnmountedSetStateWarning = consoleErrorSpy.mock.calls.some(
+      (args) =>
+        args
+          .map((arg) => String(arg))
+          .join(" ")
+          .includes("state update on an unmounted component"),
+    );
+    expect(hasUnmountedSetStateWarning).toBe(false);
+
+    consoleErrorSpy.mockRestore();
   });
 });
