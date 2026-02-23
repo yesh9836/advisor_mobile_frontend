@@ -295,6 +295,9 @@ const SubscriptionPage = () => {
     let retryTimerId: ReturnType<typeof setTimeout> | null = null;
 
     const loadCheckoutNotice = async () => {
+      if (checkoutState === "success" || checkoutState === "cancel") {
+        clearPersistedCheckoutRetryTokens();
+      }
       if (checkoutState === "cancel") {
         setCheckoutNotice("Checkout canceled. No charge was made.");
         setAddOnOffer(null);
@@ -305,7 +308,6 @@ const SubscriptionPage = () => {
         setAddOnOffer(null);
         return;
       }
-      clearPersistedCheckoutRetryTokens();
 
       if (!checkoutSessionId) {
         setCheckoutNotice(buildCheckoutFulfillmentNotice(null, null));
