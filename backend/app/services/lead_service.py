@@ -340,6 +340,7 @@ class LeadService:
             }
 
         needed = requested_count - len(assigned_lead_ids)
+        needed = min(needed, max(int(purchase.credits_remaining or 0), 0))
         if max_assignments is not None:
             needed = min(needed, max(int(max_assignments), 0))
         if needed <= 0:
@@ -374,6 +375,24 @@ class LeadService:
             )
             assigned_lead_ids.append(int(lead.id))
             newly_assigned_lead_ids.append(int(lead.id))
+
+        consumed_credits = min(
+            len(newly_assigned_lead_ids),
+            max(int(purchase.credits_remaining or 0), 0),
+        )
+        if consumed_credits > 0:
+            for lead_id in newly_assigned_lead_ids[:consumed_credits]:
+                db.add(
+                    LeadCreditLedger(
+                        user_id=purchase.user_id,
+                        purchase_id=purchase.id,
+                        movement_type="lead_consumed",
+                        credits_delta=-1,
+                        note=f"Lead {lead_id} assigned",
+                    )
+                )
+            purchase.credits_remaining = max(int(purchase.credits_remaining or 0) - consumed_credits, 0)
+            db.add(purchase)
 
         if newly_assigned_leads:
             db.flush()
@@ -427,6 +446,7 @@ class LeadService:
             .outerjoin(ownership_counts, ownership_counts.c.purchase_id == LeadPurchase.id)
             .outerjoin(refund_adjustments, refund_adjustments.c.purchase_id == LeadPurchase.id)
             .filter(LeadPurchase.status == "completed")
+            .filter(LeadPurchase.credits_remaining > 0)
             .filter(entitlement_target > 0)
             .filter(func.coalesce(ownership_counts.c.assigned_count, 0) < entitlement_target)
             .order_by(
