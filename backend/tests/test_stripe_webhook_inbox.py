@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -196,19 +196,73 @@ def test_process_inbox_batch_ignores_livemode_mismatch_in_core_processor(
 
 
 @pytest.mark.integration
+def test_reclaim_stale_processing_rows_requeues_or_fails_based_on_attempts(db):
+    now = datetime.now(timezone.utc)
+    requeue_row = StripeWebhookInbox(
+        stripe_event_id="evt_reclaim_pending",
+        event_type="checkout.session.completed",
+        payload=_build_event("evt_reclaim_pending"),
+        status="processing",
+        attempt_count=1,
+        max_attempts=3,
+        next_retry_at=now,
+        locked_at=now - timedelta(minutes=10),
+    )
+    fail_row = StripeWebhookInbox(
+        stripe_event_id="evt_reclaim_failed",
+        event_type="checkout.session.completed",
+        payload=_build_event("evt_reclaim_failed"),
+        status="processing",
+        attempt_count=3,
+        max_attempts=3,
+        next_retry_at=now,
+        locked_at=now - timedelta(minutes=10),
+    )
+    db.add_all([requeue_row, fail_row])
+    db.commit()
+
+    summary = StripeWebhookInboxService.reclaim_stale_processing_rows(
+        db,
+        now=now,
+        stale_lock_seconds=60,
+    )
+    assert summary == {"stale_selected": 2, "reclaimed_pending": 1, "reclaimed_failed": 1}
+
+    db.refresh(requeue_row)
+    db.refresh(fail_row)
+    assert requeue_row.status == "pending"
+    assert requeue_row.locked_at is None
+    assert requeue_row.next_retry_at == now
+    assert requeue_row.last_error == "stale processing lock reclaimed"
+    assert fail_row.status == "failed"
+    assert fail_row.locked_at is None
+    assert fail_row.next_retry_at == now
+    assert fail_row.last_error == "stale processing lock reclaimed"
+
+
+@pytest.mark.integration
 def test_process_stripe_webhook_inbox_script_records_worker_heartbeat(session_factory, monkeypatch):
     from scripts import process_stripe_webhook_inbox as worker_script
 
+    call_order = []
     monkeypatch.setattr(worker_script, "SessionLocal", session_factory)
     monkeypatch.setattr(
         worker_script.StripeWebhookInboxService,
+        "reclaim_stale_processing_rows",
+        lambda db: call_order.append("reclaim")
+        or {"stale_selected": 0, "reclaimed_pending": 0, "reclaimed_failed": 0},
+    )
+    monkeypatch.setattr(
+        worker_script.StripeWebhookInboxService,
         "process_inbox_batch",
-        lambda db: {"selected": 0, "processed": 0, "retried": 0, "failed": 0, "non_retryable": 0},
+        lambda db: call_order.append("process")
+        or {"selected": 0, "processed": 0, "retried": 0, "failed": 0, "non_retryable": 0},
     )
 
     exit_code = worker_script.main()
 
     assert exit_code == 0
+    assert call_order == ["reclaim", "process"]
     db = session_factory()
     try:
         heartbeat = (

@@ -216,3 +216,86 @@ def test_process_outbox_batch_retries_and_then_fails_after_max_attempts(db, monk
     assert row.status == "failed"
     assert row.attempt_count == 2
     assert row.last_error == "provider outage"
+
+
+@pytest.mark.integration
+def test_reclaim_stale_processing_rows_requeues_or_fails_based_on_attempts(db, user_factory):
+    advisor = user_factory(
+        role="advisor",
+        email="notify.worker.reclaim@example.com",
+        password="NotifyWorkerReclaim123!",
+    )
+    now = utcnow()
+    requeue_row = NotificationOutbox(
+        user_id=advisor.id,
+        channel="email",
+        event_type="lead_delivered",
+        recipient=advisor.email,
+        subject="Lead delivered",
+        message_body="You have a new lead",
+        payload=None,
+        idempotency_key="reclaim-notification-pending",
+        status="processing",
+        attempt_count=1,
+        max_attempts=3,
+        next_retry_at=now + timedelta(minutes=5),
+        locked_at=now - timedelta(minutes=10),
+    )
+    fail_row = NotificationOutbox(
+        user_id=advisor.id,
+        channel="sms",
+        event_type="lead_delivered",
+        recipient=advisor.phone or "+15550000001",
+        subject=None,
+        message_body="You have a new lead",
+        payload=None,
+        idempotency_key="reclaim-notification-failed",
+        status="processing",
+        attempt_count=3,
+        max_attempts=3,
+        next_retry_at=now + timedelta(minutes=5),
+        locked_at=now - timedelta(minutes=10),
+    )
+    db.add_all([requeue_row, fail_row])
+    db.commit()
+
+    summary = NotificationService.reclaim_stale_processing_rows(
+        db,
+        now=now,
+        stale_lock_seconds=60,
+    )
+    assert summary == {"stale_selected": 2, "reclaimed_pending": 1, "reclaimed_failed": 1}
+
+    db.refresh(requeue_row)
+    db.refresh(fail_row)
+    assert requeue_row.status == "pending"
+    assert requeue_row.locked_at is None
+    assert requeue_row.next_retry_at == now
+    assert requeue_row.last_error == "stale processing lock reclaimed"
+    assert fail_row.status == "failed"
+    assert fail_row.locked_at is None
+    assert fail_row.next_retry_at == now
+    assert fail_row.last_error == "stale processing lock reclaimed"
+
+
+@pytest.mark.integration
+def test_process_notification_outbox_script_reclaims_stale_rows_before_processing(session_factory, monkeypatch):
+    from scripts import process_notification_outbox as worker_script
+
+    call_order = []
+    monkeypatch.setattr(worker_script, "SessionLocal", session_factory)
+    monkeypatch.setattr(
+        worker_script.NotificationService,
+        "reclaim_stale_processing_rows",
+        lambda db: call_order.append("reclaim") or {"stale_selected": 0, "reclaimed_pending": 0, "reclaimed_failed": 0},
+    )
+    monkeypatch.setattr(
+        worker_script.NotificationService,
+        "process_outbox_batch",
+        lambda db: call_order.append("process") or {"selected": 0, "sent": 0, "retried": 0, "failed": 0},
+    )
+
+    exit_code = worker_script.main()
+
+    assert exit_code == 0
+    assert call_order == ["reclaim", "process"]

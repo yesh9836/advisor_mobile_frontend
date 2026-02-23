@@ -223,6 +223,36 @@ def test_health_live_endpoint_is_always_healthy(client):
     assert response.json()["status"] == "healthy"
 
 
+@pytest.mark.integration
+def test_health_ready_reports_503_when_database_probe_is_unhealthy(client, monkeypatch):
+    monkeypatch.setattr(settings, "NOTIFICATIONS_ENABLED", True)
+    monkeypatch.setattr(settings, "STRIPE_WEBHOOK_FAST_ACK_ENABLED", True)
+    monkeypatch.setattr(
+        "app.main._check_database_readiness",
+        lambda: {"status": "unhealthy", "timeout_seconds": 2.0, "error": "db unavailable"},
+    )
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 503
+    payload = response.json()
+    assert payload["status"] == "unhealthy"
+    assert payload["checks"]["database"]["status"] == "unhealthy"
+    assert payload["checks"]["database"]["error"] == "db unavailable"
+    assert payload["checks"]["notification_outbox_pipeline"]["reason"] == "database_unavailable"
+    assert payload["checks"]["stripe_webhook_pipeline"]["reason"] == "database_unavailable"
+
+
+@pytest.mark.integration
+def test_health_ready_includes_database_probe_status(client):
+    response = client.get("/health/ready")
+
+    assert response.status_code in (200, 503)
+    payload = response.json()
+    assert payload["checks"]["database"]["status"] in {"healthy", "unhealthy"}
+    assert payload["checks"]["database"]["timeout_seconds"] > 0
+
+
 @pytest.mark.unit
 def test_openapi_docs_are_disabled_in_production_by_default(monkeypatch):
     monkeypatch.setattr(settings, "API_DOCS_ENABLED", True)
