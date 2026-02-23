@@ -21,7 +21,7 @@ vi.mock("@/api/licenses", () => ({
 }));
 
 const renderRoute = (route: string) => {
-  render(
+  return render(
     <MemoryRouter initialEntries={[route]}>
       <Routes>
         <Route path="/subscription" element={<SubscriptionPage />} />
@@ -247,5 +247,118 @@ describe("SubscriptionPage license gate", () => {
       expect(createCheckout).toHaveBeenCalledWith(2, expect.any(String));
     });
     expect(await screen.findByText("checkout unavailable")).toBeInTheDocument();
+  });
+
+  it("reuses the same checkout retry token across a refresh within the same browser session", async () => {
+    window.sessionStorage.clear();
+
+    const { getPackages, createCheckout } = await import("@/api/purchases");
+    const { getMyLicenses } = await import("@/api/licenses");
+    vi.mocked(getPackages).mockResolvedValue([
+      {
+        id: 2,
+        name: "Starter",
+        price_cents: 20000,
+        currency: "USD",
+        stripe_price_id: "price_starter_refresh_retry",
+        state_limit: 1,
+        daily_download_limit: 10,
+        features: ["10 leads"],
+        created_at: "2026-02-19T00:00:00Z",
+      },
+    ]);
+    vi.mocked(getMyLicenses).mockResolvedValue([
+      {
+        id: 101,
+        user_id: 1,
+        state: "CA",
+        license_number: "CA-VERIFIED-002",
+        license_type: "Series 65",
+        has_document: true,
+        verification_status: "verified",
+        verified_at: "2026-02-19T00:00:00Z",
+        verified_by: 5,
+        rejection_reason: null,
+        created_at: "2026-02-19T00:00:00Z",
+      },
+    ]);
+    vi.mocked(createCheckout).mockRejectedValue(new Error("checkout unavailable"));
+
+    const initialCheckoutCalls = vi.mocked(createCheckout).mock.calls.length;
+    const firstRender = renderRoute("/subscription");
+    fireEvent.click(await screen.findByRole("button", { name: "Checkout" }));
+    await waitFor(() =>
+      expect(vi.mocked(createCheckout).mock.calls.length).toBe(initialCheckoutCalls + 1),
+    );
+    const firstToken = vi.mocked(createCheckout).mock.calls[initialCheckoutCalls][1];
+    expect(typeof firstToken).toBe("string");
+    expect(firstToken).toBeTruthy();
+
+    firstRender.unmount();
+
+    renderRoute("/subscription");
+    fireEvent.click(await screen.findByRole("button", { name: "Checkout" }));
+    await waitFor(() =>
+      expect(vi.mocked(createCheckout).mock.calls.length).toBe(initialCheckoutCalls + 2),
+    );
+    const secondToken = vi.mocked(createCheckout).mock.calls[initialCheckoutCalls + 1][1];
+    expect(secondToken).toBe(firstToken);
+  });
+
+  it("clears persisted checkout retry tokens after a successful checkout return", async () => {
+    window.sessionStorage.clear();
+
+    const { getPackages, createCheckout } = await import("@/api/purchases");
+    const { getMyLicenses } = await import("@/api/licenses");
+    vi.mocked(getPackages).mockResolvedValue([
+      {
+        id: 3,
+        name: "Pro",
+        price_cents: 40000,
+        currency: "USD",
+        stripe_price_id: "price_pro_retry_clear",
+        state_limit: 2,
+        daily_download_limit: 20,
+        features: ["20 leads"],
+        created_at: "2026-02-19T00:00:00Z",
+      },
+    ]);
+    vi.mocked(getMyLicenses).mockResolvedValue([
+      {
+        id: 102,
+        user_id: 1,
+        state: "CA",
+        license_number: "CA-VERIFIED-003",
+        license_type: "Series 65",
+        has_document: true,
+        verification_status: "verified",
+        verified_at: "2026-02-19T00:00:00Z",
+        verified_by: 5,
+        rejection_reason: null,
+        created_at: "2026-02-19T00:00:00Z",
+      },
+    ]);
+    vi.mocked(createCheckout).mockRejectedValue(new Error("checkout unavailable"));
+
+    const initialCheckoutCalls = vi.mocked(createCheckout).mock.calls.length;
+    const initialRender = renderRoute("/subscription");
+    fireEvent.click(await screen.findByRole("button", { name: "Checkout" }));
+    await waitFor(() =>
+      expect(vi.mocked(createCheckout).mock.calls.length).toBe(initialCheckoutCalls + 1),
+    );
+
+    const tokenKeysBeforeSuccess = Object.keys(window.sessionStorage).filter((storageKey) =>
+      storageKey.startsWith("advisor_checkout_retry_token_v1:"),
+    );
+    expect(tokenKeysBeforeSuccess.length).toBeGreaterThan(0);
+
+    initialRender.unmount();
+    renderRoute("/subscription?checkout=success&session_id=cs_test_token_clear");
+    await waitFor(() => {
+      const tokenKeysAfterSuccess = Object.keys(window.sessionStorage).filter((storageKey) =>
+        storageKey.startsWith("advisor_checkout_retry_token_v1:"),
+      );
+      expect(tokenKeysAfterSuccess).toHaveLength(0);
+    });
   });
 });
