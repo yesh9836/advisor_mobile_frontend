@@ -81,7 +81,10 @@ const ProfilePage = () => {
     void loadPurchaseSummary();
   }, [loadPurchaseSummary]);
 
-  const latestPurchase = recentPurchases[0] ?? null;
+  const latestCompletedPurchase =
+    recentPurchases.find(
+      (purchase) => String(purchase.status || "").toLowerCase() === "completed",
+    ) ?? null;
   const pendingAutoDeliveryLeads = recentPurchases.reduce((total, purchase) => {
     if (
       purchase.fulfillment_status !== "partially_fulfilled"
@@ -152,24 +155,24 @@ const ProfilePage = () => {
                 <span className="font-semibold text-[#0a1633]">Pending auto-delivery leads:</span>{" "}
                 {pendingAutoDeliveryLeads}
               </p>
-              {latestPurchase && (
+              {latestCompletedPurchase && (
                 <div className="space-y-1 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
                   <p>
-                    <span className="font-semibold text-[#0a1633]">Latest purchase:</span>{" "}
-                    {latestPurchase.package_name ?? "Package"} on{" "}
-                    {formatDate(latestPurchase.purchased_at)}
+                    <span className="font-semibold text-[#0a1633]">Latest completed purchase:</span>{" "}
+                    {latestCompletedPurchase.package_name ?? "Package"} on{" "}
+                    {formatDate(latestCompletedPurchase.purchased_at)}
                   </p>
                   <p>
                     <span className="font-semibold text-[#0a1633]">Delivered now:</span>{" "}
-                    {latestPurchase.assigned_count}/{latestPurchase.entitled_credits_total}
+                    {latestCompletedPurchase.assigned_count}/{latestCompletedPurchase.entitled_credits_total}
                   </p>
                   <p>
                     <span className="font-semibold text-[#0a1633]">Pending auto-delivery:</span>{" "}
-                    {Math.max(latestPurchase.unfulfilled_count, 0)}
+                    {Math.max(latestCompletedPurchase.unfulfilled_count, 0)}
                   </p>
                   <p>
                     <span className="font-semibold text-[#0a1633]">Fulfillment:</span>{" "}
-                    {formatFulfillmentStatus(latestPurchase.fulfillment_status)}
+                    {formatFulfillmentStatus(latestCompletedPurchase.fulfillment_status)}
                   </p>
                 </div>
               )}
