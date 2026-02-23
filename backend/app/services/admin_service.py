@@ -1,5 +1,8 @@
+import csv
+import io
 import logging
-from typing import Optional
+from decimal import Decimal
+from typing import Generator, Optional
 
 from fastapi import HTTPException
 from sqlalchemy import case, func, or_
@@ -305,14 +308,7 @@ class AdminService:
         size: int,
         status: Optional[str] = None,
     ) -> PaginatedOrders:
-        query = (
-            db.query(LeadPurchase, User, LeadPackage)
-            .join(User, User.id == LeadPurchase.user_id)
-            .outerjoin(LeadPackage, LeadPackage.id == LeadPurchase.package_id)
-        )
-
-        if status:
-            query = query.filter(LeadPurchase.status == status)
+        query = AdminService._build_orders_query(db=db, status=status)
 
         total = query.with_entities(func.count(LeadPurchase.id)).scalar() or 0
 
@@ -346,6 +342,77 @@ class AdminService:
         ]
 
         return PaginatedOrders(items=items, total=total, page=page, size=size)
+
+    @staticmethod
+    def _build_orders_query(
+        *,
+        db: Session,
+        status: Optional[str] = None,
+    ):
+        query = (
+            db.query(LeadPurchase, User, LeadPackage)
+            .join(User, User.id == LeadPurchase.user_id)
+            .outerjoin(LeadPackage, LeadPackage.id == LeadPurchase.package_id)
+        )
+
+        if status:
+            query = query.filter(LeadPurchase.status == status)
+        return query
+
+    @staticmethod
+    def stream_orders_csv(
+        *,
+        db: Session,
+        status: Optional[str] = None,
+    ) -> Generator[str, None, None]:
+        headers = [
+            "order_reference",
+            "advisor_name",
+            "advisor_email",
+            "package_name",
+            "quantity",
+            "remaining_credits",
+            "status",
+            "created_at",
+            "amount_dollars",
+            "currency",
+        ]
+        csv_buffer = io.StringIO(newline="")
+        writer = csv.DictWriter(csv_buffer, fieldnames=headers)
+        writer.writeheader()
+        yield csv_buffer.getvalue()
+        csv_buffer.seek(0)
+        csv_buffer.truncate(0)
+
+        rows = (
+            AdminService._build_orders_query(db=db, status=status)
+            .order_by(LeadPurchase.purchased_at.desc(), LeadPurchase.id.desc())
+            .yield_per(200)
+        )
+        for purchase, user, plan in rows:
+            amount_cents = int(purchase.amount_cents or 0)
+            amount_dollars = (Decimal(amount_cents) / Decimal("100")).quantize(Decimal("0.01"))
+            writer.writerow(
+                {
+                    "order_reference": (
+                        purchase.stripe_checkout_session_id
+                        or purchase.stripe_payment_intent_id
+                        or f"purchase-{purchase.id}"
+                    ),
+                    "advisor_name": user.name,
+                    "advisor_email": user.email,
+                    "package_name": plan.name if plan else "",
+                    "quantity": int(purchase.credits_total or 0),
+                    "remaining_credits": int(purchase.credits_remaining or 0),
+                    "status": purchase.status,
+                    "created_at": purchase.purchased_at.isoformat() if purchase.purchased_at else "",
+                    "amount_dollars": f"{amount_dollars:.2f}",
+                    "currency": str(purchase.currency or "USD").upper(),
+                }
+            )
+            yield csv_buffer.getvalue()
+            csv_buffer.seek(0)
+            csv_buffer.truncate(0)
 
     @staticmethod
     def get_lead_inventory(
