@@ -1,6 +1,12 @@
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+
+def _normalize_email_value(value: object) -> object:
+    if isinstance(value, str):
+        return value.strip().lower()
+    return value
 
 
 class UserRegister(BaseModel):
@@ -26,6 +32,11 @@ class UserRegister(BaseModel):
         }
     }
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value: object) -> object:
+        return _normalize_email_value(value)
+
 
 class UserLogin(BaseModel):
     """
@@ -44,6 +55,11 @@ class UserLogin(BaseModel):
             ]
         }
     }
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value: object) -> object:
+        return _normalize_email_value(value)
 
 
 class TokenData(BaseModel):
@@ -64,6 +80,11 @@ class PasswordResetRequest(BaseModel):
     """Schema for forgot-password request."""
 
     email: EmailStr
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value: object) -> object:
+        return _normalize_email_value(value)
 
 
 class PasswordResetRequestResponse(BaseModel):
