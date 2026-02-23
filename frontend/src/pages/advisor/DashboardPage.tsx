@@ -8,14 +8,19 @@ import {
   type DeliverySettingsUpdatePayload,
 } from "@/api/delivery-settings";
 import { getLeadDashboardSummary, getLeads } from "@/api/leads";
+import {
+  formatDateTime,
+  stageClassName,
+  toDisplayName,
+  toDisplayStage,
+  toInitials,
+  type LeadStage,
+} from "@/pages/advisor/leadPresentation";
 import type {
   Lead,
   LeadDashboardSummary,
-  LeadOutcomeStatus,
 } from "@/types/lead";
 import { getApiErrorMessage } from "@/utils/api-error";
-
-type LeadStage = "New" | "Contacted" | "Appointment Set";
 
 interface RecentLeadItem {
   id: number;
@@ -47,51 +52,6 @@ interface DeliverySettingsChangeDetail {
 
 const DELIVERY_SETTINGS_CHANGED_EVENT = "delivery-settings-changed";
 
-const toDisplayStage = (
-  status: LeadOutcomeStatus | null | undefined,
-): LeadStage => {
-  if (status === "contacted") return "Contacted";
-  if (status === "appointment_set") return "Appointment Set";
-  return "New";
-};
-
-const toInitials = (
-  firstName: string | null,
-  lastName: string | null,
-): string => {
-  const first = firstName?.trim()?.[0] ?? "";
-  const last = lastName?.trim()?.[0] ?? "";
-  const initials = `${first}${last}`.toUpperCase();
-  return initials || "NA";
-};
-
-const toDisplayName = (lead: Lead): string => {
-  const first = lead.first_name?.trim() ?? "";
-  const last = lead.last_name?.trim() ?? "";
-  const full = `${first} ${last}`.trim();
-  return full || "Unknown Lead";
-};
-
-const formatDateTime = (value: string): string => {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return "Recently";
-  }
-
-  const datePart = parsed.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-
-  const timePart = parsed.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-
-  return `${datePart} • ${timePart}`;
-};
-
 const formatCurrency = (amount: number, currency: string): string => {
   return amount.toLocaleString("en-US", {
     style: "currency",
@@ -112,12 +72,6 @@ const toRecentLead = (lead: Lead): RecentLeadItem => {
     assets: lead.total_investable_assets_range || "0",
     dateTime: formatDateTime(lead.created_at),
   };
-};
-
-const stageClassName = (stage: LeadStage): string => {
-  if (stage === "New") return "badge badge-new";
-  if (stage === "Contacted") return "badge badge-contacted";
-  return "badge badge-set";
 };
 
 const toEditorState = (
@@ -174,6 +128,8 @@ const DashboardPage = () => {
   const [hasAutoOpenedFromQuery, setHasAutoOpenedFromQuery] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+
     const load = async () => {
       setLoading(true);
       setError(null);
@@ -182,6 +138,9 @@ const DashboardPage = () => {
         getLeadDashboardSummary(),
         getLeads(1, 3, { delivery_status: "delivered" }),
       ]);
+      if (cancelled) {
+        return;
+      }
 
       let nextError: string | null = null;
 
@@ -214,6 +173,9 @@ const DashboardPage = () => {
     };
 
     void load();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleOpenSettingsEditor = useCallback(async () => {

@@ -2,10 +2,17 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { downloadLeads, getLeads, saveLeadOutcome } from "@/api/leads";
+import {
+  formatDateTime,
+  stageClassName,
+  toDisplayName,
+  toDisplayStage,
+  toInitials,
+  type LeadStage,
+} from "@/pages/advisor/leadPresentation";
 import type { Lead, LeadFilters, LeadOutcomeStatus } from "@/types/lead";
 import { getApiErrorMessage } from "@/utils/api-error";
 
-type LeadStage = "New" | "Contacted" | "Appointment Set";
 type StageFilter = "All" | LeadStage;
 type DeliveryFilter = "All" | "Available" | "Delivered";
 
@@ -52,49 +59,6 @@ const STAGE_FILTER_TO_QUERY: Record<
   "Appointment Set": "appointment_set",
 };
 
-const toDisplayStage = (
-  status: LeadOutcomeStatus | null | undefined,
-): LeadStage => {
-  if (status === "contacted") return "Contacted";
-  if (status === "appointment_set") return "Appointment Set";
-  return "New";
-};
-
-const toInitials = (
-  firstName: string | null,
-  lastName: string | null,
-): string => {
-  const first = firstName?.trim()?.[0] ?? "";
-  const last = lastName?.trim()?.[0] ?? "";
-  const initials = `${first}${last}`.toUpperCase();
-  return initials || "NA";
-};
-
-const toDisplayName = (lead: Lead): string => {
-  const first = lead.first_name?.trim() ?? "";
-  const last = lead.last_name?.trim() ?? "";
-  const full = `${first} ${last}`.trim();
-  return full || "Unknown Lead";
-};
-
-const formatDateTime = (value: string): string => {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "Recently";
-
-  const datePart = parsed.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-
-  const timePart = parsed.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-
-  return `${datePart} • ${timePart}`;
-};
-
 const toInboxLead = (lead: Lead): InboxLead => ({
   id: lead.id,
   initials: toInitials(lead.first_name, lead.last_name),
@@ -107,12 +71,6 @@ const toInboxLead = (lead: Lead): InboxLead => ({
   phone: lead.mobile_phone || "Not available",
   dateTime: formatDateTime(lead.created_at),
 });
-
-const stageClassName = (stage: LeadStage): string => {
-  if (stage === "New") return "badge badge-new";
-  if (stage === "Contacted") return "badge badge-contacted";
-  return "badge badge-set";
-};
 
 const LeadsPage = () => {
   const navigate = useNavigate();
