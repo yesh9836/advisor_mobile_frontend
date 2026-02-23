@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { getMyLicenses } from "@/api/licenses";
@@ -90,6 +90,91 @@ const buildCheckoutRetryToken = (scope: string): string => {
 
 const CHECKOUT_SYNC_MAX_ATTEMPTS = 6;
 const CHECKOUT_SYNC_RETRY_DELAY_MS = 1500;
+const CHECKOUT_RETRY_TOKEN_STORAGE_PREFIX = "advisor_checkout_retry_token_v1";
+const CHECKOUT_RETRY_TOKEN_TTL_MS = 45 * 60 * 1000;
+
+interface CheckoutRetryTokenRecord {
+  token: string;
+  expires_at_ms: number;
+}
+
+const checkoutRetryTokenStorageKey = (scope: string): string =>
+  `${CHECKOUT_RETRY_TOKEN_STORAGE_PREFIX}:${scope}`;
+
+const readPersistedCheckoutRetryToken = (scope: string): string | null => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    const rawValue = window.sessionStorage.getItem(checkoutRetryTokenStorageKey(scope));
+    if (!rawValue) {
+      return null;
+    }
+    const parsed = JSON.parse(rawValue) as CheckoutRetryTokenRecord;
+    if (
+      typeof parsed?.token !== "string" ||
+      !parsed.token.trim() ||
+      typeof parsed?.expires_at_ms !== "number"
+    ) {
+      window.sessionStorage.removeItem(checkoutRetryTokenStorageKey(scope));
+      return null;
+    }
+    if (parsed.expires_at_ms <= Date.now()) {
+      window.sessionStorage.removeItem(checkoutRetryTokenStorageKey(scope));
+      return null;
+    }
+    return parsed.token;
+  } catch {
+    window.sessionStorage.removeItem(checkoutRetryTokenStorageKey(scope));
+    return null;
+  }
+};
+
+const persistCheckoutRetryToken = (scope: string, token: string): void => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const record: CheckoutRetryTokenRecord = {
+    token,
+    expires_at_ms: Date.now() + CHECKOUT_RETRY_TOKEN_TTL_MS,
+  };
+  try {
+    window.sessionStorage.setItem(
+      checkoutRetryTokenStorageKey(scope),
+      JSON.stringify(record),
+    );
+  } catch {
+    // Ignore storage write failures so checkout remains functional.
+  }
+};
+
+const getOrCreateCheckoutRetryToken = (scope: string): string => {
+  const existing = readPersistedCheckoutRetryToken(scope);
+  if (existing) {
+    return existing;
+  }
+  const token = buildCheckoutRetryToken(scope);
+  persistCheckoutRetryToken(scope, token);
+  return token;
+};
+
+const clearPersistedCheckoutRetryTokens = (): void => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    const keysToRemove: string[] = [];
+    for (let index = 0; index < window.sessionStorage.length; index += 1) {
+      const storageKey = window.sessionStorage.key(index);
+      if (storageKey?.startsWith(`${CHECKOUT_RETRY_TOKEN_STORAGE_PREFIX}:`)) {
+        keysToRemove.push(storageKey);
+      }
+    }
+    keysToRemove.forEach((storageKey) => window.sessionStorage.removeItem(storageKey));
+  } catch {
+    // Ignore storage read/remove failures so checkout success flow still renders.
+  }
+};
 
 const SubscriptionPage = () => {
   const navigate = useNavigate();
@@ -104,7 +189,6 @@ const SubscriptionPage = () => {
   const [hasVerifiedLicense, setHasVerifiedLicense] = useState(false);
   const [licenseGateMessage, setLicenseGateMessage] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
-  const checkoutRetryTokensRef = useRef<Record<string, string>>({});
 
   const checkoutState = searchParams.get("checkout");
   const checkoutSessionId = searchParams.get("session_id");
@@ -221,6 +305,7 @@ const SubscriptionPage = () => {
         setAddOnOffer(null);
         return;
       }
+      clearPersistedCheckoutRetryTokens();
 
       if (!checkoutSessionId) {
         setCheckoutNotice(buildCheckoutFulfillmentNotice(null, null));
@@ -288,10 +373,7 @@ const SubscriptionPage = () => {
 
     try {
       const tokenScope = `pkg${entry.packageId}`;
-      const retryToken =
-        checkoutRetryTokensRef.current[tokenScope] ??
-        buildCheckoutRetryToken(tokenScope);
-      checkoutRetryTokensRef.current[tokenScope] = retryToken;
+      const retryToken = getOrCreateCheckoutRetryToken(tokenScope);
       const session = await createCheckout(entry.packageId, retryToken);
       window.location.assign(session.url);
     } catch (checkoutError) {
@@ -311,10 +393,7 @@ const SubscriptionPage = () => {
 
     try {
       const tokenScope = `offer${addOnOffer.offer_package_id}`;
-      const retryToken =
-        checkoutRetryTokensRef.current[tokenScope] ??
-        buildCheckoutRetryToken(tokenScope);
-      checkoutRetryTokensRef.current[tokenScope] = retryToken;
+      const retryToken = getOrCreateCheckoutRetryToken(tokenScope);
       const session = await createCheckout(addOnOffer.offer_package_id, retryToken);
       window.location.assign(session.url);
     } catch (checkoutError) {
