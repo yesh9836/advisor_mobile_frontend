@@ -11,6 +11,7 @@ from urllib.parse import quote_plus
 from uuid import uuid4
 
 from fastapi import HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -46,6 +47,22 @@ class AuthService:
     """
     Service class for authentication operations.
     """
+
+    @staticmethod
+    def _normalize_email(email: str) -> str:
+        return (email or "").strip().lower()
+
+    @staticmethod
+    def _find_user_by_email(db: Session, email: str) -> User | None:
+        normalized_email = AuthService._normalize_email(email)
+        if not normalized_email:
+            return None
+
+        # Fast-path for canonicalized rows, then fall back for legacy mixed-case records.
+        user = db.query(User).filter(User.email == normalized_email).first()
+        if user is not None:
+            return user
+        return db.query(User).filter(func.lower(User.email) == normalized_email).first()
     
     @staticmethod
     def _is_duplicate_email_integrity_error(exc: IntegrityError) -> bool:
@@ -86,8 +103,10 @@ class AuthService:
             HTTPException: If email already exists or registration fails
         """
         try:
+            normalized_email = AuthService._normalize_email(str(user_data.email))
+
             # Check if email already exists
-            existing_user = db.query(User).filter(User.email == user_data.email).first()
+            existing_user = AuthService._find_user_by_email(db, normalized_email)
             if existing_user:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -99,7 +118,7 @@ class AuthService:
             
             # Create user
             new_user = User(
-                email=user_data.email,
+                email=normalized_email,
                 name=user_data.name,
                 phone=user_data.phone,
                 password_hash=password_hash,
@@ -118,7 +137,7 @@ class AuthService:
         except IntegrityError as exc:
             db.rollback()
             if AuthService._is_duplicate_email_integrity_error(exc):
-                logger.info("Registration rejected duplicate email at commit: %s", user_data.email)
+                logger.info("Registration rejected duplicate email at commit: %s", normalized_email)
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Email already registered",
@@ -150,19 +169,21 @@ class AuthService:
             User object if authentication successful, None otherwise
         """
         try:
+            normalized_email = AuthService._normalize_email(email)
+
             # Get user by email
-            user = db.query(User).filter(User.email == email).first()
+            user = AuthService._find_user_by_email(db, normalized_email)
             
             if not user:
-                logger.warning(f"Authentication failed: User not found - {email}")
+                logger.warning(f"Authentication failed: User not found - {normalized_email}")
                 return None
             
             # Verify password
             if not verify_password(password, user.password_hash):
-                logger.warning(f"Authentication failed: Invalid password - {email}")
+                logger.warning(f"Authentication failed: Invalid password - {normalized_email}")
                 return None
             
-            logger.info(f"User authenticated successfully: {email}")
+            logger.info(f"User authenticated successfully: {normalized_email}")
             return user
             
         except Exception as e:
@@ -171,20 +192,24 @@ class AuthService:
 
     @staticmethod
     def _authenticate_credentials(db: Session, credentials: UserLogin) -> User:
-        user = db.query(User).filter(User.email == credentials.email).first()
+        normalized_email = AuthService._normalize_email(str(credentials.email))
+        user = AuthService._find_user_by_email(db, normalized_email)
         if not user or not verify_password(credentials.password, user.password_hash):
-            logger.warning(f"Login failed: Invalid credentials for {credentials.email}")
+            logger.warning(f"Login failed: Invalid credentials for {normalized_email}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect email or password",
                 headers={"WWW-Authenticate": "Bearer"},
             )
         if not user.is_active:
-            logger.warning("Login blocked for inactive account: %s", credentials.email)
+            logger.warning("Login blocked for inactive account: %s", normalized_email)
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Inactive user account",
             )
+        # Opportunistically canonicalize legacy mixed-case rows on successful authentication.
+        if user.email != normalized_email:
+            user.email = normalized_email
         return user
 
     @staticmethod
@@ -523,7 +548,7 @@ class AuthService:
 
     @staticmethod
     def _password_reset_rate_limit_subject_hash(email: str) -> str:
-        normalized_email = email.strip().lower()
+        normalized_email = AuthService._normalize_email(email)
         return hmac.new(
             settings.SECRET_KEY.encode("utf-8"),
             normalized_email.encode("utf-8"),
@@ -594,7 +619,8 @@ class AuthService:
         """
         try:
             now = utcnow()
-            subject_hash = AuthService._password_reset_rate_limit_subject_hash(payload.email)
+            normalized_email = AuthService._normalize_email(str(payload.email))
+            subject_hash = AuthService._password_reset_rate_limit_subject_hash(normalized_email)
             is_rate_limited, retry_after_seconds = AuthService._is_password_reset_rate_limited(
                 db,
                 subject_hash=subject_hash,
@@ -611,10 +637,12 @@ class AuthService:
                 )
 
             db.add(PasswordResetRequestAttempt(subject_hash=subject_hash))
-            user = db.query(User).filter(User.email == payload.email).first()
+            user = AuthService._find_user_by_email(db, normalized_email)
             if not user or not user.is_active:
                 db.commit()
                 return
+            if user.email != normalized_email:
+                user.email = normalized_email
 
             raw_token = create_password_reset_token()
             token_hash = hash_password_reset_token(raw_token)
