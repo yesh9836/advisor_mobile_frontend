@@ -361,4 +361,24 @@ describe("SubscriptionPage license gate", () => {
       expect(tokenKeysAfterSuccess).toHaveLength(0);
     });
   });
+
+  it("clears persisted checkout retry tokens after a canceled checkout return", async () => {
+    window.sessionStorage.clear();
+    window.sessionStorage.setItem(
+      "advisor_checkout_retry_token_v1:pkg7",
+      JSON.stringify({
+        token: "retry_pkg7_fixture",
+        expires_at_ms: Date.now() + 60_000,
+      }),
+    );
+
+    renderRoute("/subscription?checkout=cancel");
+
+    await waitFor(() => {
+      const tokenKeysAfterCancel = Object.keys(window.sessionStorage).filter((storageKey) =>
+        storageKey.startsWith("advisor_checkout_retry_token_v1:"),
+      );
+      expect(tokenKeysAfterCancel).toHaveLength(0);
+    });
+  });
 });
