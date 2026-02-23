@@ -80,8 +80,9 @@ def test_init_stripe_applies_timeout_and_network_retry_policy(monkeypatch):
             captured["timeout"] = timeout
 
     monkeypatch.setattr(
-        "app.services.payment_service.stripe.http_client.RequestsClient",
-        _FakeRequestsClient,
+        PaymentService,
+        "_stripe_http_client_candidates",
+        staticmethod(lambda: [("RequestsClient", _FakeRequestsClient)]),
     )
 
     PaymentService._init_stripe()

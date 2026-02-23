@@ -1,7 +1,9 @@
+import time
 from uuid import uuid4
 
 import pytest
 
+from app.core.config import settings
 from app.models.lead import LeadOwnership
 from app.models.purchase import LeadCreditLedger
 from app.services.payment_service import PaymentService
@@ -103,6 +105,11 @@ def test_purchase_checkout_uses_idempotency_key_and_metadata(
     assert response.status_code == 200, response.text
     assert response.json()["session_id"] == "cs_purchase_checkout"
     assert captured_checkout_kwargs["mode"] == "payment"
+    expected_expiration_seconds = int(settings.STRIPE_CHECKOUT_SESSION_EXPIRES_MINUTES) * 60
+    expires_at = int(captured_checkout_kwargs["expires_at"])
+    now_ts = int(time.time())
+    assert expires_at >= now_ts + expected_expiration_seconds - 10
+    assert expires_at <= now_ts + expected_expiration_seconds + 10
     checkout_metadata = captured_checkout_kwargs["metadata"]
     assert checkout_metadata["user_id"] == str(advisor.id)
     assert checkout_metadata["package_id"] == str(plan.id)

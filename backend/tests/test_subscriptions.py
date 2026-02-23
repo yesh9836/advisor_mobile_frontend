@@ -1,8 +1,10 @@
 from datetime import datetime, timezone
+import time
 
 import pytest
 import stripe
 
+from app.core.config import settings
 from app.models.audit_log import AuditLog
 from app.models.lead import LeadOwnership
 from app.models.purchase import LeadCreditLedger, LeadPurchase, ProcessedStripeEvent, StripePoisonEvent
@@ -165,6 +167,11 @@ def test_checkout_success_returns_session(
     assert "/advisor/subscription/" not in captured_checkout_kwargs["success_url"]
     assert "/advisor/subscription/" not in captured_checkout_kwargs["cancel_url"]
     assert captured_checkout_kwargs["mode"] == "payment"
+    expected_expiration_seconds = int(settings.STRIPE_CHECKOUT_SESSION_EXPIRES_MINUTES) * 60
+    expires_at = int(captured_checkout_kwargs["expires_at"])
+    now_ts = int(time.time())
+    assert expires_at >= now_ts + expected_expiration_seconds - 10
+    assert expires_at <= now_ts + expected_expiration_seconds + 10
     checkout_metadata = captured_checkout_kwargs["metadata"]
     assert checkout_metadata["user_id"] == str(advisor.id)
     assert checkout_metadata["package_id"] == str(plan.id)
@@ -358,7 +365,7 @@ def test_webhook_checkout_completed_creates_purchase_and_credit_grant(
     assert purchase.package_id == plan.id
     assert purchase.status == "completed"
     assert purchase.credits_total == plan.daily_download_limit
-    assert purchase.credits_remaining == plan.daily_download_limit
+    assert purchase.credits_remaining == 0
     assert purchase.stripe_invoice_id == "in_evt_1"
 
     ledger_entry = (
@@ -778,6 +785,50 @@ def test_webhook_livemode_mismatch_is_ignored_before_processing(
 
 
 @pytest.mark.integration
+def test_webhook_rejects_missing_signature_header(client):
+    response = client.post(
+        "/api/v1/webhooks/stripe",
+        json={"mock": "payload"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Missing Stripe signature"
+
+
+@pytest.mark.integration
+def test_webhook_rejects_invalid_payload(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: (_ for _ in ()).throw(ValueError("invalid payload")),
+    )
+
+    response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid payload"
+
+
+@pytest.mark.integration
+def test_webhook_rejects_invalid_signature(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: (_ for _ in ()).throw(
+            stripe.error.SignatureVerificationError("invalid signature")
+        ),
+    )
+
+    response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid signature"
+
+
+@pytest.mark.integration
 def test_webhook_fast_ack_returns_500_when_enqueue_fails(
     client,
     monkeypatch,
@@ -941,7 +992,7 @@ def test_webhook_duplicate_delivery_same_event_id_grants_credit_once(
     assert len(purchases) == 1
     purchase = purchases[0]
     assert purchase.status == "completed"
-    assert purchase.credits_remaining == plan.daily_download_limit
+    assert purchase.credits_remaining == 0
     grant_rows = (
         db.query(LeadCreditLedger)
         .filter(
@@ -1134,6 +1185,62 @@ def test_webhook_out_of_order_and_retry_events_grant_credit_once(
             LeadCreditLedger.purchase_id == purchase.id,
             LeadCreditLedger.movement_type == "purchase_grant",
         )
+        .count()
+        == 1
+    )
+
+
+@pytest.mark.integration
+def test_webhook_checkout_session_async_payment_succeeded_creates_purchase_and_credit_grant(
+    client,
+    db,
+    user_factory,
+    plan_factory,
+    monkeypatch,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="AdvisorWebhookAsyncSuccess123!",
+        email="advisor.webhook.async.success@example.com",
+        name="Webhook Async Success Advisor",
+    )
+    plan = plan_factory(stripe_price_id="price_webhook_async_success")
+
+    event = _build_purchase_webhook_event(
+        event_id="evt_checkout_async_payment_succeeded_1",
+        event_type="checkout.session.async_payment_succeeded",
+        session_id="cs_async_payment_succeeded_1",
+        payment_intent_id="pi_async_payment_succeeded_1",
+        user_id=advisor.id,
+        package_id=plan.id,
+        amount_cents=plan.price_cents,
+        payment_status="paid",
+    )
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: event,
+    )
+
+    response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"status": "ok"}
+
+    purchase = (
+        db.query(LeadPurchase)
+        .filter(LeadPurchase.stripe_checkout_session_id == "cs_async_payment_succeeded_1")
+        .first()
+    )
+    assert purchase is not None
+    assert purchase.status == "completed"
+    assert purchase.stripe_payment_intent_id == "pi_async_payment_succeeded_1"
+    assert purchase.credits_remaining == int(plan.daily_download_limit or 0)
+    assert (
+        db.query(ProcessedStripeEvent)
+        .filter(ProcessedStripeEvent.stripe_event_id == "evt_checkout_async_payment_succeeded_1")
         .count()
         == 1
     )
@@ -1534,6 +1641,38 @@ def test_webhook_payment_intent_succeeded_defers_credit_grant_when_toggle_disabl
 
 
 @pytest.mark.integration
+def test_webhook_payment_intent_succeeded_missing_payment_intent_id_is_ignored(
+    client,
+    db,
+    monkeypatch,
+):
+    event = {
+        "id": "evt_pi_succeeded_missing_id_1",
+        "type": "payment_intent.succeeded",
+        "data": {"object": {}},
+    }
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: event,
+    )
+
+    response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"status": "ok"}
+    assert db.query(LeadPurchase).count() == 0
+    assert (
+        db.query(ProcessedStripeEvent)
+        .filter(ProcessedStripeEvent.stripe_event_id == "evt_pi_succeeded_missing_id_1")
+        .count()
+        == 1
+    )
+
+
+@pytest.mark.integration
 def test_webhook_payment_intent_failed_does_not_downgrade_completed_purchase(
     client,
     db,
@@ -1642,6 +1781,60 @@ def test_webhook_payment_intent_failed_marks_pending_purchase_failed(
     assert (
         db.query(ProcessedStripeEvent)
         .filter(ProcessedStripeEvent.stripe_event_id == "evt_pi_failed_pending_1")
+        .count()
+        == 1
+    )
+
+
+@pytest.mark.integration
+def test_webhook_payment_intent_failed_missing_payment_intent_id_is_ignored(
+    client,
+    db,
+    user_factory,
+    plan_factory,
+    purchase_factory,
+    monkeypatch,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="AdvisorWebhookPIFailedMissingID123!",
+        email="advisor.webhook.pi.failed.missing.id@example.com",
+        name="Webhook PI Failed Missing ID Advisor",
+    )
+    plan = plan_factory(stripe_price_id="price_webhook_pi_failed_missing_id")
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        stripe_checkout_session_id="cs_pi_failed_missing_id_1",
+        stripe_payment_intent_id="pi_pi_failed_missing_id_1",
+        credits_total=4,
+        credits_remaining=0,
+        status="pending",
+    )
+    event = {
+        "id": "evt_pi_failed_missing_id_1",
+        "type": "payment_intent.payment_failed",
+        "data": {"object": {}},
+    }
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: event,
+    )
+
+    response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"status": "ok"}
+
+    db.refresh(purchase)
+    assert purchase.status == "pending"
+    assert purchase.credits_remaining == 0
+    assert (
+        db.query(ProcessedStripeEvent)
+        .filter(ProcessedStripeEvent.stripe_event_id == "evt_pi_failed_missing_id_1")
         .count()
         == 1
     )
@@ -1986,6 +2179,75 @@ def test_webhook_charge_refunded_duplicate_cumulative_amount_is_idempotent(
     )
     assert len(adjustments) == 1
     assert adjustments[0].credits_delta == -2
+
+
+@pytest.mark.integration
+def test_webhook_charge_refunded_missing_payment_intent_id_is_ignored(
+    client,
+    db,
+    user_factory,
+    plan_factory,
+    purchase_factory,
+    monkeypatch,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="AdvisorWebhookRefundMissingPI123!",
+        email="advisor.webhook.refund.missing.pi@example.com",
+        name="Webhook Refund Missing PI Advisor",
+    )
+    plan = plan_factory(stripe_price_id="price_webhook_refund_missing_pi")
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=4,
+        credits_remaining=4,
+        status="completed",
+        stripe_checkout_session_id="cs_refund_missing_pi_1",
+        stripe_payment_intent_id="pi_refund_missing_pi_1",
+    )
+    event = {
+        "id": "evt_charge_refunded_missing_pi_1",
+        "type": "charge.refunded",
+        "data": {
+            "object": {
+                "id": "ch_refund_missing_pi_1",
+                "amount_refunded": purchase.amount_cents,
+                "reason": "requested_by_customer",
+            }
+        },
+    }
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: event,
+    )
+
+    response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"status": "ok"}
+
+    db.refresh(purchase)
+    assert purchase.status == "completed"
+    assert purchase.credits_remaining == 4
+    assert (
+        db.query(LeadCreditLedger)
+        .filter(
+            LeadCreditLedger.purchase_id == purchase.id,
+            LeadCreditLedger.movement_type == "refund_adjustment",
+        )
+        .count()
+        == 0
+    )
+    assert (
+        db.query(ProcessedStripeEvent)
+        .filter(ProcessedStripeEvent.stripe_event_id == "evt_charge_refunded_missing_pi_1")
+        .count()
+        == 1
+    )
 
 
 @pytest.mark.integration
@@ -2369,6 +2631,95 @@ def test_webhook_checkout_completed_missing_metadata_is_acked_as_non_retryable(
 
 
 @pytest.mark.integration
+def test_webhook_checkout_completed_missing_session_id_is_acked_as_non_retryable(
+    client,
+    db,
+    monkeypatch,
+):
+    event = {
+        "id": "evt_checkout_missing_session_id_1",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "mode": "payment",
+                "payment_status": "paid",
+                "payment_intent": "pi_missing_session_id_1",
+                "amount_total": 5000,
+                "currency": "usd",
+                "metadata": {"user_id": "1", "package_id": "1"},
+            }
+        },
+    }
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: event,
+    )
+
+    response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"status": "ok"}
+
+    poison = (
+        db.query(StripePoisonEvent)
+        .filter(StripePoisonEvent.stripe_event_id == "evt_checkout_missing_session_id_1")
+        .first()
+    )
+    assert poison is not None
+    assert poison.reason == "missing_session_id"
+    assert "missing session ID" in poison.detail
+    assert db.query(LeadPurchase).count() == 0
+
+
+@pytest.mark.integration
+def test_webhook_checkout_completed_invalid_metadata_is_acked_as_non_retryable(
+    client,
+    db,
+    monkeypatch,
+):
+    event = {
+        "id": "evt_checkout_invalid_metadata_1",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": "cs_evt_invalid_metadata_1",
+                "mode": "payment",
+                "payment_status": "paid",
+                "payment_intent": "pi_invalid_metadata_1",
+                "amount_total": 5000,
+                "currency": "usd",
+                "metadata": {"user_id": "not-an-int", "package_id": "also-not-an-int"},
+            }
+        },
+    }
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: event,
+    )
+
+    response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"status": "ok"}
+
+    poison = (
+        db.query(StripePoisonEvent)
+        .filter(StripePoisonEvent.stripe_event_id == "evt_checkout_invalid_metadata_1")
+        .first()
+    )
+    assert poison is not None
+    assert poison.reason == "invalid_purchase_metadata"
+    assert "invalid purchase metadata" in poison.detail
+    assert db.query(LeadPurchase).count() == 0
+
+
+@pytest.mark.integration
 def test_webhook_checkout_completed_missing_package_is_acked_as_non_retryable_once(
     client,
     db,
@@ -2467,10 +2818,22 @@ def test_webhook_checkout_completed_missing_package_is_acked_as_non_retryable_on
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize(
+    ("event_type", "event_id"),
+    [
+        ("customer.subscription.updated", "evt_subscription_updated_ignored"),
+        ("customer.subscription.deleted", "evt_subscription_deleted_ignored"),
+        ("invoice.payment_succeeded", "evt_invoice_payment_succeeded_ignored"),
+        ("invoice.payment_failed", "evt_invoice_payment_failed_ignored"),
+    ],
+)
 def test_webhook_subscription_lifecycle_event_is_ignored(
     client,
+    db,
     user_factory,
     monkeypatch,
+    event_type,
+    event_id,
 ):
     user_factory(
         role="advisor",
@@ -2480,8 +2843,8 @@ def test_webhook_subscription_lifecycle_event_is_ignored(
     )
 
     event = {
-        "id": "evt_subscription_updated_ignored",
-        "type": "customer.subscription.updated",
+        "id": event_id,
+        "type": event_type,
         "data": {
             "object": {
                 "id": "sub_ignored_123",
@@ -2502,6 +2865,44 @@ def test_webhook_subscription_lifecycle_event_is_ignored(
     )
     assert response.status_code == 200, response.text
     assert response.json() == {"status": "ok"}
+    assert (
+        db.query(ProcessedStripeEvent)
+        .filter(ProcessedStripeEvent.stripe_event_id == event_id)
+        .count()
+        == 1
+    )
+
+
+@pytest.mark.integration
+def test_webhook_unknown_event_type_is_acked_without_side_effects(
+    client,
+    db,
+    monkeypatch,
+):
+    event = {
+        "id": "evt_unknown_type_1",
+        "type": "totally.unknown.event",
+        "data": {"object": {"id": "obj_unknown_type_1"}},
+    }
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: event,
+    )
+
+    response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"status": "ok"}
+    assert db.query(LeadPurchase).count() == 0
+    assert (
+        db.query(ProcessedStripeEvent)
+        .filter(ProcessedStripeEvent.stripe_event_id == "evt_unknown_type_1")
+        .count()
+        == 1
+    )
 
 
 @pytest.mark.integration

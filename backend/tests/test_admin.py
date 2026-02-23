@@ -1,3 +1,5 @@
+import csv
+import io
 from datetime import datetime, timedelta, timezone
 
 from app.core.config import settings
@@ -46,6 +48,9 @@ def test_admin_endpoints_require_admin(client, user_factory, auth_headers):
 
     ok_orders = client.get("/api/v1/admin/orders", headers=admin_headers)
     assert ok_orders.status_code == 200, ok_orders.text
+
+    ok_orders_export = client.get("/api/v1/admin/orders/export", headers=admin_headers)
+    assert ok_orders_export.status_code == 200, ok_orders_export.text
 
     ok_lead_inventory = client.get("/api/v1/admin/lead-inventory", headers=admin_headers)
     assert ok_lead_inventory.status_code == 200, ok_lead_inventory.text
@@ -98,6 +103,7 @@ def test_admin_endpoints_require_admin(client, user_factory, auth_headers):
         ("GET", "/api/v1/admin/analytics"),
         ("GET", "/api/v1/admin/users"),
         ("GET", "/api/v1/admin/orders"),
+        ("GET", "/api/v1/admin/orders/export"),
         ("GET", "/api/v1/admin/lead-inventory"),
         ("GET", "/api/v1/admin/license-status-summary"),
         ("GET", f"/api/v1/admin/users/{admin.id}"),
@@ -549,6 +555,69 @@ def test_admin_orders_list_and_status_filter(
     assert completed_payload["items"][0]["id"] == completed_purchase.id
     assert completed_payload["items"][0]["status"] == "completed"
 
+
+def test_admin_orders_export_returns_csv_with_dollar_amounts(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+    plan_factory,
+    purchase_factory,
+):
+    _admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+    advisor = user_factory(
+        role="advisor",
+        password="OrdersExport123!",
+        email="orders.export@example.com",
+        name="Orders Export Advisor",
+    )
+    starter_plan = plan_factory(name="OrderExportStarter", price_cents=12345, daily_download_limit=7)
+    pro_plan = plan_factory(name="OrderExportPro", price_cents=25000, daily_download_limit=25)
+
+    completed_purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=starter_plan.id,
+        status="completed",
+        credits_total=7,
+        credits_remaining=5,
+        stripe_checkout_session_id="cs_orders_export_completed_1",
+    )
+    _canceled_purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=pro_plan.id,
+        status="canceled",
+        credits_total=25,
+        credits_remaining=25,
+        stripe_checkout_session_id="cs_orders_export_canceled_1",
+    )
+    completed_purchase.amount_cents = 12345
+    completed_purchase.currency = "usd"
+    db.add(completed_purchase)
+    db.commit()
+    db.refresh(completed_purchase)
+
+    export_response = client.get(
+        "/api/v1/admin/orders/export?status=completed",
+        headers=admin_headers,
+    )
+    assert export_response.status_code == 200, export_response.text
+    assert export_response.headers["content-type"].startswith("text/csv")
+    assert "attachment; filename=admin_orders_" in export_response.headers.get("content-disposition", "")
+
+    reader = csv.DictReader(io.StringIO(export_response.text))
+    rows = list(reader)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["order_reference"] == "cs_orders_export_completed_1"
+    assert row["advisor_name"] == advisor.name
+    assert row["advisor_email"] == advisor.email
+    assert row["package_name"] == starter_plan.name
+    assert row["quantity"] == "7"
+    assert row["remaining_credits"] == "5"
+    assert row["status"] == "completed"
+    assert row["amount_dollars"] == "123.45"
+    assert row["currency"] == "USD"
+    assert row["created_at"] == completed_purchase.purchased_at.isoformat()
 
 def test_admin_lead_inventory_filters_and_license_status_summary(
     client,
