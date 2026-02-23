@@ -9,6 +9,7 @@ from typing import Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 import uvicorn
 
 from app.api.v1 import api_router
@@ -38,6 +39,34 @@ def _resolve_openapi_docs_config() -> tuple[Optional[str], Optional[str], Option
     if not docs_allowed:
         return None, None, None
     return "/api/openapi.json", "/api/docs", "/api/redoc"
+
+
+def _check_database_readiness() -> dict[str, object]:
+    timeout_seconds = max(float(settings.HEALTH_READY_DB_TIMEOUT_SECONDS), 0.1)
+    timeout_ms = max(int(timeout_seconds * 1000), 1)
+    db = SessionLocal()
+    try:
+        bind = db.get_bind()
+        dialect_name = bind.dialect.name if bind is not None else ""
+        probe_query = "SELECT 1"
+        if dialect_name == "mysql":
+            probe_query = f"SELECT /*+ MAX_EXECUTION_TIME({timeout_ms}) */ 1"
+        elif dialect_name == "postgresql":
+            db.execute(text("SET LOCAL statement_timeout = :timeout_ms"), {"timeout_ms": timeout_ms})
+        db.execute(text(probe_query)).scalar_one()
+        return {
+            "status": "healthy",
+            "timeout_seconds": timeout_seconds,
+        }
+    except Exception as exc:
+        logger.exception("Database readiness probe failed: %s", exc)
+        return {
+            "status": "unhealthy",
+            "timeout_seconds": timeout_seconds,
+            "error": str(exc),
+        }
+    finally:
+        db.close()
 
 
 @asynccontextmanager
@@ -98,11 +127,15 @@ def health_ready():
     """Readiness endpoint."""
     limiter_status = get_rate_limiter_status_snapshot()
     status_text = "unhealthy" if is_rate_limiter_critical_unavailable() else "healthy"
+    database_status = _check_database_readiness()
+    database_available = database_status.get("status") == "healthy"
+    if not database_available:
+        status_text = "unhealthy"
     notification_pipeline_status = {
         "status": "skipped",
         "enabled": bool(settings.NOTIFICATIONS_ENABLED),
     }
-    if settings.NOTIFICATIONS_ENABLED:
+    if settings.NOTIFICATIONS_ENABLED and database_available:
         db = SessionLocal()
         try:
             pipeline_snapshot = NotificationOutboxHealthService.get_pipeline_health_snapshot(db)
@@ -124,11 +157,17 @@ def health_ready():
             }
         finally:
             db.close()
+    elif settings.NOTIFICATIONS_ENABLED and not database_available:
+        notification_pipeline_status = {
+            "status": "skipped",
+            "enabled": True,
+            "reason": "database_unavailable",
+        }
     webhook_pipeline_status = {
         "status": "skipped",
         "enabled": bool(settings.STRIPE_WEBHOOK_FAST_ACK_ENABLED),
     }
-    if settings.STRIPE_WEBHOOK_FAST_ACK_ENABLED:
+    if settings.STRIPE_WEBHOOK_FAST_ACK_ENABLED and database_available:
         db = SessionLocal()
         try:
             pipeline_snapshot = StripeWebhookHealthService.get_pipeline_health_snapshot(db)
@@ -150,9 +189,16 @@ def health_ready():
             }
         finally:
             db.close()
+    elif settings.STRIPE_WEBHOOK_FAST_ACK_ENABLED and not database_available:
+        webhook_pipeline_status = {
+            "status": "skipped",
+            "enabled": True,
+            "reason": "database_unavailable",
+        }
     payload = {
         "status": status_text,
         "checks": {
+            "database": database_status,
             "rate_limiter": limiter_status,
             "notification_outbox_pipeline": notification_pipeline_status,
             "stripe_webhook_pipeline": webhook_pipeline_status,
