@@ -1,7 +1,9 @@
 import logging
+from datetime import datetime, timezone
 from typing import Annotated, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_admin
@@ -97,6 +99,36 @@ def get_orders(
         page=page,
         size=size,
         status=normalized_status,
+    )
+
+
+@router.get(
+    "/orders/export",
+    summary="Export admin orders as CSV",
+    response_class=StreamingResponse,
+)
+def export_orders_csv(
+    status: Optional[str] = Query(default=None),
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    _ = current_admin
+    normalized_status = status.strip() if status else None
+    if normalized_status == "":
+        normalized_status = None
+
+    csv_iterator = AdminService.stream_orders_csv(
+        db=db,
+        status=normalized_status,
+    )
+    filename = f"admin_orders_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
+    return StreamingResponse(
+        csv_iterator,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+            "Cache-Control": "no-cache",
+        },
     )
 
 
