@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
 
-import { getOrders } from "@/api/admin";
+import { downloadOrdersExport, getOrders } from "@/api/admin";
 import type { AdminOrderListItem } from "@/types/admin";
 import { getApiErrorMessage } from "@/utils/api-error";
 
@@ -63,6 +63,7 @@ const badgeStyle = (status: string): CSSProperties => {
 const OrdersPage = () => {
   const [orders, setOrders] = useState<AdminOrderListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -94,6 +95,26 @@ const OrdersPage = () => {
     };
   }, []);
 
+  const handleExport = async () => {
+    setExporting(true);
+    setError(null);
+    try {
+      const { blob, filename } = await downloadOrdersExport();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      window.URL.revokeObjectURL(objectUrl);
+    } catch (exportError) {
+      setError(getApiErrorMessage(exportError, "Unable to export orders CSV."));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="page">
       <div>
@@ -118,8 +139,13 @@ const OrdersPage = () => {
             </p>
           </div>
 
-          <button type="button" className="btn btn-secondary" disabled>
-            Export
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => void handleExport()}
+            disabled={loading || exporting || orders.length === 0}
+          >
+            {exporting ? "Exporting..." : "Export"}
           </button>
         </div>
 
