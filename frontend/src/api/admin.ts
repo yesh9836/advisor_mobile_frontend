@@ -50,6 +50,11 @@ interface LicenseDocumentPreview {
   contentType: string;
 }
 
+interface OrdersExportDownload {
+  blob: Blob;
+  filename: string;
+}
+
 type QueryParamValue = string | number | boolean | null | undefined;
 
 const normalizeParams = <T extends Record<string, QueryParamValue>>(
@@ -445,6 +450,28 @@ export const getOrders = async (
     response.data,
     "/admin/orders",
   );
+};
+
+export const downloadOrdersExport = async (
+  status?: string,
+): Promise<OrdersExportDownload> => {
+  const params = normalizeParams({ status });
+  const response = await apiClient.get<Blob>("/admin/orders/export", {
+    params,
+    responseType: "blob",
+  });
+  if (!(response.data instanceof Blob)) {
+    throw new TypeError("Unexpected response format from /admin/orders/export");
+  }
+  const fallback = `admin_orders_${new Date().toISOString().slice(0, 10)}.csv`;
+  const filename = parseFilename(
+    response.headers["content-disposition"],
+    fallback,
+  );
+  return {
+    blob: response.data,
+    filename,
+  };
 };
 
 export const getLeadInventory = async (
