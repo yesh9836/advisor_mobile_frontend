@@ -307,6 +307,9 @@ class SubscriptionService:
                 package_id=package.id,
                 retry_token=retry_token,
             )
+            checkout_expires_at = int(datetime.now(timezone.utc).timestamp()) + (
+                int(settings.STRIPE_CHECKOUT_SESSION_EXPIRES_MINUTES) * 60
+            )
             session = stripe.checkout.Session.create(
                 customer=customer_id,
                 mode="payment",
@@ -324,6 +327,7 @@ class SubscriptionService:
                 },
                 success_url=success_url,
                 cancel_url=cancel_url,
+                expires_at=checkout_expires_at,
                 idempotency_key=idempotency_key,
             )
             session_id = str(session["id"])
