@@ -251,6 +251,57 @@ class NotificationService:
         )
 
     @staticmethod
+    def reclaim_stale_processing_rows(
+        db: Session,
+        *,
+        now=None,
+        stale_lock_seconds: Optional[int] = None,
+    ) -> Dict[str, int]:
+        current = now or utcnow()
+        stale_after_seconds = stale_lock_seconds
+        if stale_after_seconds is None:
+            stale_after_seconds = int(settings.NOTIFICATION_OUTBOX_HEALTH_STALE_LOCK_SECONDS)
+        stale_after_seconds = max(int(stale_after_seconds), 1)
+        stale_cutoff = current - timedelta(seconds=stale_after_seconds)
+
+        stale_rows = (
+            db.query(NotificationOutbox)
+            .filter(
+                NotificationOutbox.status == "processing",
+                NotificationOutbox.locked_at.is_not(None),
+                NotificationOutbox.locked_at <= stale_cutoff,
+            )
+            .order_by(NotificationOutbox.id.asc())
+            .all()
+        )
+        if not stale_rows:
+            return {"stale_selected": 0, "reclaimed_pending": 0, "reclaimed_failed": 0}
+
+        reclaimed_pending = 0
+        reclaimed_failed = 0
+        for row in stale_rows:
+            attempts = int(row.attempt_count or 0)
+            max_attempts = int(row.max_attempts or settings.NOTIFICATION_OUTBOX_MAX_ATTEMPTS)
+            row.locked_at = None
+            row.next_retry_at = current
+            if attempts >= max_attempts:
+                row.status = "failed"
+                reclaimed_failed += 1
+            else:
+                row.status = "pending"
+                reclaimed_pending += 1
+            if not row.last_error:
+                row.last_error = "stale processing lock reclaimed"
+            db.add(row)
+
+        db.commit()
+        return {
+            "stale_selected": len(stale_rows),
+            "reclaimed_pending": reclaimed_pending,
+            "reclaimed_failed": reclaimed_failed,
+        }
+
+    @staticmethod
     def process_outbox_batch(
         db: Session,
         *,
