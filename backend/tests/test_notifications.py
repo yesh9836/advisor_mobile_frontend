@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
 from app.db.timezone import utcnow
@@ -68,6 +69,132 @@ def test_enqueue_lead_delivery_notifications_is_idempotent_and_channel_scoped(
     )
     assert [row.channel for row in rows] == ["email", "sms"]
     assert all(row.status == "pending" for row in rows)
+
+
+@pytest.mark.integration
+def test_enqueue_lead_delivery_notifications_handles_duplicate_conflict_without_rolling_back_outer_tx(
+    db,
+    monkeypatch,
+    user_factory,
+    lead_factory,
+):
+    _enable_notifications(monkeypatch)
+    advisor = user_factory(
+        role="advisor",
+        email="notify.enqueue.duplicate@example.com",
+        password="NotifyEnqueueDuplicate123!",
+    )
+    db.add(
+        AdvisorDeliverySettings(
+            user_id=advisor.id,
+            email_alerts_enabled=True,
+            sms_alerts_enabled=True,
+            version=1,
+        )
+    )
+    db.commit()
+
+    lead = lead_factory(state_code="CA", first_name="Morgan", last_name="Reed")
+    purchase_id = 42
+    email_key = NotificationService._build_idempotency_key(
+        channel="email",
+        user_id=advisor.id,
+        lead_id=lead.id,
+        purchase_id=purchase_id,
+        event_type=NotificationService.LEAD_DELIVERED_EVENT,
+    )
+    db.add(
+        NotificationOutbox(
+            user_id=advisor.id,
+            lead_id=lead.id,
+            purchase_id=purchase_id,
+            channel="email",
+            event_type=NotificationService.LEAD_DELIVERED_EVENT,
+            recipient=advisor.email,
+            subject="Existing duplicate row",
+            message_body="seeded",
+            payload={"source_event": "seed"},
+            idempotency_key=email_key,
+            status="pending",
+            attempt_count=0,
+            max_attempts=3,
+            next_retry_at=utcnow(),
+        )
+    )
+    db.commit()
+
+    summary = NotificationService.enqueue_lead_delivery_notifications(
+        db=db,
+        user_id=advisor.id,
+        lead_ids=[lead.id],
+        purchase_id=purchase_id,
+        source_event="test_duplicate_conflict",
+    )
+    assert summary == {"enqueued_total": 1, "enqueued_email": 0, "enqueued_sms": 1}
+
+    advisor.name = "Outer Transaction Survived"
+    db.add(advisor)
+    db.commit()
+    db.refresh(advisor)
+    assert advisor.name == "Outer Transaction Survived"
+
+    rows = (
+        db.query(NotificationOutbox)
+        .filter(
+            NotificationOutbox.user_id == advisor.id,
+            NotificationOutbox.lead_id == lead.id,
+            NotificationOutbox.purchase_id == purchase_id,
+        )
+        .order_by(NotificationOutbox.channel.asc())
+        .all()
+    )
+    assert [row.channel for row in rows] == ["email", "sms"]
+
+
+@pytest.mark.integration
+def test_enqueue_lead_delivery_notifications_reraises_non_duplicate_integrity_error(
+    db,
+    monkeypatch,
+    user_factory,
+    lead_factory,
+):
+    _enable_notifications(monkeypatch)
+    advisor = user_factory(
+        role="advisor",
+        email="notify.enqueue.integrity@example.com",
+        password="NotifyEnqueueIntegrity123!",
+    )
+    db.add(
+        AdvisorDeliverySettings(
+            user_id=advisor.id,
+            email_alerts_enabled=True,
+            sms_alerts_enabled=False,
+            version=1,
+        )
+    )
+    db.commit()
+    lead = lead_factory(state_code="CA", first_name="Jamie", last_name="Miles")
+
+    original_flush = db.flush
+
+    def _raise_integrity_error(*args, **kwargs):
+        raise IntegrityError(
+            statement="insert into notification_outbox (...)",
+            params={},
+            orig=Exception("foreign key constraint failed"),
+        )
+
+    monkeypatch.setattr(db, "flush", _raise_integrity_error)
+    with pytest.raises(IntegrityError):
+        NotificationService.enqueue_lead_delivery_notifications(
+            db=db,
+            user_id=advisor.id,
+            lead_ids=[lead.id],
+            purchase_id=None,
+            source_event="test_non_duplicate_integrity",
+        )
+
+    monkeypatch.setattr(db, "flush", original_flush)
 
 
 @pytest.mark.integration
