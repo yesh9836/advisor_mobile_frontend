@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { getAuditLogs } from "@/api/admin";
-import ImportModal, { toImportSummary } from "@/components/admin/ImportModal";
+import ImportModal from "@/components/admin/ImportModal";
+import { toImportSummary } from "@/components/admin/import-summary";
 import type { AuditLog } from "@/types/admin";
 import { getApiErrorMessage } from "@/utils/api-error";
 

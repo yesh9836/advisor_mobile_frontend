@@ -5,7 +5,8 @@ import {
   getLeadInventory,
   getLicenseStatusSummary,
 } from "@/api/admin";
-import ImportModal, { toImportSummary } from "@/components/admin/ImportModal";
+import ImportModal from "@/components/admin/ImportModal";
+import { toImportSummary } from "@/components/admin/import-summary";
 import type {
   AdminLeadInventoryItem,
   LeadInventoryFilters,
