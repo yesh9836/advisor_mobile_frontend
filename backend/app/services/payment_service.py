@@ -1,7 +1,7 @@
 import hashlib
 import logging
 import re
-from typing import Optional
+from typing import Any, Dict, Optional
 from uuid import uuid4
 
 import stripe
@@ -19,6 +19,7 @@ class PaymentService:
 
     _initialized: bool = False
     _CHECKOUT_RETRY_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9:_-]{8,128}$")
+    _ADMIN_PLAN_REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9:_-]{8,128}$")
 
     @staticmethod
     def _customer_create_idempotency_key(user: User) -> str:
@@ -56,6 +57,89 @@ class PaymentService:
                 detail="Invalid checkout retry token",
             )
         return cleaned
+
+    @staticmethod
+    def normalize_admin_plan_request_id(request_id: Optional[str]) -> str:
+        cleaned = str(request_id or "").strip()
+        if not cleaned:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="request_id is required",
+            )
+        if not PaymentService._ADMIN_PLAN_REQUEST_ID_PATTERN.fullmatch(cleaned):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="request_id must be 8-128 characters and contain only letters, numbers, :, _, -",
+            )
+        return cleaned
+
+    @staticmethod
+    def admin_plan_price_idempotency_key(
+        *,
+        request_id: str,
+    ) -> str:
+        normalized_request_id = PaymentService.normalize_admin_plan_request_id(request_id)
+        token_hash = hashlib.sha256(normalized_request_id.encode("utf-8")).hexdigest()[:24]
+        return f"admin-plan-price-create:{token_hash}:v1"
+
+    @staticmethod
+    def create_stripe_price_for_plan(
+        *,
+        request_id: str,
+        plan_name: str,
+        price_cents: int,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Optional[str]]:
+        PaymentService._init_stripe()
+
+        normalized_plan_name = str(plan_name or "").strip()
+        if not normalized_plan_name:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Plan name is required")
+        if int(price_cents) <= 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="price_cents must be positive")
+
+        idempotency_key = PaymentService.admin_plan_price_idempotency_key(request_id=request_id)
+        payload_metadata = {
+            str(key): str(value)
+            for key, value in (metadata or {}).items()
+            if value is not None
+        }
+
+        try:
+            stripe_price = stripe.Price.create(
+                currency="usd",
+                unit_amount=int(price_cents),
+                product_data={"name": normalized_plan_name},
+                metadata=payload_metadata,
+                idempotency_key=idempotency_key,
+            )
+        except stripe.error.StripeError as exc:
+            logger.error("Stripe price creation failed for plan=%s: %s", normalized_plan_name, exc)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Stripe price creation failed",
+            ) from exc
+
+        price_id = str(stripe_price.get("id") or "").strip()
+        if not price_id:
+            logger.error("Stripe price creation returned empty price id for plan=%s", normalized_plan_name)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Stripe price creation failed",
+            )
+
+        product_value = stripe_price.get("product")
+        product_id: Optional[str] = None
+        if isinstance(product_value, str):
+            product_id = product_value
+        elif isinstance(product_value, dict):
+            nested_product_id = product_value.get("id")
+            product_id = str(nested_product_id) if nested_product_id else None
+
+        return {
+            "stripe_price_id": price_id,
+            "stripe_product_id": product_id,
+        }
 
     @staticmethod
     def _stripe_http_client_candidates() -> list[tuple[str, object]]:
