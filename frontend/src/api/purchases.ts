@@ -130,6 +130,10 @@ const firstPurchaseOfferEligibilitySchema: z.ZodType<FirstPurchaseAddonOfferElig
     .looseObject({
       eligible: z.boolean(),
       offer: firstPurchaseOfferSchema.nullable(),
+      rejection_code: z.string().nullable().optional(),
+      rejection_message: z.string().nullable().optional(),
+      inventory_available_count: z.number().nullable().optional(),
+      inventory_required_count: z.number().nullable().optional(),
     });
 
 export const getPackages = async (): Promise<PurchasePackage[]> => {

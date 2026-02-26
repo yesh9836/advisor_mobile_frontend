@@ -131,6 +131,11 @@ const firstPurchaseOfferConfigSchema: z.ZodType<FirstPurchaseAddonOfferConfig> =
     ends_at: z.string().nullable(),
     updated_at: z.string().nullable(),
     updated_by: z.number().nullable(),
+    inventory_ready: z.boolean().nullable().optional(),
+    inventory_available_count: z.number().nullable().optional(),
+    inventory_required_count: z.number().nullable().optional(),
+    inventory_gate_code: z.string().nullable().optional(),
+    inventory_gate_message: z.string().nullable().optional(),
   });
 
 const adminAnalyticsOverviewSchema: z.ZodType<AdminAnalyticsOverview> = z
