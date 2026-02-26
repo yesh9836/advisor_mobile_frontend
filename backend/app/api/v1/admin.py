@@ -9,6 +9,11 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db, require_admin
 from app.models.user import User
 from app.schemas.admin import (
+    AdminPlanArchiveRequest,
+    AdminPlanCreateRequest,
+    AdminPlanUpdateRequest,
+    AdminPlanListFilters,
+    AdminPlanItem,
     AdminAnalyticsOverview,
     AuditLogFilters,
     DeactivateUserRequest,
@@ -17,6 +22,7 @@ from app.schemas.admin import (
     LeadInventoryFilters,
     LicenseStatusSummaryItem,
     PaginatedAuditLogs,
+    PaginatedAdminPlans,
     PaginatedLeadInventory,
     PaginatedOrders,
     PaginatedUsers,
@@ -208,6 +214,96 @@ def get_audit_logs(
 ) -> PaginatedAuditLogs:
     _ = current_admin
     return AdminService.get_audit_logs(db=db, page=page, size=size, filters=filters)
+
+
+@router.get(
+    "/plans",
+    response_model=PaginatedAdminPlans,
+    summary="List lead plans for admin lifecycle management",
+)
+def get_plans(
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    filters: AdminPlanListFilters = Depends(),
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> PaginatedAdminPlans:
+    _ = current_admin
+    return AdminService.list_plans(db=db, page=page, size=size, filters=filters)
+
+
+@router.post(
+    "/plans",
+    response_model=AdminPlanItem,
+    summary="Create a new lead plan",
+)
+def create_plan(
+    payload: AdminPlanCreateRequest,
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> AdminPlanItem:
+    return AdminService.create_plan(
+        db=db,
+        admin_user=current_admin,
+        payload=payload,
+    )
+
+
+@router.put(
+    "/plans/{plan_id}",
+    response_model=AdminPlanItem,
+    summary="Update a lead plan",
+)
+def update_plan(
+    plan_id: int,
+    payload: AdminPlanUpdateRequest,
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> AdminPlanItem:
+    return AdminService.update_plan(
+        db=db,
+        admin_user=current_admin,
+        plan_id=plan_id,
+        payload=payload,
+    )
+
+
+@router.post(
+    "/plans/{plan_id}/archive",
+    response_model=AdminPlanItem,
+    summary="Archive a lead plan",
+)
+def archive_plan(
+    plan_id: int,
+    payload: Optional[AdminPlanArchiveRequest] = None,
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> AdminPlanItem:
+    return AdminService.archive_plan(
+        db=db,
+        admin_user=current_admin,
+        plan_id=plan_id,
+        payload=payload or AdminPlanArchiveRequest(),
+    )
+
+
+@router.post(
+    "/plans/{plan_id}/unarchive",
+    response_model=AdminPlanItem,
+    summary="Unarchive a lead plan",
+)
+def unarchive_plan(
+    plan_id: int,
+    payload: Optional[AdminPlanArchiveRequest] = None,
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> AdminPlanItem:
+    return AdminService.unarchive_plan(
+        db=db,
+        admin_user=current_admin,
+        plan_id=plan_id,
+        payload=payload or AdminPlanArchiveRequest(),
+    )
 
 
 @router.post(
