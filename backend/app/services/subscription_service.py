@@ -212,6 +212,27 @@ class SubscriptionService:
         return package.features.get("catalog_visible", True) is not False
 
     @staticmethod
+    def _is_package_within_effective_window(
+        package: LeadPackage,
+        *,
+        at_time: Optional[datetime] = None,
+    ) -> bool:
+        evaluation_time = at_time or datetime.now(timezone.utc)
+        if package.effective_from is not None and evaluation_time < package.effective_from:
+            return False
+        if package.effective_to is not None and evaluation_time > package.effective_to:
+            return False
+        return True
+
+    @staticmethod
+    def _is_package_catalog_available(package: LeadPackage) -> bool:
+        if package.is_archived:
+            return False
+        if not SubscriptionService._is_package_within_effective_window(package):
+            return False
+        return SubscriptionService._is_catalog_visible_package(package)
+
+    @staticmethod
     def _build_checkout_line_item(package: LeadPackage) -> Dict[str, Any]:
         if isinstance(package.features, dict) and package.features.get("managed_by") == "first_purchase_offer":
             try:
@@ -250,7 +271,7 @@ class SubscriptionService:
     def get_available_packages(db: Session) -> List[LeadPackage]:
         """Return all available one-time lead packages."""
         rows = db.query(LeadPackage).order_by(LeadPackage.price_cents.asc()).all()
-        return [row for row in rows if SubscriptionService._is_catalog_visible_package(row)]
+        return [row for row in rows if SubscriptionService._is_package_catalog_available(row)]
 
     @staticmethod
     def create_purchase_checkout_session(
@@ -270,6 +291,8 @@ class SubscriptionService:
 
         package = db.query(LeadPackage).filter(LeadPackage.id == package_id).first()
         if not package:
+            raise HTTPException(status_code=404, detail="Package not found")
+        if package.is_archived or not SubscriptionService._is_package_within_effective_window(package):
             raise HTTPException(status_code=404, detail="Package not found")
 
         if SubscriptionService._is_first_purchase_offer_managed_package(package):
