@@ -10,7 +10,7 @@ import type {
   FirstPurchaseAddonOfferUpdatePayload,
   PurchasePackage,
 } from "@/types/purchase";
-import { getApiErrorMessage } from "@/utils/api-error";
+import { getApiErrorMessage, parseApiError } from "@/utils/api-error";
 
 const toLocalDateTimeInputValue = (isoValue: string | null): string => {
   if (!isoValue) {
@@ -206,7 +206,8 @@ const FirstPurchaseOfferPage = () => {
       setForm(buildFormFromConfig(saved));
       setSuccess("First-purchase add-on offer saved.");
     } catch (saveError) {
-      setError(getApiErrorMessage(saveError, "Unable to save first-purchase offer settings."));
+      const parsedError = parseApiError(saveError, "Unable to save first-purchase offer settings.");
+      setError(parsedError.code ? `${parsedError.code}: ${parsedError.message}` : parsedError.message);
     } finally {
       setSaving(false);
     }
@@ -253,6 +254,22 @@ const FirstPurchaseOfferPage = () => {
               <span style={{ color: "#0f172a", fontWeight: 600 }}>Enable Offer</span>
             </label>
           </div>
+
+          {config?.inventory_ready !== null && config?.inventory_ready !== undefined && (
+            <div
+              className={config.inventory_ready ? "success" : "alert"}
+              data-testid="offer-inventory-status"
+            >
+              {config.inventory_ready
+                ? `Inventory ready for add-on checkout (${config.inventory_available_count ?? 0}/${config.inventory_required_count ?? 0} available).`
+                : (config.inventory_gate_message ?? "Inventory is below the required threshold for add-on checkout.")}
+              {!config.inventory_ready && config.inventory_gate_code && (
+                <div style={{ marginTop: 6, fontWeight: 600 }}>
+                  Code: {config.inventory_gate_code}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="grid-3">
             <div className="field">
