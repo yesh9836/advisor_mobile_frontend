@@ -17,6 +17,7 @@ const AnalyticsPage = lazy(() => import("@/pages/admin/AnalyticsPage"));
 const FirstPurchaseOfferPage = lazy(
   () => import("@/pages/admin/FirstPurchaseOfferPage"),
 );
+const PlansPage = lazy(() => import("@/pages/admin/PlansPage"));
 const ImportsPage = lazy(() => import("@/pages/admin/ImportsPage"));
 const LeadInventoryPage = lazy(() => import("@/pages/admin/LeadInventoryPage"));
 const LicenseReviewsPage = lazy(() => import("@/pages/admin/LicenseReviewsPage"));
@@ -189,6 +190,14 @@ export const AppRoutes = () => {
               element={
                 <ProtectedRoute allowedRoles={["admin"]}>
                   <FirstPurchaseOfferPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/plans"
+              element={
+                <ProtectedRoute allowedRoles={["admin"]}>
+                  <PlansPage />
                 </ProtectedRoute>
               }
             />
