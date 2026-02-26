@@ -109,6 +109,13 @@ const OfferIcon = () => (
   </svg>
 );
 
+const PlansIcon = () => (
+  <svg viewBox="0 0 20 20" aria-hidden="true">
+    <path d="M4 4.5h12v11H4z" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    <path d="M6.5 8h7M6.5 11h4.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+  </svg>
+);
+
 const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -131,6 +138,7 @@ const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
     { to: "/admin/orders", label: "Orders", icon: <OrdersIcon /> },
     { to: "/admin/imports", label: "Imports", icon: <ImportIcon /> },
     { to: "/admin/analytics", label: "Analytics", icon: <AnalyticsIcon /> },
+    { to: "/admin/plans", label: "Plans", icon: <PlansIcon /> },
     { to: "/admin/first-purchase-offer", label: "First Purchase Offer", icon: <OfferIcon /> },
     { to: "/admin/license-reviews", label: "License Reviews", icon: <LicenseIcon /> },
   ];
