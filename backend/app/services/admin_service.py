@@ -2,7 +2,7 @@ import csv
 import io
 import logging
 from decimal import Decimal
-from typing import Generator, Optional
+from typing import Any, Dict, Generator, Optional
 
 from fastapi import HTTPException
 from sqlalchemy import case, func, or_
@@ -24,8 +24,14 @@ from app.schemas.admin import (
     LeadInventoryFilters,
     LeadInventoryItem,
     LicenseStatusSummaryItem,
+    AdminPlanArchiveRequest,
+    AdminPlanCreateRequest,
+    AdminPlanItem,
+    AdminPlanListFilters,
+    AdminPlanUpdateRequest,
     MonthlyRevenuePoint,
     PaginatedAuditLogs,
+    PaginatedAdminPlans,
     PaginatedLeadInventory,
     PaginatedOrders,
     PaginatedUsers,
@@ -43,11 +49,456 @@ from app.schemas.admin import (
 )
 from app.services.audit_service import AuditService
 from app.services.auth_service import AuthService
+from app.services.payment_service import PaymentService
 
 logger = logging.getLogger(__name__)
 
 
 class AdminService:
+    @staticmethod
+    def _is_first_purchase_offer_managed_package(package: LeadPackage) -> bool:
+        return isinstance(package.features, dict) and package.features.get("managed_by") == "first_purchase_offer"
+
+    @staticmethod
+    def _resolve_plan_credits_total(package: LeadPackage) -> int:
+        if isinstance(package.features, dict):
+            raw_credits = package.features.get("credits_total")
+            if raw_credits is None:
+                raw_credits = package.features.get("credits")
+            try:
+                if raw_credits is not None:
+                    return max(int(raw_credits), 0)
+            except (TypeError, ValueError):
+                pass
+        return max(int(package.daily_download_limit or 0), 0)
+
+    @staticmethod
+    def _resolve_plan_catalog_visible(package: LeadPackage) -> bool:
+        if not isinstance(package.features, dict):
+            return True
+        return package.features.get("catalog_visible", True) is not False
+
+    @staticmethod
+    def _is_plan_effective_at(package: LeadPackage, at_time) -> bool:
+        if package.effective_from is not None and at_time < package.effective_from:
+            return False
+        if package.effective_to is not None and at_time > package.effective_to:
+            return False
+        return True
+
+    @staticmethod
+    def _validate_effective_window(*, effective_from, effective_to) -> None:
+        if effective_from is not None and effective_to is not None and effective_to < effective_from:
+            raise HTTPException(
+                status_code=400,
+                detail="effective_to must be greater than or equal to effective_from",
+            )
+
+    @staticmethod
+    def _plan_has_purchases(db: Session, *, plan_id: int) -> bool:
+        purchase_exists = (
+            db.query(LeadPurchase.id)
+            .filter(LeadPurchase.package_id == plan_id)
+            .limit(1)
+            .first()
+        )
+        return purchase_exists is not None
+
+    @staticmethod
+    def _serialize_plan_snapshot(
+        package: LeadPackage,
+        *,
+        has_purchases: bool,
+    ) -> Dict[str, Any]:
+        return {
+            "id": int(package.id),
+            "name": str(package.name),
+            "price_cents": int(package.price_cents or 0),
+            "currency": str(package.currency or "USD").upper(),
+            "stripe_product_id": package.stripe_product_id,
+            "stripe_price_id": str(package.stripe_price_id),
+            "state_limit": int(package.state_limit) if package.state_limit is not None else None,
+            "credits_total": AdminService._resolve_plan_credits_total(package),
+            "catalog_visible": AdminService._resolve_plan_catalog_visible(package),
+            "is_archived": bool(package.is_archived),
+            "archived_at": package.archived_at.isoformat() if package.archived_at is not None else None,
+            "effective_from": package.effective_from.isoformat() if package.effective_from is not None else None,
+            "effective_to": package.effective_to.isoformat() if package.effective_to is not None else None,
+            "updated_by": int(package.updated_by) if package.updated_by is not None else None,
+            "created_at": package.created_at.isoformat() if package.created_at is not None else None,
+            "updated_at": package.updated_at.isoformat() if package.updated_at is not None else None,
+            "has_purchases": bool(has_purchases),
+        }
+
+    @staticmethod
+    def _to_admin_plan_item(
+        package: LeadPackage,
+        *,
+        has_purchases: bool,
+    ) -> AdminPlanItem:
+        return AdminPlanItem(
+            id=int(package.id),
+            name=str(package.name),
+            price_cents=int(package.price_cents or 0),
+            currency=str(package.currency or "USD").upper(),
+            stripe_product_id=package.stripe_product_id,
+            stripe_price_id=str(package.stripe_price_id),
+            state_limit=int(package.state_limit) if package.state_limit is not None else None,
+            credits_total=AdminService._resolve_plan_credits_total(package),
+            catalog_visible=AdminService._resolve_plan_catalog_visible(package),
+            is_archived=bool(package.is_archived),
+            archived_at=package.archived_at,
+            effective_from=package.effective_from,
+            effective_to=package.effective_to,
+            created_at=package.created_at,
+            updated_at=package.updated_at,
+            updated_by=int(package.updated_by) if package.updated_by is not None else None,
+            has_purchases=bool(has_purchases),
+        )
+
+    @staticmethod
+    def _get_manageable_plan_or_404(db: Session, *, plan_id: int) -> LeadPackage:
+        package = db.query(LeadPackage).filter(LeadPackage.id == plan_id).first()
+        if package is None:
+            raise HTTPException(status_code=404, detail="Plan not found")
+        if AdminService._is_first_purchase_offer_managed_package(package):
+            raise HTTPException(status_code=404, detail="Plan not found")
+        return package
+
+    @staticmethod
+    def list_plans(
+        db: Session,
+        *,
+        page: int,
+        size: int,
+        filters: AdminPlanListFilters,
+    ) -> PaginatedAdminPlans:
+        purchase_counts = dict(
+            db.query(
+                LeadPurchase.package_id.label("package_id"),
+                func.count(LeadPurchase.id).label("purchase_count"),
+            )
+            .group_by(LeadPurchase.package_id)
+            .all()
+        )
+
+        rows = db.query(LeadPackage).order_by(LeadPackage.created_at.desc(), LeadPackage.id.desc()).all()
+        filtered: list[AdminPlanItem] = []
+        effective_at = filters.effective_at
+
+        for package in rows:
+            if AdminService._is_first_purchase_offer_managed_package(package):
+                continue
+
+            if filters.search and filters.search.lower() not in str(package.name or "").lower():
+                continue
+
+            if filters.archived == "archived" and not package.is_archived:
+                continue
+            if filters.archived == "unarchived" and package.is_archived:
+                continue
+
+            if effective_at is not None and not AdminService._is_plan_effective_at(package, effective_at):
+                continue
+
+            has_purchases = int(purchase_counts.get(package.id, 0) or 0) > 0
+            filtered.append(
+                AdminService._to_admin_plan_item(
+                    package,
+                    has_purchases=has_purchases,
+                )
+            )
+
+        total = len(filtered)
+        offset = max(0, (page - 1) * size)
+        items = filtered[offset: offset + size]
+        return PaginatedAdminPlans(items=items, total=total, page=page, size=size)
+
+    @staticmethod
+    def create_plan(
+        db: Session,
+        *,
+        admin_user: User,
+        payload: AdminPlanCreateRequest,
+    ) -> AdminPlanItem:
+        AdminService._validate_effective_window(
+            effective_from=payload.effective_from,
+            effective_to=payload.effective_to,
+        )
+
+        duplicate = db.query(LeadPackage).filter(LeadPackage.name == payload.name).first()
+        if duplicate is not None:
+            raise HTTPException(status_code=409, detail="Plan name already exists")
+
+        stripe_refs = PaymentService.create_stripe_price_for_plan(
+            request_id=payload.request_id,
+            plan_name=payload.name,
+            price_cents=payload.price_cents,
+            metadata={
+                "source": "admin_plan_create",
+                "admin_user_id": str(admin_user.id),
+                "request_id": payload.request_id,
+            },
+        )
+
+        package = LeadPackage(
+            name=payload.name,
+            price_cents=int(payload.price_cents),
+            currency="USD",
+            stripe_product_id=stripe_refs.get("stripe_product_id"),
+            stripe_price_id=str(stripe_refs["stripe_price_id"]),
+            state_limit=payload.state_limit,
+            daily_download_limit=int(payload.credits_total),
+            features={
+                "credits_total": int(payload.credits_total),
+                "catalog_visible": bool(payload.catalog_visible),
+            },
+            effective_from=payload.effective_from,
+            effective_to=payload.effective_to,
+            is_archived=False,
+            archived_at=None,
+            updated_by=int(admin_user.id),
+        )
+        db.add(package)
+        try:
+            db.commit()
+            db.refresh(package)
+        except Exception as exc:
+            db.rollback()
+            logger.error("Failed to create admin plan name=%s: %s", payload.name, exc)
+            raise HTTPException(status_code=500, detail="Failed to create plan")
+
+        snapshot = AdminService._serialize_plan_snapshot(package, has_purchases=False)
+        AuditService.log_event(
+            actor_user_id=admin_user.id,
+            action="admin_plan_created",
+            entity_type="LeadPackage",
+            entity_id=int(package.id),
+            meta_data={
+                "before": None,
+                "after": snapshot,
+            },
+        )
+        return AdminService._to_admin_plan_item(package, has_purchases=False)
+
+    @staticmethod
+    def update_plan(
+        db: Session,
+        *,
+        admin_user: User,
+        plan_id: int,
+        payload: AdminPlanUpdateRequest,
+    ) -> AdminPlanItem:
+        package = AdminService._get_manageable_plan_or_404(db, plan_id=plan_id)
+        fields_set = set(payload.model_fields_set)
+
+        has_purchases = AdminService._plan_has_purchases(db, plan_id=int(package.id))
+        before_snapshot = AdminService._serialize_plan_snapshot(package, has_purchases=has_purchases)
+
+        current_credits_total = AdminService._resolve_plan_credits_total(package)
+        next_price_cents = int(package.price_cents or 0)
+        if "price_cents" in fields_set and payload.price_cents is not None:
+            next_price_cents = int(payload.price_cents)
+
+        next_credits_total = int(current_credits_total)
+        if "credits_total" in fields_set and payload.credits_total is not None:
+            next_credits_total = int(payload.credits_total)
+
+        commercial_changed = (
+            next_price_cents != int(package.price_cents or 0)
+            or next_credits_total != current_credits_total
+        )
+
+        if commercial_changed and has_purchases:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Commercial fields are immutable after activation. "
+                    "Create a new plan version instead."
+                ),
+            )
+
+        next_effective_from = package.effective_from
+        next_effective_to = package.effective_to
+        if "effective_from" in fields_set:
+            next_effective_from = payload.effective_from
+        if "effective_to" in fields_set:
+            next_effective_to = payload.effective_to
+        AdminService._validate_effective_window(
+            effective_from=next_effective_from,
+            effective_to=next_effective_to,
+        )
+
+        if "name" in fields_set:
+            if payload.name is None:
+                raise HTTPException(status_code=400, detail="name must not be empty")
+            package.name = payload.name
+
+        if "state_limit" in fields_set:
+            package.state_limit = payload.state_limit
+
+        if "effective_from" in fields_set:
+            package.effective_from = payload.effective_from
+        if "effective_to" in fields_set:
+            package.effective_to = payload.effective_to
+
+        features_payload: Dict[str, Any] = package.features if isinstance(package.features, dict) else {}
+        if "catalog_visible" in fields_set:
+            if payload.catalog_visible is None:
+                raise HTTPException(status_code=400, detail="catalog_visible must be true or false")
+            features_payload = {
+                **features_payload,
+                "catalog_visible": bool(payload.catalog_visible),
+            }
+
+        if commercial_changed:
+            if payload.request_id is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="request_id is required when updating price_cents or credits_total",
+                )
+            stripe_refs = PaymentService.create_stripe_price_for_plan(
+                request_id=payload.request_id,
+                plan_name=package.name,
+                price_cents=next_price_cents,
+                metadata={
+                    "source": "admin_plan_update",
+                    "admin_user_id": str(admin_user.id),
+                    "plan_id": str(package.id),
+                    "request_id": payload.request_id,
+                },
+            )
+            package.price_cents = next_price_cents
+            package.daily_download_limit = next_credits_total
+            package.stripe_price_id = str(stripe_refs["stripe_price_id"])
+            package.stripe_product_id = stripe_refs.get("stripe_product_id")
+            features_payload = {
+                **features_payload,
+                "credits_total": next_credits_total,
+            }
+
+        if features_payload != package.features:
+            package.features = features_payload
+
+        duplicate_name = (
+            db.query(LeadPackage.id)
+            .filter(
+                LeadPackage.id != package.id,
+                LeadPackage.name == package.name,
+            )
+            .first()
+        )
+        if duplicate_name is not None:
+            raise HTTPException(status_code=409, detail="Plan name already exists")
+
+        package.updated_by = int(admin_user.id)
+        db.add(package)
+        try:
+            db.commit()
+            db.refresh(package)
+        except Exception as exc:
+            db.rollback()
+            logger.error("Failed to update admin plan id=%s: %s", package.id, exc)
+            raise HTTPException(status_code=500, detail="Failed to update plan")
+
+        has_purchases_after = AdminService._plan_has_purchases(db, plan_id=int(package.id))
+        after_snapshot = AdminService._serialize_plan_snapshot(package, has_purchases=has_purchases_after)
+        if before_snapshot != after_snapshot:
+            AuditService.log_event(
+                actor_user_id=admin_user.id,
+                action="admin_plan_updated",
+                entity_type="LeadPackage",
+                entity_id=int(package.id),
+                meta_data={
+                    "before": before_snapshot,
+                    "after": after_snapshot,
+                },
+            )
+
+        return AdminService._to_admin_plan_item(package, has_purchases=has_purchases_after)
+
+    @staticmethod
+    def archive_plan(
+        db: Session,
+        *,
+        admin_user: User,
+        plan_id: int,
+        payload: AdminPlanArchiveRequest,
+    ) -> AdminPlanItem:
+        package = AdminService._get_manageable_plan_or_404(db, plan_id=plan_id)
+        has_purchases = AdminService._plan_has_purchases(db, plan_id=int(package.id))
+        before_snapshot = AdminService._serialize_plan_snapshot(package, has_purchases=has_purchases)
+
+        if not package.is_archived:
+            package.is_archived = True
+            package.archived_at = utcnow()
+            package.updated_by = int(admin_user.id)
+            db.add(package)
+            try:
+                db.commit()
+                db.refresh(package)
+            except Exception as exc:
+                db.rollback()
+                logger.error("Failed to archive plan id=%s: %s", package.id, exc)
+                raise HTTPException(status_code=500, detail="Failed to archive plan")
+
+        after_snapshot = AdminService._serialize_plan_snapshot(package, has_purchases=has_purchases)
+        if before_snapshot != after_snapshot:
+            AuditService.log_event(
+                actor_user_id=admin_user.id,
+                action="admin_plan_archived",
+                entity_type="LeadPackage",
+                entity_id=int(package.id),
+                meta_data={
+                    "reason": payload.reason,
+                    "before": before_snapshot,
+                    "after": after_snapshot,
+                },
+            )
+
+        return AdminService._to_admin_plan_item(package, has_purchases=has_purchases)
+
+    @staticmethod
+    def unarchive_plan(
+        db: Session,
+        *,
+        admin_user: User,
+        plan_id: int,
+        payload: AdminPlanArchiveRequest,
+    ) -> AdminPlanItem:
+        package = AdminService._get_manageable_plan_or_404(db, plan_id=plan_id)
+        has_purchases = AdminService._plan_has_purchases(db, plan_id=int(package.id))
+        before_snapshot = AdminService._serialize_plan_snapshot(package, has_purchases=has_purchases)
+
+        if package.is_archived:
+            package.is_archived = False
+            package.archived_at = None
+            package.updated_by = int(admin_user.id)
+            db.add(package)
+            try:
+                db.commit()
+                db.refresh(package)
+            except Exception as exc:
+                db.rollback()
+                logger.error("Failed to unarchive plan id=%s: %s", package.id, exc)
+                raise HTTPException(status_code=500, detail="Failed to unarchive plan")
+
+        after_snapshot = AdminService._serialize_plan_snapshot(package, has_purchases=has_purchases)
+        if before_snapshot != after_snapshot:
+            AuditService.log_event(
+                actor_user_id=admin_user.id,
+                action="admin_plan_unarchived",
+                entity_type="LeadPackage",
+                entity_id=int(package.id),
+                meta_data={
+                    "reason": payload.reason,
+                    "before": before_snapshot,
+                    "after": after_snapshot,
+                },
+            )
+
+        return AdminService._to_admin_plan_item(package, has_purchases=has_purchases)
+
     @staticmethod
     def _month_label(year_value: float, month_value: float) -> str:
         year = int(year_value)
