@@ -190,6 +190,7 @@ class LeadCreditLedger(Base):
             "purchase_grant",
             "lead_consumed",
             "refund_adjustment",
+            "replacement_credit",
             "admin_adjustment",
             name="lead_credit_movement_type_enum",
         ),
