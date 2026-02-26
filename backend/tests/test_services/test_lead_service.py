@@ -1128,7 +1128,7 @@ def test_reconcile_pending_purchase_assignments_uses_user_id_tiebreak_for_same_r
 
 
 @pytest.mark.unit
-def test_allocate_unsold_leads_for_purchase_uses_refund_adjusted_entitlement(
+def test_allocate_unsold_leads_for_purchase_ignores_legacy_refund_adjustments_for_entitlement(
     db,
     user_factory,
     plan_factory,
@@ -1174,9 +1174,9 @@ def test_allocate_unsold_leads_for_purchase_uses_refund_adjusted_entitlement(
         purchase=purchase,
     )
 
-    assert summary["requested_count"] == 3
+    assert summary["requested_count"] == 4
     assert summary["assigned_count"] == 3
-    assert summary["unfulfilled_count"] == 0
+    assert summary["unfulfilled_count"] == 1
     assert summary["newly_assigned_count"] == 3
     assert (
         db.query(LeadOwnership)
@@ -1187,7 +1187,7 @@ def test_allocate_unsold_leads_for_purchase_uses_refund_adjusted_entitlement(
 
 
 @pytest.mark.unit
-def test_reconcile_pending_purchase_assignments_respects_refund_adjusted_entitlement(
+def test_reconcile_pending_purchase_assignments_ignores_legacy_refund_adjustments(
     db,
     user_factory,
     plan_factory,
@@ -1237,7 +1237,7 @@ def test_reconcile_pending_purchase_assignments_respects_refund_adjusted_entitle
     assert summary["scanned_purchases"] == 1
     assert summary["updated_purchases"] == 1
     assert summary["newly_assigned_count"] == 3
-    assert summary["remaining_unfulfilled_count"] == 0
+    assert summary["remaining_unfulfilled_count"] == 1
     assert (
         db.query(LeadOwnership)
         .filter(LeadOwnership.purchase_id == purchase.id)

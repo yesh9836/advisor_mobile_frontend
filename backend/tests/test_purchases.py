@@ -327,7 +327,7 @@ def test_purchase_balance_orders_and_history_endpoints(
 
 
 @pytest.mark.integration
-def test_purchase_orders_and_history_use_refund_adjusted_entitlement_for_pending_math(
+def test_purchase_orders_and_history_ignore_legacy_refund_adjustments_for_entitlement_math(
     client,
     db,
     user_factory,
@@ -373,19 +373,19 @@ def test_purchase_orders_and_history_use_refund_adjusted_entitlement_for_pending
     assert orders_response.status_code == 200, orders_response.text
     order_item = orders_response.json()["items"][0]
     assert order_item["credits_total"] == 10
-    assert order_item["entitled_credits_total"] == 6
+    assert order_item["entitled_credits_total"] == 10
     assert order_item["assigned_count"] == 8
-    assert order_item["unfulfilled_count"] == 0
-    assert order_item["fulfillment_status"] == "fulfilled"
+    assert order_item["unfulfilled_count"] == 2
+    assert order_item["fulfillment_status"] == "partially_fulfilled"
 
     history_response = client.get("/api/v1/purchases/history?limit=20", headers=headers)
     assert history_response.status_code == 200, history_response.text
     history_item = history_response.json()["items"][0]
     assert history_item["credits_total"] == 10
-    assert history_item["entitled_credits_total"] == 6
+    assert history_item["entitled_credits_total"] == 10
     assert history_item["assigned_count"] == 8
-    assert history_item["unfulfilled_count"] == 0
-    assert history_item["fulfillment_status"] == "fulfilled"
+    assert history_item["unfulfilled_count"] == 2
+    assert history_item["fulfillment_status"] == "partially_fulfilled"
 
 
 @pytest.mark.integration

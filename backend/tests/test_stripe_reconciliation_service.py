@@ -34,7 +34,7 @@ def test_reconciliation_enqueues_new_events_and_updates_checkpoint(db, monkeypat
         _build_event(
             "evt_reconcile_2",
             created=1700000010,
-            event_type="charge.refunded",
+            event_type="payment_intent.payment_failed",
         ),
     ]
     list_call = {}
@@ -139,7 +139,7 @@ def test_reconciliation_skips_livemode_mismatch_events(db, monkeypatch):
     stripe_events = [
         {
             "id": "evt_reconcile_livemode_skip",
-            "type": "charge.refunded",
+            "type": "checkout.session.completed",
             "created": 1700000200,
             "livemode": True,
             "data": {"object": {"id": "obj_skip"}},

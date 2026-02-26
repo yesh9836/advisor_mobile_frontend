@@ -3,12 +3,13 @@ import time
 
 import pytest
 import stripe
+from fastapi import HTTPException
 
 from app.core.config import settings
 from app.models.audit_log import AuditLog
 from app.models.lead import LeadOwnership
 from app.models.purchase import LeadCreditLedger, LeadPurchase, ProcessedStripeEvent, StripePoisonEvent
-from app.services.subscription_service import StripeWebhookProcessingError
+from app.services.subscription_service import StripeWebhookProcessingError, SubscriptionService
 
 
 def _create_advisor_with_verified_license(user_factory, license_factory, auth_headers):
@@ -1908,7 +1909,7 @@ def test_webhook_payment_intent_failed_does_not_change_immutable_statuses(
 
 
 @pytest.mark.integration
-def test_webhook_charge_refunded_applies_single_refund_adjustment_and_audit(
+def test_webhook_charge_refunded_records_policy_audit_without_mutation(
     client,
     db,
     user_factory,
@@ -1918,34 +1919,111 @@ def test_webhook_charge_refunded_applies_single_refund_adjustment_and_audit(
 ):
     advisor = user_factory(
         role="advisor",
-        password="AdvisorWebhookRefund123!",
-        email="advisor.webhook.refund@example.com",
-        name="Webhook Refund Advisor",
+        password="AdvisorWebhookRefundPolicy123!",
+        email="advisor.webhook.refund.policy@example.com",
+        name="Webhook Refund Policy Advisor",
     )
-    plan = plan_factory(stripe_price_id="price_webhook_refund")
+    plan = plan_factory(stripe_price_id="price_webhook_refund_policy")
     purchase = purchase_factory(
         user_id=advisor.id,
         package_id=plan.id,
         credits_total=4,
-        credits_remaining=4,
+        credits_remaining=3,
         status="completed",
-        stripe_checkout_session_id="cs_refund_1",
-        stripe_payment_intent_id="pi_refund_1",
+        stripe_checkout_session_id="cs_refund_policy_1",
+        stripe_payment_intent_id="pi_refund_policy_1",
     )
-    refund_event = {
-        "id": "evt_charge_refunded_1",
+    event = {
+        "id": "evt_charge_refunded_policy_1",
         "type": "charge.refunded",
         "data": {
             "object": {
-                "id": "ch_refund_1",
-                "payment_intent": "pi_refund_1",
+                "id": "ch_refund_policy_1",
+                "payment_intent": "pi_refund_policy_1",
                 "amount_refunded": purchase.amount_cents,
                 "reason": "requested_by_customer",
             }
         },
     }
-    event_holder = {"value": refund_event}
+    monkeypatch.setattr(
+        "app.api.v1.webhooks.stripe.Webhook.construct_event",
+        lambda payload, sig_header, secret: event,
+    )
 
+    response = client.post(
+        "/api/v1/webhooks/stripe",
+        headers={"stripe-signature": "sig_test"},
+        json={"mock": "payload"},
+    )
+    assert response.status_code == 200, response.text
+
+    db.refresh(purchase)
+    assert purchase.status == "completed"
+    assert purchase.credits_remaining == 3
+    assert (
+        db.query(LeadCreditLedger)
+        .filter(
+            LeadCreditLedger.purchase_id == purchase.id,
+            LeadCreditLedger.movement_type == "refund_adjustment",
+        )
+        .count()
+        == 0
+    )
+
+    refund_audits = (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.action == "purchase_refund_webhook_observed",
+            AuditLog.entity_id == purchase.id,
+        )
+        .all()
+    )
+    assert len(refund_audits) == 1
+    refund_meta = refund_audits[0].meta_data or {}
+    assert refund_meta.get("policy") == "no_refunds_no_clawback"
+    assert refund_meta.get("credits_remaining") == 3
+    assert refund_meta.get("correlation_ids", {}).get("payment_intent_id") == "pi_refund_policy_1"
+
+
+@pytest.mark.integration
+def test_webhook_charge_refunded_multiple_events_keep_credits_unchanged(
+    client,
+    db,
+    user_factory,
+    plan_factory,
+    purchase_factory,
+    monkeypatch,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="AdvisorWebhookRefundPolicyReplay123!",
+        email="advisor.webhook.refund.policy.replay@example.com",
+        name="Webhook Refund Policy Replay Advisor",
+    )
+    plan = plan_factory(stripe_price_id="price_webhook_refund_policy_replay")
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=4,
+        credits_remaining=2,
+        status="completed",
+        stripe_checkout_session_id="cs_refund_policy_replay_1",
+        stripe_payment_intent_id="pi_refund_policy_replay_1",
+    )
+    event_holder = {
+        "value": {
+            "id": "evt_charge_refunded_policy_replay_1",
+            "type": "charge.refunded",
+            "data": {
+                "object": {
+                    "id": "ch_refund_policy_replay_1",
+                    "payment_intent": "pi_refund_policy_replay_1",
+                    "amount_refunded": 2500,
+                    "reason": "requested_by_customer",
+                }
+            },
+        }
+    }
     monkeypatch.setattr(
         "app.api.v1.webhooks.stripe.Webhook.construct_event",
         lambda payload, sig_header, secret: event_holder["value"],
@@ -1959,8 +2037,16 @@ def test_webhook_charge_refunded_applies_single_refund_adjustment_and_audit(
     assert first_response.status_code == 200, first_response.text
 
     event_holder["value"] = {
-        **refund_event,
-        "id": "evt_charge_refunded_2",
+        "id": "evt_charge_refunded_policy_replay_2",
+        "type": "charge.refunded",
+        "data": {
+            "object": {
+                "id": "ch_refund_policy_replay_1",
+                "payment_intent": "pi_refund_policy_replay_1",
+                "amount_refunded": purchase.amount_cents,
+                "reason": "requested_by_customer",
+            }
+        },
     }
     second_response = client.post(
         "/api/v1/webhooks/stripe",
@@ -1970,214 +2056,26 @@ def test_webhook_charge_refunded_applies_single_refund_adjustment_and_audit(
     assert second_response.status_code == 200, second_response.text
 
     db.refresh(purchase)
-    assert purchase.status == "refunded"
-    assert purchase.credits_remaining == 0
-    refund_ledger = (
-        db.query(LeadCreditLedger)
-        .filter(
-            LeadCreditLedger.purchase_id == purchase.id,
-            LeadCreditLedger.movement_type == "refund_adjustment",
-        )
-        .all()
-    )
-    assert len(refund_ledger) == 1
-    assert refund_ledger[0].credits_delta == -4
-
-    refund_audits = (
-        db.query(AuditLog)
-        .filter(
-            AuditLog.action == "purchase_refund_adjusted",
-            AuditLog.entity_id == purchase.id,
-        )
-        .all()
-    )
-    assert len(refund_audits) == 1
-    refund_meta = refund_audits[0].meta_data or {}
-    assert refund_meta.get("correlation_ids", {}).get("payment_intent_id") == "pi_refund_1"
-
-
-@pytest.mark.integration
-def test_webhook_charge_refunded_partial_then_full_adjusts_incrementally(
-    client,
-    db,
-    user_factory,
-    plan_factory,
-    purchase_factory,
-    monkeypatch,
-):
-    advisor = user_factory(
-        role="advisor",
-        password="AdvisorWebhookPartialRefund123!",
-        email="advisor.webhook.partial.refund@example.com",
-        name="Webhook Partial Refund Advisor",
-    )
-    plan = plan_factory(stripe_price_id="price_webhook_partial_refund")
-    purchase = purchase_factory(
-        user_id=advisor.id,
-        package_id=plan.id,
-        credits_total=4,
-        credits_remaining=4,
-        status="completed",
-        stripe_checkout_session_id="cs_partial_refund_1",
-        stripe_payment_intent_id="pi_partial_refund_1",
-    )
-    event_holder = {
-        "value": {
-            "id": "evt_charge_partial_refund_1",
-            "type": "charge.refunded",
-            "data": {
-                "object": {
-                    "id": "ch_partial_refund_1",
-                    "payment_intent": "pi_partial_refund_1",
-                    "amount_refunded": 2500,
-                    "reason": "requested_by_customer",
-                }
-            },
-        }
-    }
-    monkeypatch.setattr(
-        "app.api.v1.webhooks.stripe.Webhook.construct_event",
-        lambda payload, sig_header, secret: event_holder["value"],
-    )
-
-    partial_response = client.post(
-        "/api/v1/webhooks/stripe",
-        headers={"stripe-signature": "sig_test"},
-        json={"mock": "payload"},
-    )
-    assert partial_response.status_code == 200, partial_response.text
-
-    db.refresh(purchase)
-    assert purchase.status == "completed"
-    assert purchase.credits_remaining == 3
-    partial_adjustments = (
-        db.query(LeadCreditLedger)
-        .filter(
-            LeadCreditLedger.purchase_id == purchase.id,
-            LeadCreditLedger.movement_type == "refund_adjustment",
-        )
-        .all()
-    )
-    assert len(partial_adjustments) == 1
-    assert partial_adjustments[0].credits_delta == -1
-
-    event_holder["value"] = {
-        "id": "evt_charge_partial_refund_2",
-        "type": "charge.refunded",
-        "data": {
-            "object": {
-                "id": "ch_partial_refund_1",
-                "payment_intent": "pi_partial_refund_1",
-                "amount_refunded": purchase.amount_cents,
-                "reason": "requested_by_customer",
-            }
-        },
-    }
-    full_response = client.post(
-        "/api/v1/webhooks/stripe",
-        headers={"stripe-signature": "sig_test"},
-        json={"mock": "payload"},
-    )
-    assert full_response.status_code == 200, full_response.text
-
-    db.refresh(purchase)
-    assert purchase.status == "refunded"
-    assert purchase.credits_remaining == 0
-    adjustments = (
-        db.query(LeadCreditLedger)
-        .filter(
-            LeadCreditLedger.purchase_id == purchase.id,
-            LeadCreditLedger.movement_type == "refund_adjustment",
-        )
-        .all()
-    )
-    assert len(adjustments) == 2
-    assert sum(entry.credits_delta for entry in adjustments) == -4
-
-
-@pytest.mark.integration
-def test_webhook_charge_refunded_duplicate_cumulative_amount_is_idempotent(
-    client,
-    db,
-    user_factory,
-    plan_factory,
-    purchase_factory,
-    monkeypatch,
-):
-    advisor = user_factory(
-        role="advisor",
-        password="AdvisorWebhookPartialDuplicate123!",
-        email="advisor.webhook.partial.duplicate@example.com",
-        name="Webhook Partial Duplicate Advisor",
-    )
-    plan = plan_factory(stripe_price_id="price_webhook_partial_duplicate")
-    purchase = purchase_factory(
-        user_id=advisor.id,
-        package_id=plan.id,
-        credits_total=4,
-        credits_remaining=4,
-        status="completed",
-        stripe_checkout_session_id="cs_partial_duplicate_1",
-        stripe_payment_intent_id="pi_partial_duplicate_1",
-    )
-    event_holder = {
-        "value": {
-            "id": "evt_charge_partial_duplicate_1",
-            "type": "charge.refunded",
-            "data": {
-                "object": {
-                    "id": "ch_partial_duplicate_1",
-                    "payment_intent": "pi_partial_duplicate_1",
-                    "amount_refunded": 5000,
-                    "reason": "requested_by_customer",
-                }
-            },
-        }
-    }
-    monkeypatch.setattr(
-        "app.api.v1.webhooks.stripe.Webhook.construct_event",
-        lambda payload, sig_header, secret: event_holder["value"],
-    )
-
-    first = client.post(
-        "/api/v1/webhooks/stripe",
-        headers={"stripe-signature": "sig_test"},
-        json={"mock": "payload"},
-    )
-    assert first.status_code == 200, first.text
-
-    event_holder["value"] = {
-        "id": "evt_charge_partial_duplicate_2",
-        "type": "charge.refunded",
-        "data": {
-            "object": {
-                "id": "ch_partial_duplicate_1",
-                "payment_intent": "pi_partial_duplicate_1",
-                "amount_refunded": 5000,
-                "reason": "requested_by_customer",
-            }
-        },
-    }
-    second = client.post(
-        "/api/v1/webhooks/stripe",
-        headers={"stripe-signature": "sig_test"},
-        json={"mock": "payload"},
-    )
-    assert second.status_code == 200, second.text
-
-    db.refresh(purchase)
     assert purchase.status == "completed"
     assert purchase.credits_remaining == 2
-    adjustments = (
+    assert (
         db.query(LeadCreditLedger)
         .filter(
             LeadCreditLedger.purchase_id == purchase.id,
             LeadCreditLedger.movement_type == "refund_adjustment",
         )
-        .all()
+        .count()
+        == 0
     )
-    assert len(adjustments) == 1
-    assert adjustments[0].credits_delta == -2
+    assert (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.action == "purchase_refund_webhook_observed",
+            AuditLog.entity_id == purchase.id,
+        )
+        .count()
+        == 2
+    )
 
 
 @pytest.mark.integration
@@ -2242,6 +2140,15 @@ def test_webhook_charge_refunded_missing_payment_intent_id_is_ignored(
         == 0
     )
     assert (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.action == "purchase_refund_webhook_observed",
+            AuditLog.entity_id == purchase.id,
+        )
+        .count()
+        == 0
+    )
+    assert (
         db.query(ProcessedStripeEvent)
         .filter(ProcessedStripeEvent.stripe_event_id == "evt_charge_refunded_missing_pi_1")
         .count()
@@ -2269,24 +2176,11 @@ def test_webhook_checkout_completed_replay_does_not_reactivate_refunded_purchase
         user_id=advisor.id,
         package_id=plan.id,
         credits_total=4,
-        credits_remaining=4,
-        status="completed",
+        credits_remaining=0,
+        status="refunded",
         stripe_checkout_session_id="cs_refund_replay_1",
         stripe_payment_intent_id="pi_refund_replay_1",
     )
-
-    refund_event = {
-        "id": "evt_charge_refunded_replay_guard_1",
-        "type": "charge.refunded",
-        "data": {
-            "object": {
-                "id": "ch_refund_replay_1",
-                "payment_intent": "pi_refund_replay_1",
-                "amount_refunded": purchase.amount_cents,
-                "reason": "requested_by_customer",
-            }
-        },
-    }
     replay_success_event = _build_purchase_webhook_event(
         event_id="evt_checkout_completed_replay_guard_1",
         event_type="checkout.session.completed",
@@ -2296,21 +2190,12 @@ def test_webhook_checkout_completed_replay_does_not_reactivate_refunded_purchase
         package_id=plan.id,
         amount_cents=plan.price_cents,
     )
-    event_holder = {"value": refund_event}
 
     monkeypatch.setattr(
         "app.api.v1.webhooks.stripe.Webhook.construct_event",
-        lambda payload, sig_header, secret: event_holder["value"],
+        lambda payload, sig_header, secret: replay_success_event,
     )
 
-    refund_response = client.post(
-        "/api/v1/webhooks/stripe",
-        headers={"stripe-signature": "sig_test"},
-        json={"mock": "payload"},
-    )
-    assert refund_response.status_code == 200, refund_response.text
-
-    event_holder["value"] = replay_success_event
     replay_response = client.post(
         "/api/v1/webhooks/stripe",
         headers={"stripe-signature": "sig_test"},
@@ -2329,15 +2214,6 @@ def test_webhook_checkout_completed_replay_does_not_reactivate_refunded_purchase
         )
         .count()
         == 0
-    )
-    assert (
-        db.query(LeadCreditLedger)
-        .filter(
-            LeadCreditLedger.purchase_id == purchase.id,
-            LeadCreditLedger.movement_type == "refund_adjustment",
-        )
-        .count()
-        == 1
     )
 
 
@@ -3041,6 +2917,203 @@ def test_billing_summary_links_purchase_invoice_to_package_and_backfills_purchas
 
     db.refresh(purchase)
     assert purchase.stripe_invoice_id == "in_billing_linked_1"
+
+
+@pytest.mark.integration
+def test_grant_replacement_credits_applies_once_and_logs_audit(
+    db,
+    user_factory,
+    plan_factory,
+    purchase_factory,
+    monkeypatch,
+):
+    audit_events = []
+    monkeypatch.setattr(
+        "app.services.subscription_service.AuditService.log_purchase_event",
+        lambda **kwargs: audit_events.append(kwargs),
+    )
+
+    advisor = user_factory(
+        role="advisor",
+        password="AdvisorReplacementCredits123!",
+        email="advisor.replacement.credits@example.com",
+    )
+    plan = plan_factory(
+        daily_download_limit=5,
+        stripe_price_id="price_replacement_credit_apply",
+    )
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=5,
+        credits_remaining=2,
+        status="completed",
+        stripe_checkout_session_id="cs_replacement_credit_apply_1",
+        stripe_payment_intent_id="pi_replacement_credit_apply_1",
+    )
+
+    result = SubscriptionService.grant_replacement_credits(
+        db=db,
+        purchase_id=int(purchase.id),
+        credits=3,
+        actor_user_id=int(advisor.id),
+        reason="replacement for undeliverable leads",
+        idempotency_key=f"replacement:{purchase.id}:1",
+        source="support_case",
+    )
+
+    assert result["idempotent_replay"] is False
+    assert result["credits_added"] == 3
+    assert result["credits_remaining"] == 5
+
+    db.refresh(purchase)
+    assert purchase.credits_remaining == 5
+    ledger_rows = (
+        db.query(LeadCreditLedger)
+        .filter(
+            LeadCreditLedger.purchase_id == purchase.id,
+            LeadCreditLedger.movement_type == "replacement_credit",
+        )
+        .all()
+    )
+    assert len(ledger_rows) == 1
+    assert ledger_rows[0].credits_delta == 3
+    assert ledger_rows[0].idempotency_key == f"replacement:{purchase.id}:1"
+
+    assert len(audit_events) == 1
+    assert audit_events[0]["action"] == "purchase_replacement_credits_granted"
+    assert audit_events[0]["purchase_id"] == purchase.id
+    meta = audit_events[0]["meta_data"] or {}
+    assert meta.get("reason") == "replacement for undeliverable leads"
+    assert meta.get("source") == "support_case"
+
+
+@pytest.mark.integration
+def test_grant_replacement_credits_is_idempotent_for_same_key(
+    db,
+    user_factory,
+    plan_factory,
+    purchase_factory,
+    monkeypatch,
+):
+    audit_events = []
+    monkeypatch.setattr(
+        "app.services.subscription_service.AuditService.log_purchase_event",
+        lambda **kwargs: audit_events.append(kwargs),
+    )
+
+    advisor = user_factory(
+        role="advisor",
+        password="AdvisorReplacementIdem123!",
+        email="advisor.replacement.idempotent@example.com",
+    )
+    plan = plan_factory(
+        daily_download_limit=5,
+        stripe_price_id="price_replacement_credit_idempotent",
+    )
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=5,
+        credits_remaining=1,
+        status="completed",
+        stripe_checkout_session_id="cs_replacement_credit_idempotent_1",
+        stripe_payment_intent_id="pi_replacement_credit_idempotent_1",
+    )
+    idem_key = f"replacement:{purchase.id}:idem"
+
+    first_result = SubscriptionService.grant_replacement_credits(
+        db=db,
+        purchase_id=int(purchase.id),
+        credits=2,
+        actor_user_id=int(advisor.id),
+        reason="manual replacement credit",
+        idempotency_key=idem_key,
+        source="support_case",
+    )
+    second_result = SubscriptionService.grant_replacement_credits(
+        db=db,
+        purchase_id=int(purchase.id),
+        credits=2,
+        actor_user_id=int(advisor.id),
+        reason="manual replacement credit",
+        idempotency_key=idem_key,
+        source="support_case",
+    )
+
+    assert first_result["idempotent_replay"] is False
+    assert second_result["idempotent_replay"] is True
+
+    db.refresh(purchase)
+    assert purchase.credits_remaining == 3
+    assert (
+        db.query(LeadCreditLedger)
+        .filter(
+            LeadCreditLedger.purchase_id == purchase.id,
+            LeadCreditLedger.movement_type == "replacement_credit",
+        )
+        .count()
+        == 1
+    )
+    assert len(audit_events) == 1
+    assert audit_events[0]["action"] == "purchase_replacement_credits_granted"
+
+
+@pytest.mark.integration
+def test_grant_replacement_credits_rejects_idempotency_key_conflict(
+    db,
+    user_factory,
+    plan_factory,
+    purchase_factory,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "app.services.subscription_service.AuditService.log_purchase_event",
+        lambda **kwargs: None,
+    )
+
+    advisor = user_factory(
+        role="advisor",
+        password="AdvisorReplacementConflict123!",
+        email="advisor.replacement.conflict@example.com",
+    )
+    plan = plan_factory(
+        daily_download_limit=5,
+        stripe_price_id="price_replacement_credit_conflict",
+    )
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=5,
+        credits_remaining=0,
+        status="completed",
+        stripe_checkout_session_id="cs_replacement_credit_conflict_1",
+        stripe_payment_intent_id="pi_replacement_credit_conflict_1",
+    )
+    idem_key = f"replacement:{purchase.id}:conflict"
+
+    SubscriptionService.grant_replacement_credits(
+        db=db,
+        purchase_id=int(purchase.id),
+        credits=1,
+        actor_user_id=int(advisor.id),
+        reason="replacement credit baseline",
+        idempotency_key=idem_key,
+        source="support_case",
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        SubscriptionService.grant_replacement_credits(
+            db=db,
+            purchase_id=int(purchase.id),
+            credits=2,
+            actor_user_id=int(advisor.id),
+            reason="replacement credit conflicting replay",
+            idempotency_key=idem_key,
+            source="support_case",
+        )
+
+    assert exc_info.value.status_code == 409
 
 
 @pytest.mark.integration

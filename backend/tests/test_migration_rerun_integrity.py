@@ -507,3 +507,52 @@ def test_e3_usd_currency_constraints_upgrade_fails_when_non_usd_rows_exist():
 
         with pytest.raises(RuntimeError, match="USD-only migration blocked"):
             _run_migration(migration, "upgrade", connection)
+
+
+@pytest.mark.unit
+def test_e4_replacement_credit_movement_upgrade_is_rerunnable_and_accepts_new_value():
+    migration = _load_migration_module("e4f5a6b7c8d9_add_replacement_credit_movement_type.py")
+    engine = sa.create_engine("sqlite+pysqlite:///:memory:")
+
+    metadata = sa.MetaData()
+    lead_credit_ledger = sa.Table(
+        "lead_credit_ledger",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+        sa.Column(
+            "movement_type",
+            sa.Enum(
+                "purchase_grant",
+                "lead_consumed",
+                "refund_adjustment",
+                "admin_adjustment",
+                name="lead_credit_movement_type_enum",
+            ),
+            nullable=False,
+        ),
+    )
+
+    with engine.begin() as connection:
+        metadata.create_all(connection)
+        connection.execute(
+            lead_credit_ledger.insert(),
+            [{"id": 1, "movement_type": "purchase_grant"}],
+        )
+
+        _run_migration(migration, "upgrade", connection)
+        _run_migration(migration, "upgrade", connection)
+
+        connection.execute(
+            sa.text(
+                "INSERT INTO lead_credit_ledger (id, movement_type) "
+                "VALUES (2, 'replacement_credit')"
+            )
+        )
+
+        replacement_count = connection.execute(
+            sa.text(
+                "SELECT COUNT(*) AS total FROM lead_credit_ledger "
+                "WHERE movement_type = 'replacement_credit'"
+            )
+        ).mappings().one()
+        assert replacement_count["total"] == 1
