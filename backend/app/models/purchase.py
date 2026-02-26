@@ -30,6 +30,14 @@ class LeadPackage(Base):
     __tablename__ = "lead_packages"
     __table_args__ = (
         CheckConstraint("currency = 'USD'", name="ck_lead_packages_currency_usd"),
+        CheckConstraint(
+            "effective_to IS NULL OR effective_from IS NULL OR effective_to >= effective_from",
+            name="ck_lead_packages_effective_window_valid",
+        ),
+        CheckConstraint(
+            "(is_archived = 0 AND archived_at IS NULL) OR (is_archived = 1 AND archived_at IS NOT NULL)",
+            name="ck_lead_packages_archive_consistency",
+        ),
     )
 
     id: Mapped[int] = mapped_column(
@@ -46,6 +54,11 @@ class LeadPackage(Base):
         default="USD",
         server_default=text("'USD'"),
     )
+    stripe_product_id: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True,
+    )
     stripe_price_id: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
     state_limit: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     daily_download_limit: Mapped[int] = mapped_column(
@@ -55,12 +68,47 @@ class LeadPackage(Base):
         server_default=text("0"),
     )
     features: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    effective_from: Mapped[Optional[datetime]] = mapped_column(
+        UTCDateTime(),
+        nullable=True,
+        index=True,
+    )
+    effective_to: Mapped[Optional[datetime]] = mapped_column(
+        UTCDateTime(),
+        nullable=True,
+        index=True,
+    )
+    is_archived: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("0"),
+        index=True,
+    )
+    archived_at: Mapped[Optional[datetime]] = mapped_column(
+        UTCDateTime(),
+        nullable=True,
+        index=True,
+    )
+    updated_by: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("users.id", onupdate="CASCADE", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(),
         nullable=False,
         default=utcnow,
         server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        nullable=False,
+        default=utcnow,
+        onupdate=utcnow,
+        server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"),
     )
 
     purchases: Mapped[List["LeadPurchase"]] = relationship(
