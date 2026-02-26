@@ -61,7 +61,7 @@ class EmailService:
                 text_body=text_body,
                 html_body=html_body,
             )
-        if provider != "smtp":
+        if provider not in {"smtp", "smtp2go"}:
             return EmailSendResult(
                 success=False,
                 error=f"Unsupported email provider '{provider}'",
