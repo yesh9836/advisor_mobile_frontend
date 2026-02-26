@@ -13,7 +13,7 @@ import type {
   PurchaseOrderItem,
   PurchasePackage,
 } from "@/types/purchase";
-import { getApiErrorMessage } from "@/utils/api-error";
+import { getApiErrorMessage, parseApiError } from "@/utils/api-error";
 
 interface DisplayPlan {
   key: string;
@@ -86,6 +86,21 @@ const buildCheckoutRetryToken = (scope: string): string => {
       ? crypto.randomUUID().replace(/-/g, "")
       : Math.random().toString(36).slice(2, 14);
   return `retry_${scope}_${Date.now().toString(36)}_${uuidEntropy}`;
+};
+
+const OFFER_REJECTION_MESSAGE_BY_CODE: Record<string, string> = {
+  INVENTORY_UNAVAILABLE:
+    "Add-on checkout is temporarily unavailable because live inventory is below the required threshold.",
+  LICENSE_STATES_UNAVAILABLE:
+    "Add-on checkout requires at least one verified license state with matching inventory.",
+};
+
+const resolveOfferCheckoutErrorMessage = (error: unknown): string => {
+  const parsed = parseApiError(error, "Unable to start checkout.");
+  if (parsed.code && OFFER_REJECTION_MESSAGE_BY_CODE[parsed.code]) {
+    return OFFER_REJECTION_MESSAGE_BY_CODE[parsed.code];
+  }
+  return parsed.message;
 };
 
 const CHECKOUT_SYNC_MAX_ATTEMPTS = 6;
@@ -399,7 +414,7 @@ const SubscriptionPage = () => {
       const session = await createCheckout(addOnOffer.offer_package_id, retryToken);
       window.location.assign(session.url);
     } catch (checkoutError) {
-      setError(getApiErrorMessage(checkoutError, "Unable to start checkout."));
+      setError(resolveOfferCheckoutErrorMessage(checkoutError));
     } finally {
       setAddOnCheckoutLoading(false);
     }
