@@ -275,14 +275,19 @@ class SubscriptionService:
         if SubscriptionService._is_first_purchase_offer_managed_package(package):
             from app.services.first_purchase_offer_service import FirstPurchaseOfferService
 
-            if not FirstPurchaseOfferService.can_user_purchase_offer_package(
-                db,
+            decision = FirstPurchaseOfferService.get_offer_purchase_eligibility_decision(
+                db=db,
                 user=user,
                 offer_package_id=int(package.id),
-            ):
+                required_trigger_checkout_session_id=None,
+            )
+            if not decision.allowed:
+                status_code = status.HTTP_403_FORBIDDEN
+                if decision.code == FirstPurchaseOfferService.REJECTION_INVENTORY_UNAVAILABLE:
+                    status_code = status.HTTP_409_CONFLICT
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Package is not available for this account",
+                    status_code=status_code,
+                    detail=decision.to_error_detail(),
                 )
 
         # Validate verified license
