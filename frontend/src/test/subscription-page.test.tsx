@@ -84,6 +84,50 @@ describe("SubscriptionPage checkout return messaging", () => {
 });
 
 describe("SubscriptionPage license gate", () => {
+  it("does not render internal object feature metadata on package cards", async () => {
+    const { getPackages } = await import("@/api/purchases");
+    const { getMyLicenses } = await import("@/api/licenses");
+    vi.mocked(getPackages).mockResolvedValueOnce([
+      {
+        id: 11,
+        name: "Growth 30",
+        price_cents: 30000,
+        currency: "USD",
+        stripe_price_id: "price_growth_30",
+        state_limit: 3,
+        daily_download_limit: 30,
+        features: {
+          support: "email",
+          credits_total: 30,
+          catalog_visible: true,
+        },
+        created_at: "2026-02-26T00:00:00Z",
+      },
+    ]);
+    vi.mocked(getMyLicenses).mockResolvedValueOnce([
+      {
+        id: 101,
+        user_id: 1,
+        state: "CA",
+        license_number: "CA-VERIFIED-101",
+        license_type: "Series 65",
+        has_document: true,
+        verification_status: "verified",
+        verified_at: "2026-02-19T00:00:00Z",
+        verified_by: 5,
+        rejection_reason: null,
+        created_at: "2026-02-19T00:00:00Z",
+      },
+    ]);
+
+    renderRoute("/subscription");
+
+    expect(await screen.findByText("Growth 30")).toBeInTheDocument();
+    expect(screen.queryByText(/support:\s*email/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/credits_total:\s*30/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/catalog_visible:\s*true/i)).not.toBeInTheDocument();
+  });
+
   it("shows explicit no-license message and blocks checkout", async () => {
     const { getPackages } = await import("@/api/purchases");
     vi.mocked(getPackages).mockResolvedValueOnce([
