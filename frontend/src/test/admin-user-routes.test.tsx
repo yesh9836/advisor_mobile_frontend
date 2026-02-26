@@ -72,6 +72,10 @@ vi.mock("@/pages/admin/LicenseReviewsPage", () => ({
   default: () => <div>License Reviews Route</div>,
 }));
 
+vi.mock("@/pages/admin/PlansPage", () => ({
+  default: () => <div>Plans Route</div>,
+}));
+
 const renderRoute = (route: string) => {
   render(
     <MemoryRouter initialEntries={[route]}>
@@ -99,5 +103,10 @@ describe("Admin user route mapping", () => {
   it("maps /admin/first-purchase-offer to FirstPurchaseOfferPage", async () => {
     renderRoute("/admin/first-purchase-offer");
     expect(await screen.findByText("First Purchase Offer Route")).toBeInTheDocument();
+  });
+
+  it("maps /admin/plans to PlansPage", async () => {
+    renderRoute("/admin/plans");
+    expect(await screen.findByText("Plans Route")).toBeInTheDocument();
   });
 });

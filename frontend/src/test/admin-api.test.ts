@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import apiClient from "@/api/client";
 import {
+  archiveAdminPlan,
   approveLicense,
   bulkImportLeadsAsAdmin,
+  createAdminPlan,
   createLeadAsAdmin,
   deactivateAdminUser,
   deactivateUser,
@@ -12,6 +14,7 @@ import {
   getAnalyticsOverview,
   getAdminAuditLogs,
   getAdminDashboardStats,
+  getAdminPlans,
   getAdminUserDetails,
   getAdminUsers,
   getAuditLogs,
@@ -27,12 +30,15 @@ import {
   previewLicenseDocument,
   rejectLicense,
   syncWordPress,
+  unarchiveAdminPlan,
+  updateAdminPlan,
 } from "@/api/admin";
 
 vi.mock("@/api/client", () => ({
   default: {
     get: vi.fn(),
     post: vi.fn(),
+    put: vi.fn(),
   },
 }));
 
@@ -41,6 +47,7 @@ type MockFn = ReturnType<typeof vi.fn>;
 const mockedApiClient = apiClient as unknown as {
   get: MockFn;
   post: MockFn;
+  put: MockFn;
 };
 
 const buildDashboardStats = () => ({
@@ -91,6 +98,7 @@ describe("admin API contract", () => {
   beforeEach(() => {
     mockedApiClient.get.mockReset();
     mockedApiClient.post.mockReset();
+    mockedApiClient.put.mockReset();
   });
 
   it("getDashboardStats uses GET /admin/dashboard", async () => {
@@ -114,6 +122,157 @@ describe("admin API contract", () => {
     await expect(getAnalyticsOverview()).resolves.toEqual(payload);
 
     expect(mockedApiClient.get).toHaveBeenCalledWith("/admin/analytics");
+  });
+
+  it("getAdminPlans sends normalized filters", async () => {
+    const payload = {
+      items: [],
+      total: 0,
+      page: 1,
+      size: 20,
+    };
+    mockedApiClient.get.mockResolvedValueOnce({ data: payload });
+
+    await expect(
+      getAdminPlans(1, 20, {
+        search: "  Growth  ",
+        archived: "unarchived",
+        effective_at: "2026-02-26T12:00:00Z",
+      }),
+    ).resolves.toEqual(payload);
+
+    expect(mockedApiClient.get).toHaveBeenCalledWith("/admin/plans", {
+      params: {
+        page: 1,
+        size: 20,
+        search: "Growth",
+        archived: "unarchived",
+        effective_at: "2026-02-26T12:00:00Z",
+      },
+    });
+  });
+
+  it("create/update/archive/unarchive plan calls use admin plan endpoints", async () => {
+    const plan = {
+      id: 19,
+      name: "Growth 25",
+      price_cents: 25000,
+      currency: "USD",
+      stripe_product_id: "prod_growth_25",
+      stripe_price_id: "price_growth_25",
+      state_limit: 3,
+      credits_total: 25,
+      catalog_visible: true,
+      is_archived: false,
+      archived_at: null,
+      effective_from: null,
+      effective_to: null,
+      created_at: "2026-02-26T12:00:00Z",
+      updated_at: "2026-02-26T12:10:00Z",
+      updated_by: 1,
+      has_purchases: false,
+    };
+    mockedApiClient.post.mockResolvedValueOnce({ data: plan });
+    mockedApiClient.put.mockResolvedValueOnce({ data: { ...plan, name: "Growth 30", credits_total: 30 } });
+    mockedApiClient.post.mockResolvedValueOnce({ data: { ...plan, is_archived: true, archived_at: "2026-02-26T12:20:00Z" } });
+    mockedApiClient.post.mockResolvedValueOnce({ data: plan });
+
+    await expect(
+      createAdminPlan({
+        name: "  Growth 25  ",
+        price_cents: 25000,
+        credits_total: 25,
+        state_limit: 3,
+        catalog_visible: true,
+        effective_from: null,
+        effective_to: null,
+        request_id: "  plan_create_01  ",
+      }),
+    ).resolves.toEqual(plan);
+
+    await expect(
+      updateAdminPlan(19, {
+        name: " Growth 30 ",
+        credits_total: 30,
+        price_cents: 30000,
+        request_id: " plan_update_01 ",
+      }),
+    ).resolves.toEqual({ ...plan, name: "Growth 30", credits_total: 30 });
+
+    await expect(archiveAdminPlan(19, " retire ")).resolves.toEqual({
+      ...plan,
+      is_archived: true,
+      archived_at: "2026-02-26T12:20:00Z",
+    });
+    await expect(unarchiveAdminPlan(19, " restore ")).resolves.toEqual(plan);
+
+    expect(mockedApiClient.post).toHaveBeenNthCalledWith(
+      1,
+      "/admin/plans",
+      {
+        name: "Growth 25",
+        price_cents: 25000,
+        credits_total: 25,
+        state_limit: 3,
+        catalog_visible: true,
+        effective_from: null,
+        effective_to: null,
+        request_id: "plan_create_01",
+      },
+    );
+    expect(mockedApiClient.put).toHaveBeenCalledWith("/admin/plans/19", {
+      name: "Growth 30",
+      credits_total: 30,
+      price_cents: 30000,
+      request_id: "plan_update_01",
+    });
+    expect(mockedApiClient.post).toHaveBeenNthCalledWith(
+      2,
+      "/admin/plans/19/archive",
+      { reason: "retire" },
+    );
+    expect(mockedApiClient.post).toHaveBeenNthCalledWith(
+      3,
+      "/admin/plans/19/unarchive",
+      { reason: "restore" },
+    );
+  });
+
+  it("updateAdminPlan preserves explicit nulls for clearable fields", async () => {
+    const plan = {
+      id: 22,
+      name: "Plan 22",
+      price_cents: 22000,
+      currency: "USD",
+      stripe_product_id: "prod_22",
+      stripe_price_id: "price_22",
+      state_limit: null,
+      credits_total: 22,
+      catalog_visible: true,
+      is_archived: false,
+      archived_at: null,
+      effective_from: null,
+      effective_to: null,
+      created_at: "2026-02-26T12:00:00Z",
+      updated_at: "2026-02-26T12:10:00Z",
+      updated_by: 1,
+      has_purchases: false,
+    };
+    mockedApiClient.put.mockResolvedValueOnce({ data: plan });
+
+    await expect(
+      updateAdminPlan(22, {
+        state_limit: null,
+        effective_from: null,
+        effective_to: null,
+      }),
+    ).resolves.toEqual(plan);
+
+    expect(mockedApiClient.put).toHaveBeenCalledWith("/admin/plans/22", {
+      state_limit: null,
+      effective_from: null,
+      effective_to: null,
+    });
   });
 
   it("getUsers sends page, size, and normalized filters", async () => {
