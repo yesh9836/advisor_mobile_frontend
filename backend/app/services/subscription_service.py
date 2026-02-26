@@ -313,6 +313,7 @@ class SubscriptionService:
             session = stripe.checkout.Session.create(
                 customer=customer_id,
                 mode="payment",
+                automatic_tax={"enabled": False},
                 line_items=[SubscriptionService._build_checkout_line_item(package)],
                 client_reference_id=str(user.id),
                 metadata=checkout_metadata,
