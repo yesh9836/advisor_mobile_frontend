@@ -79,7 +79,6 @@ interface OfferFormState {
   trigger_package_id: string;
   offer_credits_total: string;
   offer_price_dollars: string;
-  offer_currency: string;
   headline: string;
   message: string;
   cta_label: string;
@@ -93,7 +92,6 @@ const buildFormFromConfig = (config: FirstPurchaseAddonOfferConfig): OfferFormSt
     trigger_package_id: config.trigger_package_id ? String(config.trigger_package_id) : "",
     offer_credits_total: config.offer_credits_total ? String(config.offer_credits_total) : "",
     offer_price_dollars: centsToDollarInputValue(config.offer_price_cents),
-    offer_currency: (config.offer_currency ?? "USD").toUpperCase(),
     headline: config.headline ?? "",
     message: config.message ?? "",
     cta_label: config.cta_label ?? "",
@@ -110,7 +108,6 @@ const FirstPurchaseOfferPage = () => {
     trigger_package_id: "",
     offer_credits_total: "",
     offer_price_dollars: "",
-    offer_currency: "USD",
     headline: "",
     message: "",
     cta_label: "",
@@ -178,10 +175,6 @@ const FirstPurchaseOfferPage = () => {
         setError("Add-on price must be a valid dollar amount (for example, 75.00).");
         return;
       }
-      if (!form.offer_currency.trim() || form.offer_currency.trim().length !== 3) {
-        setError("Currency must be a 3-letter code (for example, USD).");
-        return;
-      }
     }
 
     if (form.starts_at && form.ends_at) {
@@ -198,7 +191,7 @@ const FirstPurchaseOfferPage = () => {
       trigger_package_id: form.trigger_package_id ? Number(form.trigger_package_id) : null,
       offer_credits_total: form.offer_credits_total ? Number(form.offer_credits_total) : null,
       offer_price_cents: dollarsInputToCents(form.offer_price_dollars),
-      offer_currency: form.offer_currency.trim() ? form.offer_currency.trim().toUpperCase() : null,
+      offer_currency: "USD",
       headline: form.headline.trim() || null,
       message: form.message.trim() || null,
       cta_label: form.cta_label.trim() || null,
@@ -320,19 +313,8 @@ const FirstPurchaseOfferPage = () => {
             </div>
 
             <div className="field">
-              <label htmlFor="offer-add-on-currency">Currency</label>
-              <input
-                id="offer-add-on-currency"
-                value={form.offer_currency}
-                maxLength={3}
-                onChange={(event) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    offer_currency: event.target.value.toUpperCase(),
-                  }))
-                }
-                placeholder="USD"
-              />
+              <label>Currency</label>
+              <div style={{ color: "#0f172a", fontWeight: 600, paddingTop: 8 }}>USD</div>
             </div>
 
             <div className="field">
@@ -423,7 +405,7 @@ const FirstPurchaseOfferPage = () => {
               <div style={{ color: "#334155" }}>
                 {formatMoney(
                   previewPriceCents ?? 0,
-                  form.offer_currency || "USD",
+                  "USD",
                 )} • extra checkout after first completed purchase
               </div>
             </div>
