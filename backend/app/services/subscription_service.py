@@ -9,6 +9,7 @@ from sqlalchemy import and_, func, or_
 from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
+from app.core.currency import USD_CURRENCY, require_usd_currency
 from app.models.lead import LeadOwnership
 from app.models.license import License
 from app.models.purchase import (
@@ -150,9 +151,16 @@ class SubscriptionService:
 
     @staticmethod
     def _build_purchase_terms_snapshot(package: LeadPackage) -> Dict[str, Any]:
+        try:
+            currency = require_usd_currency(package.currency, field_name="package.currency")
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Package currency is misconfigured",
+            ) from exc
         return {
             "amount_cents": max(int(package.price_cents or 0), 0),
-            "currency": str((package.currency or "USD")).upper(),
+            "currency": currency,
             "credits_total": SubscriptionService._resolve_package_credits(package),
         }
 
@@ -167,7 +175,7 @@ class SubscriptionService:
             "user_id": str(user_id),
             "package_id": str(package_id),
             "purchase_amount_cents": str(max(int(purchase_terms.get("amount_cents") or 0), 0)),
-            "purchase_currency": str(purchase_terms.get("currency") or "USD").upper(),
+            "purchase_currency": str(purchase_terms.get("currency") or USD_CURRENCY).upper(),
             "purchase_credits_total": str(max(int(purchase_terms.get("credits_total") or 0), 0)),
         }
 
@@ -186,8 +194,9 @@ class SubscriptionService:
         except (TypeError, ValueError):
             return None
 
-        currency = str(currency_raw).strip().upper()
-        if not currency:
+        try:
+            currency = require_usd_currency(str(currency_raw).strip(), field_name="purchase_currency")
+        except ValueError:
             return None
 
         return {
@@ -205,9 +214,16 @@ class SubscriptionService:
     @staticmethod
     def _build_checkout_line_item(package: LeadPackage) -> Dict[str, Any]:
         if isinstance(package.features, dict) and package.features.get("managed_by") == "first_purchase_offer":
+            try:
+                currency = require_usd_currency(package.currency, field_name="package.currency").lower()
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Package currency is misconfigured",
+                ) from exc
             return {
                 "price_data": {
-                    "currency": str((package.currency or "USD")).lower(),
+                    "currency": currency,
                     "unit_amount": int(package.price_cents or 0),
                     "product_data": {
                         "name": str(package.name or "First Purchase Add-on"),
@@ -1362,7 +1378,7 @@ class SubscriptionService:
         if purchase:
             credits_total = max(int(purchase.credits_total or 0), 0)
             amount_cents = max(int(purchase.amount_cents or 0), 0)
-            currency = str((purchase.currency or "USD")).upper()
+            currency = str((purchase.currency or USD_CURRENCY)).upper()
         elif metadata_terms:
             credits_total = int(metadata_terms["credits_total"])
             amount_cents = int(metadata_terms["amount_cents"])
@@ -1376,7 +1392,15 @@ class SubscriptionService:
                 )
             credits_total = SubscriptionService._resolve_package_credits(package)
             amount_cents = int(checkout_session.get("amount_total") or package.price_cents or 0)
-            currency = str(checkout_session.get("currency") or package.currency or "USD").upper()
+            currency = str(checkout_session.get("currency") or package.currency or USD_CURRENCY).upper()
+
+        try:
+            currency = require_usd_currency(currency)
+        except ValueError as exc:
+            raise StripeWebhookNonRetryableError(
+                f"checkout.session currency must be USD for session_id={session_id}",
+                reason="invalid_currency",
+            ) from exc
 
         credits_remaining = credits_total if purchase_status == "completed" else 0
 
