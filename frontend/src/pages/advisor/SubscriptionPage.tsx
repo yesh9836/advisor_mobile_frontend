@@ -37,11 +37,8 @@ const normalizeFeatures = (features: PurchasePackage["features"]): string[] => {
   if (Array.isArray(features)) {
     return features.map((item) => String(item));
   }
-  if (features && typeof features === "object") {
-    return Object.entries(features).map(
-      ([key, value]) => `${key}: ${String(value)}`,
-    );
-  }
+  // Hide raw object metadata fields (for example: credits_total, catalog_visible)
+  // from advisor package cards.
   return [];
 };
 
