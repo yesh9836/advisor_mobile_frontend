@@ -7,6 +7,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.currency import USD_CURRENCY, require_usd_currency
 from app.db.timezone import utcnow
 from app.models.purchase import FirstPurchaseAddonOffer, LeadPackage, LeadPurchase
 from app.models.user import User
@@ -41,6 +42,13 @@ class _OfferSnapshot:
 
 
 class FirstPurchaseOfferService:
+    @staticmethod
+    def _require_offer_currency(value: Optional[str]) -> str:
+        try:
+            return require_usd_currency(value, field_name="offer_currency")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @staticmethod
     def _get_singleton_config(db: Session) -> Optional[FirstPurchaseAddonOffer]:
         return (
@@ -135,11 +143,12 @@ class FirstPurchaseOfferService:
                     detail="Configured offer_package_id is not a managed first-purchase add-on package",
                 )
 
+        offer_currency = FirstPurchaseOfferService._require_offer_currency(config.offer_currency)
         if offer_package is None:
             offer_package = LeadPackage(
                 name=f"First Purchase Add-on {int(config.id)} (+{int(config.offer_credits_total)} leads)",
                 price_cents=int(config.offer_price_cents),
-                currency=str((config.offer_currency or "USD")).upper(),
+                currency=offer_currency,
                 stripe_price_id=f"dynamic_addon_{uuid4().hex[:24]}",
                 state_limit=trigger_package.state_limit,
                 daily_download_limit=int(config.offer_credits_total),
@@ -154,7 +163,7 @@ class FirstPurchaseOfferService:
             return offer_package
 
         offer_package.price_cents = int(config.offer_price_cents)
-        offer_package.currency = str((config.offer_currency or "USD")).upper()
+        offer_package.currency = offer_currency
         offer_package.daily_download_limit = int(config.offer_credits_total)
         offer_package.name = f"First Purchase Add-on {int(config.id)} (+{int(config.offer_credits_total)} leads)"
         offer_package.state_limit = trigger_package.state_limit
@@ -212,7 +221,7 @@ class FirstPurchaseOfferService:
             offer_package_id=offer_package_id,
             offer_package_name=(offer_package.name if offer_package else None),
             offer_price_cents=(int(config.offer_price_cents) if config.offer_price_cents is not None else None),
-            offer_currency=(str((config.offer_currency or "USD")).upper() if config.offer_currency else "USD"),
+            offer_currency=USD_CURRENCY,
             offer_credits_total=(int(config.offer_credits_total) if config.offer_credits_total is not None else None),
             headline=config.headline,
             message=config.message,
@@ -274,7 +283,7 @@ class FirstPurchaseOfferService:
         config.trigger_package_id = payload.trigger_package_id
         config.offer_credits_total = payload.offer_credits_total
         config.offer_price_cents = payload.offer_price_cents
-        config.offer_currency = str((payload.offer_currency or "USD")).upper()
+        config.offer_currency = FirstPurchaseOfferService._require_offer_currency(payload.offer_currency)
         config.headline = payload.headline
         config.message = payload.message
         config.cta_label = payload.cta_label
@@ -421,7 +430,7 @@ class FirstPurchaseOfferService:
             offer_package_id=int(offer_package.id),
             offer_package_name=str(offer_package.name),
             offer_price_cents=int(config.offer_price_cents or offer_package.price_cents),
-            offer_currency=str((config.offer_currency or offer_package.currency or "USD")).upper(),
+            offer_currency=USD_CURRENCY,
             offer_credits_total=int(
                 config.offer_credits_total
                 if config.offer_credits_total is not None
