@@ -23,6 +23,32 @@ from app.models.purchase import StripeWebhookInbox, StripeWebhookWorkerHeartbeat
 from app.utils.csv_generator import LEAD_CSV_HEADERS, LEAD_CSV_REQUIRED_VALUE_FIELDS
 
 
+def _production_settings_kwargs(**overrides):
+    kwargs = {
+        "_env_file": None,
+        "APP_ENV": "production",
+        "SECRET_KEY": "z" * 40,
+        "INITIAL_ADMIN_PASSWORD": "StrongAdmin#123",
+        "DB_PASSWORD": "db-password-123",
+        "STRIPE_SECRET_KEY": "sk_live_example_123",
+        "STRIPE_WEBHOOK_SECRET": "whsec_example_123",
+        "CORS_ORIGINS": ["https://app.example.com"],
+        "CORS_ALLOW_METHODS": ["GET", "POST"],
+        "CORS_ALLOW_HEADERS": ["Authorization", "Content-Type"],
+        "AUTH_COOKIE_SECURE": True,
+        "NOTIFICATION_EMAIL_PROVIDER": "smtp2go",
+        "SMTP_HOST": "mail.smtp2go.com",
+        "SMTP_PORT": 587,
+        "SMTP_FROM_EMAIL": "noreply@example.com",
+        "NOTIFICATION_SMS_PROVIDER": "twilio",
+        "TWILIO_ACCOUNT_SID": "AC1234567890abcdef",
+        "TWILIO_AUTH_TOKEN": "twilio-auth-token",
+        "TWILIO_MESSAGING_SERVICE_SID": "MG1234567890abcdef",
+    }
+    kwargs.update(overrides)
+    return kwargs
+
+
 @pytest.fixture(autouse=True)
 def reset_rate_limit_observability():
     reset_rate_limit_metrics()
@@ -51,34 +77,41 @@ def reset_rate_limit_observability():
 @pytest.mark.unit
 def test_production_settings_require_strong_secret_key():
     with pytest.raises(ValidationError):
-        Settings(
-            _env_file=None,
-            APP_ENV="production",
-            SECRET_KEY="weak-secret",
-            INITIAL_ADMIN_PASSWORD="StrongAdmin#123",
-            DB_PASSWORD="db-password-123",
-            STRIPE_SECRET_KEY="sk_live_example_123",
-            STRIPE_WEBHOOK_SECRET="whsec_example_123",
-            CORS_ORIGINS=["https://app.example.com"],
-            CORS_ALLOW_METHODS=["GET", "POST"],
-            CORS_ALLOW_HEADERS=["Authorization", "Content-Type"],
-        )
+        Settings(**_production_settings_kwargs(SECRET_KEY="weak-secret"))
 
 
 @pytest.mark.unit
 def test_production_settings_reject_wildcard_cors():
     with pytest.raises(ValidationError):
+        Settings(**_production_settings_kwargs(CORS_ALLOW_METHODS=["*"]))
+
+
+@pytest.mark.unit
+def test_production_settings_require_smtp2go_email_provider():
+    with pytest.raises(ValidationError):
+        Settings(**_production_settings_kwargs(NOTIFICATION_EMAIL_PROVIDER="sendgrid"))
+
+
+@pytest.mark.unit
+def test_production_settings_require_smtp2go_host():
+    with pytest.raises(ValidationError):
+        Settings(**_production_settings_kwargs(SMTP_HOST="smtp.gmail.com"))
+
+
+@pytest.mark.unit
+def test_production_settings_require_twilio_sms_provider():
+    with pytest.raises(ValidationError):
+        Settings(**_production_settings_kwargs(NOTIFICATION_SMS_PROVIDER="noop"))
+
+
+@pytest.mark.unit
+def test_production_settings_require_twilio_sender_source():
+    with pytest.raises(ValidationError):
         Settings(
-            _env_file=None,
-            APP_ENV="production",
-            SECRET_KEY="z" * 40,
-            INITIAL_ADMIN_PASSWORD="StrongAdmin#123",
-            DB_PASSWORD="db-password-123",
-            STRIPE_SECRET_KEY="sk_live_example_123",
-            STRIPE_WEBHOOK_SECRET="whsec_example_123",
-            CORS_ORIGINS=["https://app.example.com"],
-            CORS_ALLOW_METHODS=["*"],
-            CORS_ALLOW_HEADERS=["Authorization", "Content-Type"],
+            **_production_settings_kwargs(
+                TWILIO_MESSAGING_SERVICE_SID=None,
+                TWILIO_FROM_NUMBER=None,
+            )
         )
 
 

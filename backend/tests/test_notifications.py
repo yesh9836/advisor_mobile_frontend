@@ -72,6 +72,47 @@ def test_enqueue_lead_delivery_notifications_is_idempotent_and_channel_scoped(
 
 
 @pytest.mark.integration
+def test_enqueue_lead_delivery_notifications_respects_advisor_opt_out(
+    db,
+    monkeypatch,
+    user_factory,
+    lead_factory,
+):
+    _enable_notifications(monkeypatch)
+    advisor = user_factory(
+        role="advisor",
+        email="notify.optout@example.com",
+        password="NotifyOptOut123!",
+    )
+    db.add(
+        AdvisorDeliverySettings(
+            user_id=advisor.id,
+            email_alerts_enabled=False,
+            sms_alerts_enabled=False,
+            version=1,
+        )
+    )
+    db.commit()
+
+    lead = lead_factory(state_code="CA", first_name="Alex", last_name="NoAlerts")
+    summary = NotificationService.enqueue_lead_delivery_notifications(
+        db=db,
+        user_id=advisor.id,
+        lead_ids=[lead.id],
+        purchase_id=None,
+        source_event="test_opt_out",
+    )
+    assert summary == {"enqueued_total": 0, "enqueued_email": 0, "enqueued_sms": 0}
+
+    rows = (
+        db.query(NotificationOutbox)
+        .filter(NotificationOutbox.user_id == advisor.id, NotificationOutbox.lead_id == lead.id)
+        .all()
+    )
+    assert rows == []
+
+
+@pytest.mark.integration
 def test_enqueue_lead_delivery_notifications_handles_duplicate_conflict_without_rolling_back_outer_tx(
     db,
     monkeypatch,
