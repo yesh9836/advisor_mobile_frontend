@@ -167,6 +167,7 @@ def test_checkout_success_returns_session(
     assert "/advisor/subscription/" not in captured_checkout_kwargs["success_url"]
     assert "/advisor/subscription/" not in captured_checkout_kwargs["cancel_url"]
     assert captured_checkout_kwargs["mode"] == "payment"
+    assert captured_checkout_kwargs["automatic_tax"] == {"enabled": False}
     expected_expiration_seconds = int(settings.STRIPE_CHECKOUT_SESSION_EXPIRES_MINUTES) * 60
     expires_at = int(captured_checkout_kwargs["expires_at"])
     now_ts = int(time.time())

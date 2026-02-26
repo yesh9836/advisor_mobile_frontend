@@ -105,6 +105,7 @@ def test_purchase_checkout_uses_idempotency_key_and_metadata(
     assert response.status_code == 200, response.text
     assert response.json()["session_id"] == "cs_purchase_checkout"
     assert captured_checkout_kwargs["mode"] == "payment"
+    assert captured_checkout_kwargs["automatic_tax"] == {"enabled": False}
     expected_expiration_seconds = int(settings.STRIPE_CHECKOUT_SESSION_EXPIRES_MINUTES) * 60
     expires_at = int(captured_checkout_kwargs["expires_at"])
     now_ts = int(time.time())
@@ -557,12 +558,18 @@ def test_purchase_checkout_allows_managed_offer_for_first_eligible_purchase(
         "app.services.payment_service.PaymentService.create_or_get_stripe_customer",
         lambda db, user: "cus_offer_checkout_allow",
     )
-    monkeypatch.setattr(
-        "app.services.subscription_service.stripe.checkout.Session.create",
-        lambda **kwargs: {
+    captured_checkout_kwargs = {}
+
+    def _mock_checkout_create(**kwargs):
+        captured_checkout_kwargs.update(kwargs)
+        return {
             "id": "cs_offer_checkout_allowed",
             "url": "https://checkout.stripe.test/offer-checkout-allowed",
-        },
+        }
+
+    monkeypatch.setattr(
+        "app.services.subscription_service.stripe.checkout.Session.create",
+        _mock_checkout_create,
     )
 
     checkout_response = client.post(
@@ -572,6 +579,7 @@ def test_purchase_checkout_allows_managed_offer_for_first_eligible_purchase(
     )
     assert checkout_response.status_code == 200, checkout_response.text
     assert checkout_response.json()["session_id"] == "cs_offer_checkout_allowed"
+    assert captured_checkout_kwargs["automatic_tax"] == {"enabled": False}
 
 
 @pytest.mark.integration
