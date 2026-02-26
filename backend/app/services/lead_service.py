@@ -5,7 +5,7 @@ from typing import Dict, List, Literal, Optional, Tuple
 from uuid import uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import and_, case, false, func, or_, select
+from sqlalchemy import and_, false, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -236,32 +236,6 @@ class LeadService:
         return sorted(code for code in normalized if len(code) == 2)
 
     @staticmethod
-    def _get_refund_reversed_credits_by_purchase_id(
-        db: Session,
-        purchase_ids: List[int],
-    ) -> Dict[int, int]:
-        if not purchase_ids:
-            return {}
-
-        rows = (
-            db.query(
-                LeadCreditLedger.purchase_id,
-                func.coalesce(func.sum(LeadCreditLedger.credits_delta), 0).label("refund_delta_total"),
-            )
-            .filter(
-                LeadCreditLedger.purchase_id.in_(purchase_ids),
-                LeadCreditLedger.movement_type == "refund_adjustment",
-            )
-            .group_by(LeadCreditLedger.purchase_id)
-            .all()
-        )
-        return {
-            int(purchase_id): max(-int(refund_delta_total or 0), 0)
-            for purchase_id, refund_delta_total in rows
-            if purchase_id is not None
-        }
-
-    @staticmethod
     def _tokenize_search_query(search: str) -> List[str]:
         tokens = [token.strip() for token in SEARCH_TOKEN_PATTERN.findall(search or "")]
         return [token for token in tokens if token]
@@ -289,28 +263,16 @@ class LeadService:
     def _compute_purchase_assignment_target(
         *,
         purchase: LeadPurchase,
-        reversed_refund_credits: int = 0,
     ) -> int:
-        credits_total = max(int(purchase.credits_total or 0), 0)
-        normalized_reversed = max(int(reversed_refund_credits or 0), 0)
-        return max(credits_total - min(normalized_reversed, credits_total), 0)
+        return max(int(purchase.credits_total or 0), 0)
 
     @staticmethod
     def _get_purchase_assignment_target(
         db: Session,
         purchase: LeadPurchase,
     ) -> int:
-        if purchase.id is None:
-            return LeadService._compute_purchase_assignment_target(purchase=purchase, reversed_refund_credits=0)
-
-        reversed_credits = LeadService._get_refund_reversed_credits_by_purchase_id(
-            db=db,
-            purchase_ids=[int(purchase.id)],
-        ).get(int(purchase.id), 0)
-        return LeadService._compute_purchase_assignment_target(
-            purchase=purchase,
-            reversed_refund_credits=reversed_credits,
-        )
+        _ = db
+        return LeadService._compute_purchase_assignment_target(purchase=purchase)
 
     @staticmethod
     def allocate_unsold_leads_for_purchase(
@@ -459,32 +421,14 @@ class LeadService:
             .group_by(LeadOwnership.purchase_id)
             .subquery()
         )
-        refund_adjustments = (
-            db.query(
-                LeadCreditLedger.purchase_id.label("purchase_id"),
-                func.coalesce(func.sum(LeadCreditLedger.credits_delta), 0).label("refund_delta_total"),
-            )
-            .filter(
-                LeadCreditLedger.purchase_id.isnot(None),
-                LeadCreditLedger.movement_type == "refund_adjustment",
-            )
-            .group_by(LeadCreditLedger.purchase_id)
-            .subquery()
-        )
-        entitlement_raw = LeadPurchase.credits_total + func.coalesce(refund_adjustments.c.refund_delta_total, 0)
-        entitlement_target = case(
-            (entitlement_raw > 0, entitlement_raw),
-            else_=0,
-        )
         query = (
             db.query(LeadPurchase)
             .join(User, User.id == LeadPurchase.user_id)
             .outerjoin(ownership_counts, ownership_counts.c.purchase_id == LeadPurchase.id)
-            .outerjoin(refund_adjustments, refund_adjustments.c.purchase_id == LeadPurchase.id)
             .filter(LeadPurchase.status == "completed")
             .filter(LeadPurchase.credits_remaining > 0)
-            .filter(entitlement_target > 0)
-            .filter(func.coalesce(ownership_counts.c.assigned_count, 0) < entitlement_target)
+            .filter(LeadPurchase.credits_total > 0)
+            .filter(func.coalesce(ownership_counts.c.assigned_count, 0) < LeadPurchase.credits_total)
             .order_by(
                 User.created_at.asc(),
                 User.id.asc(),
@@ -552,14 +496,9 @@ class LeadService:
                 for purchase_id, assigned_count in assigned_rows
                 if purchase_id is not None
             }
-            reversed_refunds_by_purchase = LeadService._get_refund_reversed_credits_by_purchase_id(
-                db=db,
-                purchase_ids=purchase_ids,
-            )
             assignment_targets_by_purchase = {
                 purchase_id: LeadService._compute_purchase_assignment_target(
                     purchase=purchase_by_id[purchase_id],
-                    reversed_refund_credits=reversed_refunds_by_purchase.get(purchase_id, 0),
                 )
                 for purchase_id in purchase_ids
             }
@@ -575,7 +514,7 @@ class LeadService:
             purchase_id = int(purchase.id)
             requested_count = assignment_targets_by_purchase.get(
                 purchase_id,
-                LeadService._compute_purchase_assignment_target(purchase=purchase, reversed_refund_credits=0),
+                LeadService._compute_purchase_assignment_target(purchase=purchase),
             )
             assigned_count = assigned_counts_by_purchase.get(purchase_id, 0)
             unfulfilled_count = max(requested_count - assigned_count, 0)
@@ -659,7 +598,7 @@ class LeadService:
             purchase = purchase_by_id[purchase_id]
             requested_count = assignment_targets_by_purchase.get(
                 purchase_id,
-                LeadService._compute_purchase_assignment_target(purchase=purchase, reversed_refund_credits=0),
+                LeadService._compute_purchase_assignment_target(purchase=purchase),
             )
             assigned_count = max(requested_count - purchase_unfulfilled[purchase_id], 0)
             newly_assigned_ids = sorted(set(per_purchase_newly_assigned_ids.get(purchase_id, [])))

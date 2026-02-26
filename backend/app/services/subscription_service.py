@@ -664,6 +664,169 @@ class SubscriptionService:
         return SubscriptionService.get_credit_summary(db=db, user=user)
 
     @staticmethod
+    def grant_replacement_credits(
+        db: Session,
+        *,
+        purchase_id: int,
+        credits: int,
+        actor_user_id: int,
+        reason: str,
+        idempotency_key: str,
+        source: str = "manual_replacement",
+    ) -> Dict[str, Any]:
+        normalized_purchase_id = int(purchase_id)
+        if normalized_purchase_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="purchase_id must be a positive integer",
+            )
+
+        normalized_credits = int(credits)
+        if normalized_credits <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="credits must be greater than zero",
+            )
+
+        normalized_actor_user_id = int(actor_user_id)
+        if normalized_actor_user_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="actor_user_id must be a positive integer",
+            )
+
+        normalized_reason = str(reason or "").strip()
+        if not normalized_reason:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="reason is required",
+            )
+
+        normalized_idempotency_key = str(idempotency_key or "").strip()
+        if not normalized_idempotency_key:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="idempotency_key is required",
+            )
+
+        normalized_source = str(source or "").strip().lower() or "manual_replacement"
+
+        existing_entry = (
+            db.query(LeadCreditLedger)
+            .filter(LeadCreditLedger.idempotency_key == normalized_idempotency_key)
+            .first()
+        )
+        if existing_entry:
+            if (
+                existing_entry.movement_type != "replacement_credit"
+                or int(existing_entry.purchase_id or 0) != normalized_purchase_id
+                or int(existing_entry.credits_delta or 0) != normalized_credits
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="idempotency_key is already in use with different replacement credit values",
+                )
+            purchase = (
+                db.query(LeadPurchase)
+                .filter(LeadPurchase.id == normalized_purchase_id)
+                .first()
+            )
+            if not purchase:
+                raise HTTPException(status_code=404, detail="Purchase not found")
+            MetricsService.increment(
+                "purchase_replacement_credits_total",
+                tags={"outcome": "idempotent_replay", "source": normalized_source},
+            )
+            return {
+                "purchase_id": int(purchase.id),
+                "credits_added": normalized_credits,
+                "credits_remaining": max(int(purchase.credits_remaining or 0), 0),
+                "idempotent_replay": True,
+            }
+
+        purchase_query = db.query(LeadPurchase).filter(LeadPurchase.id == normalized_purchase_id)
+        bind = db.get_bind()
+        if bind is not None and bind.dialect.name == "mysql":
+            purchase_query = purchase_query.with_for_update()
+        purchase = purchase_query.first()
+        if not purchase:
+            raise HTTPException(status_code=404, detail="Purchase not found")
+
+        new_credits_remaining = max(int(purchase.credits_remaining or 0), 0) + normalized_credits
+        db.add(
+            LeadCreditLedger(
+                user_id=purchase.user_id,
+                purchase_id=purchase.id,
+                movement_type="replacement_credit",
+                credits_delta=normalized_credits,
+                note=f"Replacement credits ({normalized_source}): {normalized_reason}",
+                idempotency_key=normalized_idempotency_key,
+            )
+        )
+        purchase.credits_remaining = new_credits_remaining
+        db.add(purchase)
+
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            duplicate = (
+                db.query(LeadCreditLedger)
+                .filter(LeadCreditLedger.idempotency_key == normalized_idempotency_key)
+                .first()
+            )
+            if (
+                duplicate
+                and duplicate.movement_type == "replacement_credit"
+                and int(duplicate.purchase_id or 0) == normalized_purchase_id
+                and int(duplicate.credits_delta or 0) == normalized_credits
+            ):
+                purchase = (
+                    db.query(LeadPurchase)
+                    .filter(LeadPurchase.id == normalized_purchase_id)
+                    .first()
+                )
+                if not purchase:
+                    raise HTTPException(status_code=404, detail="Purchase not found")
+                MetricsService.increment(
+                    "purchase_replacement_credits_total",
+                    tags={"outcome": "idempotent_replay", "source": normalized_source},
+                )
+                return {
+                    "purchase_id": int(purchase.id),
+                    "credits_added": normalized_credits,
+                    "credits_remaining": max(int(purchase.credits_remaining or 0), 0),
+                    "idempotent_replay": True,
+                }
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Replacement credit idempotency conflict",
+            )
+
+        AuditService.log_purchase_event(
+            actor_user_id=normalized_actor_user_id,
+            action="purchase_replacement_credits_granted",
+            purchase_id=purchase.id,
+            credits_delta=normalized_credits,
+            correlation_ids={"purchase_id": purchase.id},
+            meta_data={
+                "reason": normalized_reason,
+                "source": normalized_source,
+                "idempotency_key": normalized_idempotency_key,
+            },
+        )
+        MetricsService.increment(
+            "purchase_replacement_credits_total",
+            tags={"outcome": "applied", "source": normalized_source},
+        )
+        return {
+            "purchase_id": int(purchase.id),
+            "credits_added": normalized_credits,
+            "credits_remaining": new_credits_remaining,
+            "idempotent_replay": False,
+        }
+
+    @staticmethod
     def _get_assigned_counts_by_purchase_id(
         db: Session,
         purchase_ids: List[int],
@@ -685,42 +848,6 @@ class SubscriptionService:
             for purchase_id, assigned_count in rows
             if purchase_id is not None
         }
-
-    @staticmethod
-    def _get_refund_reversed_credits_by_purchase_id(
-        db: Session,
-        purchase_ids: List[int],
-    ) -> Dict[int, int]:
-        if not purchase_ids:
-            return {}
-
-        rows = (
-            db.query(
-                LeadCreditLedger.purchase_id,
-                func.coalesce(func.sum(LeadCreditLedger.credits_delta), 0).label("refund_delta_total"),
-            )
-            .filter(
-                LeadCreditLedger.purchase_id.in_(purchase_ids),
-                LeadCreditLedger.movement_type == "refund_adjustment",
-            )
-            .group_by(LeadCreditLedger.purchase_id)
-            .all()
-        )
-        return {
-            int(purchase_id): max(-int(refund_delta_total or 0), 0)
-            for purchase_id, refund_delta_total in rows
-            if purchase_id is not None
-        }
-
-    @staticmethod
-    def _compute_entitled_credits_total(
-        *,
-        credits_total: int,
-        reversed_refund_credits: int,
-    ) -> int:
-        normalized_total = max(int(credits_total or 0), 0)
-        normalized_reversed = max(int(reversed_refund_credits or 0), 0)
-        return max(normalized_total - min(normalized_reversed, normalized_total), 0)
 
     @staticmethod
     def _derive_fulfillment_status(
@@ -747,10 +874,9 @@ class SubscriptionService:
         purchase: LeadPurchase,
         package: Optional[LeadPackage],
         assigned_count: int,
-        entitled_credits_total: int,
     ) -> Dict[str, Any]:
         credits_total = max(int(purchase.credits_total or 0), 0)
-        normalized_entitled = max(int(entitled_credits_total or 0), 0)
+        normalized_entitled = credits_total
         unfulfilled_count = max(normalized_entitled - max(int(assigned_count), 0), 0)
         return {
             "id": int(purchase.id),
@@ -808,19 +934,11 @@ class SubscriptionService:
             db=db,
             purchase_ids=purchase_ids,
         )
-        reversed_refunds = SubscriptionService._get_refund_reversed_credits_by_purchase_id(
-            db=db,
-            purchase_ids=purchase_ids,
-        )
         items: List[Dict[str, Any]] = [
             SubscriptionService._build_purchase_item(
                 purchase=purchase,
                 package=package,
                 assigned_count=assigned_counts.get(int(purchase.id), 0),
-                entitled_credits_total=SubscriptionService._compute_entitled_credits_total(
-                    credits_total=int(purchase.credits_total or 0),
-                    reversed_refund_credits=reversed_refunds.get(int(purchase.id), 0),
-                ),
             )
             for purchase, package in rows
         ]
@@ -843,19 +961,11 @@ class SubscriptionService:
             db=db,
             purchase_ids=purchase_ids,
         )
-        reversed_refunds = SubscriptionService._get_refund_reversed_credits_by_purchase_id(
-            db=db,
-            purchase_ids=purchase_ids,
-        )
         items: List[Dict[str, Any]] = [
             SubscriptionService._build_purchase_item(
                 purchase=purchase,
                 package=package,
                 assigned_count=assigned_counts.get(int(purchase.id), 0),
-                entitled_credits_total=SubscriptionService._compute_entitled_credits_total(
-                    credits_total=int(purchase.credits_total or 0),
-                    reversed_refund_credits=reversed_refunds.get(int(purchase.id), 0),
-                ),
             )
             for purchase, package in rows
         ]
@@ -1226,44 +1336,69 @@ class SubscriptionService:
         return False
 
     @staticmethod
-    def _compute_target_refunded_credits(
-        *,
-        credits_total: int,
-        amount_cents: int,
-        refunded_amount_cents: int,
-    ) -> int:
-        normalized_total = max(int(credits_total or 0), 0)
-        normalized_amount = max(int(amount_cents or 0), 0)
-        normalized_refunded = max(int(refunded_amount_cents or 0), 0)
-        if normalized_total == 0 or normalized_amount == 0 or normalized_refunded == 0:
-            return 0
-        if normalized_refunded >= normalized_amount:
-            return normalized_total
-        return min((normalized_total * normalized_refunded) // normalized_amount, normalized_total)
-
-    @staticmethod
-    def _sum_reversed_refund_credits(
+    def _handle_charge_refunded_event_policy_only(
         db: Session,
         *,
-        purchase_id: int,
-    ) -> int:
-        total_delta = (
-            db.query(func.coalesce(func.sum(LeadCreditLedger.credits_delta), 0))
-            .filter(
-                LeadCreditLedger.purchase_id == purchase_id,
-                LeadCreditLedger.movement_type == "refund_adjustment",
-            )
-            .scalar()
-        )
-        return max(-int(total_delta or 0), 0)
+        data_object: Dict[str, Any],
+        event_id: Optional[str],
+    ) -> None:
+        payment_intent = data_object.get("payment_intent")
+        if isinstance(payment_intent, dict):
+            payment_intent_id = payment_intent.get("id")
+        else:
+            payment_intent_id = payment_intent
 
-    @staticmethod
-    def _build_refund_adjustment_idempotency_key(
-        *,
-        purchase_id: int,
-        refunded_amount_cents: int,
-    ) -> str:
-        return f"refund_adjustment:{int(purchase_id)}:{max(int(refunded_amount_cents or 0), 0)}"
+        if not payment_intent_id:
+            logger.warning("charge.refunded missing payment intent ID")
+            MetricsService.increment(
+                "purchase_refund_policy_events_total",
+                tags={"outcome": "ignored_missing_payment_intent"},
+            )
+            return
+
+        purchase = (
+            db.query(LeadPurchase)
+            .filter(LeadPurchase.stripe_payment_intent_id == payment_intent_id)
+            .first()
+        )
+        if not purchase:
+            logger.warning(
+                "No local lead purchase found for refunded payment_intent_id=%s",
+                payment_intent_id,
+            )
+            MetricsService.increment(
+                "purchase_refund_policy_events_total",
+                tags={"outcome": "ignored_missing_purchase"},
+            )
+            return
+
+        refunded_amount_cents = max(int(data_object.get("amount_refunded") or 0), 0)
+        MetricsService.increment(
+            "purchase_refund_policy_events_total",
+            tags={
+                "outcome": "observed_no_mutation",
+                "purchase_status": str(purchase.status or "unknown"),
+            },
+        )
+        AuditService.log_purchase_event(
+            actor_user_id=purchase.user_id,
+            action="purchase_refund_webhook_observed",
+            purchase_id=purchase.id,
+            amount_cents=refunded_amount_cents,
+            correlation_ids=SubscriptionService._build_purchase_correlation_ids(
+                stripe_event_id=event_id,
+                checkout_session_id=purchase.stripe_checkout_session_id,
+                payment_intent_id=purchase.stripe_payment_intent_id,
+                purchase_id=purchase.id,
+            ),
+            meta_data={
+                "policy": "no_refunds_no_clawback",
+                "purchase_status": str(purchase.status),
+                "credits_remaining": int(purchase.credits_remaining or 0),
+                "refund_reason": data_object.get("reason"),
+                "amount_refunded_cents": refunded_amount_cents,
+            },
+        )
 
     @staticmethod
     def _mark_purchase_failed_by_payment_intent(
@@ -1421,7 +1556,7 @@ class SubscriptionService:
             )
             if previous_status_normalized == "completed" and purchase_status == "completed":
                 # Success lifecycle replays must not resurrect spent credits.
-                # Consumption/refund flows are the only allowed decrement paths.
+                # Consumption flows are the only automatic decrement path.
                 credits_remaining = max(int(purchase.credits_remaining or 0), 0)
             elif (
                 previous_status_normalized in SubscriptionService._IMMUTABLE_PURCHASE_STATUSES
@@ -1636,108 +1771,11 @@ class SubscriptionService:
                 )
 
             elif event_type == "charge.refunded":
-                payment_intent = data_object.get("payment_intent")
-                if isinstance(payment_intent, dict):
-                    payment_intent_id = payment_intent.get("id")
-                else:
-                    payment_intent_id = payment_intent
-
-                if not payment_intent_id:
-                    logger.warning("charge.refunded missing payment intent ID")
-                    SubscriptionService._commit_if_transaction_active(db)
-                    return
-
-                purchase = (
-                    db.query(LeadPurchase)
-                    .filter(LeadPurchase.stripe_payment_intent_id == payment_intent_id)
-                    .first()
-                )
-                if not purchase:
-                    logger.warning(
-                        "No local lead purchase found for refunded payment_intent_id=%s",
-                        payment_intent_id,
-                    )
-                    SubscriptionService._commit_if_transaction_active(db)
-                    return
-
-                previous_status = purchase.status
-                refunded_amount_cents = max(int(data_object.get("amount_refunded") or 0), 0)
-                target_refunded_credits = SubscriptionService._compute_target_refunded_credits(
-                    credits_total=int(purchase.credits_total or 0),
-                    amount_cents=int(purchase.amount_cents or 0),
-                    refunded_amount_cents=refunded_amount_cents,
-                )
-                already_reversed_credits = SubscriptionService._sum_reversed_refund_credits(
+                SubscriptionService._handle_charge_refunded_event_policy_only(
                     db=db,
-                    purchase_id=int(purchase.id),
+                    data_object=data_object,
+                    event_id=event_id,
                 )
-                refundable_credits = max(int(purchase.credits_remaining or 0), 0)
-                credits_to_reverse = min(
-                    max(target_refunded_credits - already_reversed_credits, 0),
-                    refundable_credits,
-                )
-
-                credits_reversed = 0
-                if credits_to_reverse > 0:
-                    refund_idempotency_key = SubscriptionService._build_refund_adjustment_idempotency_key(
-                        purchase_id=int(purchase.id),
-                        refunded_amount_cents=refunded_amount_cents,
-                    )
-                    try:
-                        with db.begin_nested():
-                            db.add(
-                                LeadCreditLedger(
-                                    user_id=purchase.user_id,
-                                    purchase_id=purchase.id,
-                                    movement_type="refund_adjustment",
-                                    credits_delta=-credits_to_reverse,
-                                    note=(
-                                        f"Stripe refund for payment_intent {payment_intent_id} "
-                                        f"(amount_refunded={refunded_amount_cents})"
-                                    ),
-                                    idempotency_key=refund_idempotency_key,
-                                )
-                            )
-                            db.flush()
-                    except IntegrityError:
-                        logger.info(
-                            "Duplicate refund adjustment ignored for purchase_id=%s idempotency_key=%s",
-                            purchase.id,
-                            refund_idempotency_key,
-                        )
-                    else:
-                        credits_reversed = credits_to_reverse
-
-                purchase.credits_remaining = max(refundable_credits - credits_reversed, 0)
-                is_full_refund = refunded_amount_cents >= max(int(purchase.amount_cents or 0), 0) > 0
-                if is_full_refund:
-                    purchase.status = "refunded"
-                db.add(purchase)
-                db.commit()
-
-                if credits_reversed > 0 or purchase.status != previous_status:
-                    AuditService.log_purchase_event(
-                        actor_user_id=purchase.user_id,
-                        action="purchase_refund_adjusted",
-                        purchase_id=purchase.id,
-                        credits_delta=-credits_reversed,
-                        amount_cents=refunded_amount_cents,
-                        correlation_ids=SubscriptionService._build_purchase_correlation_ids(
-                            stripe_event_id=event_id,
-                            checkout_session_id=purchase.stripe_checkout_session_id,
-                            payment_intent_id=purchase.stripe_payment_intent_id,
-                            purchase_id=purchase.id,
-                        ),
-                        meta_data={
-                            "previous_status": previous_status,
-                            "new_status": purchase.status,
-                            "target_refunded_credits": target_refunded_credits,
-                            "already_reversed_credits": already_reversed_credits,
-                            "credits_reversed": credits_reversed,
-                            "amount_refunded_cents": refunded_amount_cents,
-                            "refund_reason": data_object.get("reason"),
-                        },
-                    )
 
             elif event_type in {
                 "customer.subscription.updated",

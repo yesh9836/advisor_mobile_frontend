@@ -27,7 +27,6 @@ class StripeReconciliationService:
         "checkout.session.expired",
         "payment_intent.succeeded",
         "payment_intent.payment_failed",
-        "charge.refunded",
     )
 
     @staticmethod
