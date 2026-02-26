@@ -249,6 +249,66 @@ describe("SubscriptionPage license gate", () => {
     expect(await screen.findByText("checkout unavailable")).toBeInTheDocument();
   });
 
+  it("maps structured inventory rejection codes for add-on checkout", async () => {
+    const { getPurchaseHistory, getFirstPurchaseOfferEligibility, createCheckout } =
+      await import("@/api/purchases");
+    vi.mocked(getPurchaseHistory).mockResolvedValueOnce({
+      items: [
+        {
+          id: 1,
+          order_reference: "cs_test_124",
+          package_name: "Starter",
+          amount_cents: 20000,
+          currency: "USD",
+          credits_total: 10,
+          entitled_credits_total: 10,
+          credits_remaining: 10,
+          status: "completed",
+          assigned_count: 10,
+          unfulfilled_count: 0,
+          fulfillment_status: "fulfilled",
+          purchased_at: "2026-02-19T00:00:00Z",
+          stripe_checkout_session_id: "cs_test_124",
+          stripe_payment_intent_id: "pi_test_124",
+        },
+      ],
+    });
+    vi.mocked(getFirstPurchaseOfferEligibility).mockResolvedValueOnce({
+      eligible: true,
+      offer: {
+        trigger_package_id: 1,
+        offer_package_id: 2,
+        offer_package_name: "Starter Plus",
+        offer_price_cents: 25000,
+        offer_currency: "USD",
+        offer_credits_total: 14,
+        headline: "First order bonus",
+        message: "Upgrade now for extra credits.",
+        cta_label: "Upgrade package",
+      },
+    });
+    vi.mocked(createCheckout).mockRejectedValueOnce({
+      isAxiosError: true,
+      message: "Request failed",
+      response: {
+        data: {
+          detail: {
+            code: "INVENTORY_UNAVAILABLE",
+            message: "Add-on inventory unavailable",
+          },
+        },
+      },
+    });
+
+    renderRoute("/subscription?checkout=success&session_id=cs_test_124");
+    fireEvent.click(await screen.findByRole("button", { name: "Upgrade package" }));
+    expect(
+      await screen.findByText(
+        "Add-on checkout is temporarily unavailable because live inventory is below the required threshold.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("reuses the same checkout retry token across a refresh within the same browser session", async () => {
     window.sessionStorage.clear();
 

@@ -52,6 +52,11 @@ describe("FirstPurchaseOfferPage USD-only currency", () => {
       ends_at: null,
       updated_at: null,
       updated_by: null,
+      inventory_ready: null,
+      inventory_available_count: null,
+      inventory_required_count: null,
+      inventory_gate_code: null,
+      inventory_gate_message: null,
     });
 
     updateFirstPurchaseOfferConfig.mockResolvedValue({
@@ -71,6 +76,11 @@ describe("FirstPurchaseOfferPage USD-only currency", () => {
       ends_at: null,
       updated_at: "2026-02-26T12:05:00Z",
       updated_by: 7,
+      inventory_ready: false,
+      inventory_available_count: 0,
+      inventory_required_count: 5,
+      inventory_gate_code: "INVENTORY_UNAVAILABLE",
+      inventory_gate_message: "Global add-on inventory is currently below the required threshold",
     });
   });
 
@@ -105,6 +115,9 @@ describe("FirstPurchaseOfferPage USD-only currency", () => {
       expect.objectContaining({
         offer_currency: "USD",
       }),
+    );
+    expect(await screen.findByTestId("offer-inventory-status")).toHaveTextContent(
+      "Code: INVENTORY_UNAVAILABLE",
     );
   });
 });
