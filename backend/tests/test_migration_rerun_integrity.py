@@ -556,3 +556,88 @@ def test_e4_replacement_credit_movement_upgrade_is_rerunnable_and_accepts_new_va
             )
         ).mappings().one()
         assert replacement_count["total"] == 1
+
+
+@pytest.mark.unit
+def test_a6_lead_package_lifecycle_upgrade_is_rerunnable_and_enforced():
+    migration = _load_migration_module("a6b7c8d9e0f1_add_lead_package_lifecycle_fields.py")
+    engine = sa.create_engine("sqlite+pysqlite:///:memory:")
+
+    metadata = sa.MetaData()
+    users = sa.Table(
+        "users",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+    )
+    lead_packages = sa.Table(
+        "lead_packages",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+        sa.Column("name", sa.String(120), nullable=False),
+        sa.Column("price_cents", sa.Integer, nullable=False),
+        sa.Column("currency", sa.String(3), nullable=False, server_default=sa.text("'USD'")),
+        sa.Column("stripe_price_id", sa.String(100), nullable=False),
+        sa.Column("state_limit", sa.Integer, nullable=True),
+        sa.Column("daily_download_limit", sa.Integer, nullable=False, server_default=sa.text("0")),
+        sa.Column("features", sa.JSON(), nullable=True),
+        sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+    )
+
+    with engine.begin() as connection:
+        metadata.create_all(connection)
+        connection.execute(users.insert(), [{"id": 1}])
+        connection.execute(
+            lead_packages.insert(),
+            [
+                {
+                    "id": 1,
+                    "name": "Starter",
+                    "price_cents": 10000,
+                    "currency": "USD",
+                    "stripe_price_id": "price_starter",
+                    "state_limit": 1,
+                    "daily_download_limit": 10,
+                    "features": {"credits_total": 10},
+                },
+            ],
+        )
+
+        _run_migration(migration, "upgrade", connection)
+        _run_migration(migration, "upgrade", connection)
+
+        columns = {
+            column.get("name")
+            for column in sa.inspect(connection).get_columns("lead_packages")
+        }
+        assert "effective_from" in columns
+        assert "effective_to" in columns
+        assert "is_archived" in columns
+        assert "archived_at" in columns
+        assert "updated_by" in columns
+        assert "updated_at" in columns
+        assert "stripe_product_id" in columns
+
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                sa.text(
+                    "INSERT INTO lead_packages "
+                    "(id, name, price_cents, currency, stripe_price_id, daily_download_limit, is_archived, archived_at) "
+                    "VALUES (2, 'ArchivedInvalid', 12000, 'USD', 'price_bad_archive', 12, 1, NULL)"
+                )
+            )
+
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                sa.text(
+                    "INSERT INTO lead_packages "
+                    "("
+                    "id, name, price_cents, currency, stripe_price_id, daily_download_limit, "
+                    "is_archived, archived_at, effective_from, effective_to"
+                    ") "
+                    "VALUES "
+                    "("
+                    "3, 'WindowInvalid', 13000, 'USD', 'price_bad_window', 13, "
+                    "0, NULL, '2026-12-31 00:00:00', '2026-01-01 00:00:00'"
+                    ")"
+                )
+            )

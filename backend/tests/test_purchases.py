@@ -1,4 +1,5 @@
 import time
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
@@ -60,6 +61,65 @@ def test_purchase_packages_return_sorted_by_price(client, plan_factory):
     assert [item["price_cents"] for item in purchase_payload] == sorted(
         [item["price_cents"] for item in purchase_payload]
     )
+
+
+@pytest.mark.integration
+def test_purchase_packages_exclude_archived_and_out_of_window(client, db, plan_factory):
+    now = datetime.now(timezone.utc)
+    visible_plan = plan_factory(name="VisiblePlan", price_cents=9000, stripe_price_id="price_visible_plan")
+    archived_plan = plan_factory(name="ArchivedPlan", price_cents=10000, stripe_price_id="price_archived_plan")
+    future_plan = plan_factory(name="FuturePlan", price_cents=11000, stripe_price_id="price_future_plan")
+    expired_plan = plan_factory(name="ExpiredPlan", price_cents=12000, stripe_price_id="price_expired_plan")
+
+    archived_plan.is_archived = True
+    archived_plan.archived_at = now
+    archived_plan.features = {"credits_total": 10, "catalog_visible": True}
+
+    future_plan.effective_from = now + timedelta(days=1)
+    future_plan.features = {"credits_total": 10, "catalog_visible": True}
+
+    expired_plan.effective_to = now - timedelta(days=1)
+    expired_plan.features = {"credits_total": 10, "catalog_visible": True}
+
+    visible_plan.features = {"credits_total": 10, "catalog_visible": True}
+    db.commit()
+
+    purchases_response = client.get("/api/v1/purchases/packages")
+    assert purchases_response.status_code == 200, purchases_response.text
+
+    package_ids = {int(item["id"]) for item in purchases_response.json()}
+    assert visible_plan.id in package_ids
+    assert archived_plan.id not in package_ids
+    assert future_plan.id not in package_ids
+    assert expired_plan.id not in package_ids
+
+
+@pytest.mark.integration
+def test_purchase_checkout_rejects_archived_package(
+    client,
+    db,
+    user_factory,
+    license_factory,
+    plan_factory,
+    auth_headers,
+):
+    _, headers = _create_advisor_with_verified_license(
+        user_factory,
+        license_factory,
+        auth_headers,
+    )
+    archived_plan = plan_factory(name="CheckoutArchivedPlan", stripe_price_id="price_checkout_archived")
+    archived_plan.is_archived = True
+    archived_plan.archived_at = datetime.now(timezone.utc)
+    db.commit()
+
+    response = client.post(
+        "/api/v1/purchases/checkout",
+        headers=headers,
+        json={"package_id": archived_plan.id},
+    )
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Package not found"}
 
 
 @pytest.mark.integration

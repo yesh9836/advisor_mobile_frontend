@@ -68,6 +68,11 @@ def _install_stripe_stub() -> None:
         def list(*args, **kwargs):
             return {"data": []}
 
+    class _Price:
+        @staticmethod
+        def create(*args, **kwargs):
+            raise NotImplementedError("stripe.Price.create must be mocked in tests")
+
     class _RequestsClient:
         def __init__(self, timeout=None):
             self.timeout = timeout
@@ -82,6 +87,7 @@ def _install_stripe_stub() -> None:
     stripe.PaymentMethod = _PaymentMethod
     stripe.Invoice = _Invoice
     stripe.Event = _Event
+    stripe.Price = _Price
     stripe.http_client = types.SimpleNamespace(RequestsClient=_RequestsClient)
     stripe.api_key = None
     stripe.api_version = None

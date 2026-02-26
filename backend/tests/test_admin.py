@@ -21,7 +21,7 @@ def _create_admin_and_headers(user_factory, auth_headers):
     return admin, auth_headers(admin.email, "AdminSuite123!")
 
 
-def test_admin_endpoints_require_admin(client, user_factory, auth_headers):
+def test_admin_endpoints_require_admin(client, user_factory, auth_headers, plan_factory, monkeypatch):
     admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
     advisor = user_factory(
         role="advisor",
@@ -35,7 +35,16 @@ def test_admin_endpoints_require_admin(client, user_factory, auth_headers):
         email="target.suite@example.com",
         name="Target Suite",
     )
+    target_plan = plan_factory(name="PlanTarget", price_cents=14000, daily_download_limit=14)
     advisor_headers = auth_headers(advisor.email, "AdvisorSuite123!")
+
+    monkeypatch.setattr(
+        "app.services.payment_service.PaymentService.create_stripe_price_for_plan",
+        lambda **kwargs: {
+            "stripe_price_id": f"price_admin_plan_{kwargs['request_id']}",
+            "stripe_product_id": "prod_admin_plan",
+        },
+    )
 
     ok_dashboard = client.get("/api/v1/admin/dashboard", headers=admin_headers)
     assert ok_dashboard.status_code == 200, ok_dashboard.text
@@ -76,6 +85,47 @@ def test_admin_endpoints_require_admin(client, user_factory, auth_headers):
     ok_audit_logs = client.get("/api/v1/admin/audit-logs", headers=admin_headers)
     assert ok_audit_logs.status_code == 200, ok_audit_logs.text
 
+    ok_plan_list = client.get("/api/v1/admin/plans", headers=admin_headers)
+    assert ok_plan_list.status_code == 200, ok_plan_list.text
+
+    ok_plan_create = client.post(
+        "/api/v1/admin/plans",
+        headers=admin_headers,
+        json={
+            "name": "Growth 25",
+            "price_cents": 25000,
+            "credits_total": 25,
+            "state_limit": 3,
+            "catalog_visible": True,
+            "request_id": "admin_plan_create_123",
+        },
+    )
+    assert ok_plan_create.status_code == 200, ok_plan_create.text
+
+    ok_plan_update = client.put(
+        f"/api/v1/admin/plans/{target_plan.id}",
+        headers=admin_headers,
+        json={
+            "name": "PlanTarget Renamed",
+            "catalog_visible": True,
+        },
+    )
+    assert ok_plan_update.status_code == 200, ok_plan_update.text
+
+    ok_plan_archive = client.post(
+        f"/api/v1/admin/plans/{target_plan.id}/archive",
+        headers=admin_headers,
+        json={"reason": "Retiring"},
+    )
+    assert ok_plan_archive.status_code == 200, ok_plan_archive.text
+
+    ok_plan_unarchive = client.post(
+        f"/api/v1/admin/plans/{target_plan.id}/unarchive",
+        headers=admin_headers,
+        json={"reason": "Rollback"},
+    )
+    assert ok_plan_unarchive.status_code == 200, ok_plan_unarchive.text
+
     ok_offer_get = client.get(
         "/api/v1/admin/first-purchase-offer",
         headers=admin_headers,
@@ -109,6 +159,7 @@ def test_admin_endpoints_require_admin(client, user_factory, auth_headers):
         ("GET", f"/api/v1/admin/users/{admin.id}"),
         ("POST", f"/api/v1/admin/users/{admin.id}/deactivate"),
         ("GET", "/api/v1/admin/audit-logs"),
+        ("GET", "/api/v1/admin/plans"),
         ("GET", "/api/v1/admin/first-purchase-offer"),
         ("PUT", "/api/v1/admin/first-purchase-offer"),
         ("POST", "/api/v1/admin/sync/wordpress"),
@@ -124,6 +175,45 @@ def test_admin_endpoints_require_admin(client, user_factory, auth_headers):
 
         assert response.status_code == 403
         assert response.json()["detail"] == "Admin access required"
+
+    forbidden_plan_create = client.post(
+        "/api/v1/admin/plans",
+        headers=advisor_headers,
+        json={
+            "name": "Advisor Forbidden Plan",
+            "price_cents": 15000,
+            "credits_total": 15,
+            "state_limit": 2,
+            "catalog_visible": True,
+            "request_id": "advisor_forbidden_plan_01",
+        },
+    )
+    assert forbidden_plan_create.status_code == 403
+    assert forbidden_plan_create.json()["detail"] == "Admin access required"
+
+    forbidden_plan_update = client.put(
+        f"/api/v1/admin/plans/{target_plan.id}",
+        headers=advisor_headers,
+        json={"name": "Forbidden Rename"},
+    )
+    assert forbidden_plan_update.status_code == 403
+    assert forbidden_plan_update.json()["detail"] == "Admin access required"
+
+    forbidden_plan_archive = client.post(
+        f"/api/v1/admin/plans/{target_plan.id}/archive",
+        headers=advisor_headers,
+        json={"reason": "No"},
+    )
+    assert forbidden_plan_archive.status_code == 403
+    assert forbidden_plan_archive.json()["detail"] == "Admin access required"
+
+    forbidden_plan_unarchive = client.post(
+        f"/api/v1/admin/plans/{target_plan.id}/unarchive",
+        headers=advisor_headers,
+        json={"reason": "No"},
+    )
+    assert forbidden_plan_unarchive.status_code == 403
+    assert forbidden_plan_unarchive.json()["detail"] == "Admin access required"
 
 
 def test_admin_analytics_overview_returns_aggregates(
@@ -375,6 +465,170 @@ def test_admin_first_purchase_offer_update_maps_unknown_errors_to_500(
     )
     assert response.status_code == 500, response.text
     assert response.json() == {"detail": "Failed to save first-purchase add-on offer"}
+
+
+def test_admin_plan_lifecycle_create_update_archive_and_audit(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+    purchase_factory,
+    monkeypatch,
+):
+    admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+
+    monkeypatch.setattr(
+        "app.services.payment_service.PaymentService.create_stripe_price_for_plan",
+        lambda **kwargs: {
+            "stripe_price_id": f"price_admin_{kwargs['request_id']}",
+            "stripe_product_id": f"prod_admin_{kwargs['request_id']}",
+        },
+    )
+
+    create_response = client.post(
+        "/api/v1/admin/plans",
+        headers=admin_headers,
+        json={
+            "name": "Plan Lifecycle 25",
+            "price_cents": 25000,
+            "credits_total": 25,
+            "state_limit": 4,
+            "catalog_visible": True,
+            "effective_from": "2026-02-01T00:00:00Z",
+            "effective_to": "2026-12-31T23:59:59Z",
+            "request_id": "admin_plan_lifecycle_create_01",
+        },
+    )
+    assert create_response.status_code == 200, create_response.text
+    created = create_response.json()
+    assert created["name"] == "Plan Lifecycle 25"
+    assert created["stripe_price_id"] == "price_admin_admin_plan_lifecycle_create_01"
+    assert created["stripe_product_id"] == "prod_admin_admin_plan_lifecycle_create_01"
+    assert created["is_archived"] is False
+    assert created["catalog_visible"] is True
+    assert created["credits_total"] == 25
+
+    plan_id = int(created["id"])
+    update_response = client.put(
+        f"/api/v1/admin/plans/{plan_id}",
+        headers=admin_headers,
+        json={
+            "name": "Plan Lifecycle 30",
+            "price_cents": 30000,
+            "credits_total": 30,
+            "request_id": "admin_plan_lifecycle_update_01",
+        },
+    )
+    assert update_response.status_code == 200, update_response.text
+    updated = update_response.json()
+    assert updated["name"] == "Plan Lifecycle 30"
+    assert updated["price_cents"] == 30000
+    assert updated["credits_total"] == 30
+    assert updated["stripe_price_id"] == "price_admin_admin_plan_lifecycle_update_01"
+    assert updated["stripe_product_id"] == "prod_admin_admin_plan_lifecycle_update_01"
+
+    advisor = user_factory(
+        role="advisor",
+        password="PlanAdvisor123!",
+        email="plan.advisor@example.com",
+        name="Plan Advisor",
+    )
+    purchase_factory(
+        user_id=advisor.id,
+        package_id=plan_id,
+        credits_total=30,
+    )
+
+    blocked_update = client.put(
+        f"/api/v1/admin/plans/{plan_id}",
+        headers=admin_headers,
+        json={
+            "price_cents": 31000,
+            "request_id": "admin_plan_lifecycle_update_02",
+        },
+    )
+    assert blocked_update.status_code == 409, blocked_update.text
+    assert "immutable after activation" in blocked_update.json()["detail"]
+
+    archive_response = client.post(
+        f"/api/v1/admin/plans/{plan_id}/archive",
+        headers=admin_headers,
+        json={"reason": "Retire price tier"},
+    )
+    assert archive_response.status_code == 200, archive_response.text
+    archived = archive_response.json()
+    assert archived["is_archived"] is True
+    assert archived["archived_at"] is not None
+
+    unarchive_response = client.post(
+        f"/api/v1/admin/plans/{plan_id}/unarchive",
+        headers=admin_headers,
+        json={"reason": "Rollback archive"},
+    )
+    assert unarchive_response.status_code == 200, unarchive_response.text
+    unarchived = unarchive_response.json()
+    assert unarchived["is_archived"] is False
+    assert unarchived["archived_at"] is None
+
+    actions = {
+        row.action
+        for row in db.query(AuditLog)
+        .filter(
+            AuditLog.actor_user_id == admin.id,
+            AuditLog.entity_type == "LeadPackage",
+            AuditLog.entity_id == plan_id,
+        )
+        .all()
+    }
+    assert "admin_plan_created" in actions
+    assert "admin_plan_updated" in actions
+    assert "admin_plan_archived" in actions
+    assert "admin_plan_unarchived" in actions
+
+
+def test_admin_plan_list_filters(client, db, user_factory, auth_headers, plan_factory):
+    _admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+    now = datetime.now(timezone.utc)
+
+    active_plan = plan_factory(name="FilterActive", stripe_price_id="price_filter_active")
+    archived_plan = plan_factory(name="FilterArchived", stripe_price_id="price_filter_archived")
+    future_plan = plan_factory(name="FilterFuture", stripe_price_id="price_filter_future")
+
+    archived_plan.is_archived = True
+    archived_plan.archived_at = now
+    archived_plan.features = {"credits_total": 10, "catalog_visible": True}
+    future_plan.effective_from = now + timedelta(days=3)
+    future_plan.features = {"credits_total": 10, "catalog_visible": True}
+    active_plan.features = {"credits_total": 10, "catalog_visible": True}
+    db.commit()
+
+    archived_only = client.get(
+        "/api/v1/admin/plans?archived=archived",
+        headers=admin_headers,
+    )
+    assert archived_only.status_code == 200, archived_only.text
+    archived_ids = {item["id"] for item in archived_only.json()["items"]}
+    assert archived_plan.id in archived_ids
+    assert active_plan.id not in archived_ids
+
+    unarchived_only = client.get(
+        "/api/v1/admin/plans?archived=unarchived",
+        headers=admin_headers,
+    )
+    assert unarchived_only.status_code == 200, unarchived_only.text
+    unarchived_ids = {item["id"] for item in unarchived_only.json()["items"]}
+    assert active_plan.id in unarchived_ids
+    assert archived_plan.id not in unarchived_ids
+
+    effective_now = client.get(
+        "/api/v1/admin/plans",
+        headers=admin_headers,
+        params={"effective_at": now.isoformat()},
+    )
+    assert effective_now.status_code == 200, effective_now.text
+    effective_ids = {item["id"] for item in effective_now.json()["items"]}
+    assert active_plan.id in effective_ids
+    assert future_plan.id not in effective_ids
 
 
 def test_admin_dashboard_counts_match_seeded_data(
