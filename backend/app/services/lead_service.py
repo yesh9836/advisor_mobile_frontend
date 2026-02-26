@@ -69,6 +69,42 @@ class LeadService:
         )
 
     @staticmethod
+    def get_unsold_inventory_snapshot_for_user(db: Session, user: User) -> Dict[str, object]:
+        """
+        Return advisor-scoped unsold inventory snapshot.
+
+        This excludes already delivered/downloaded leads and ownership-assigned leads.
+        """
+        states = LeadService._get_user_allowed_states_for_new_leads(db, int(user.id))
+        if not states:
+            return {
+                "state_codes": [],
+                "available_count": 0,
+            }
+
+        available_count = (
+            db.query(func.count(Lead.id))
+            .filter(Lead.state_code.in_(states))
+            .filter(~Lead.id.in_(select(LeadDownload.lead_id)))
+            .filter(~Lead.id.in_(select(LeadOwnership.lead_id)))
+            .scalar()
+        ) or 0
+        return {
+            "state_codes": states,
+            "available_count": int(available_count),
+        }
+
+    @staticmethod
+    def get_global_unsold_inventory_count(db: Session) -> int:
+        count = (
+            db.query(func.count(Lead.id))
+            .filter(~Lead.id.in_(select(LeadDownload.lead_id)))
+            .filter(~Lead.id.in_(select(LeadOwnership.lead_id)))
+            .scalar()
+        ) or 0
+        return int(count)
+
+    @staticmethod
     def _get_user_remaining_credits(db: Session, user_id: int) -> int:
         remaining = (
             db.query(func.coalesce(func.sum(LeadPurchase.credits_remaining), 0))
@@ -1021,17 +1057,12 @@ class LeadService:
             )
             return {"can_download": False, "reason": "No remaining lead credits", "remaining": 0}
 
-        states = LeadService._get_user_allowed_states_for_new_leads(db, user.id)
+        inventory_snapshot = LeadService.get_unsold_inventory_snapshot_for_user(db=db, user=user)
+        states = inventory_snapshot.get("state_codes") or []
         if not states:
             return {"can_download": False, "reason": "No verified license states", "remaining": remaining_credits}
 
-        available_count = (
-            db.query(func.count(Lead.id))
-            .filter(Lead.state_code.in_(states))
-            .filter(~Lead.id.in_(select(LeadDownload.lead_id)))
-            .filter(~Lead.id.in_(select(LeadOwnership.lead_id)))
-            .scalar()
-        ) or 0
+        available_count = int(inventory_snapshot.get("available_count") or 0)
         if available_count <= 0:
             return {"can_download": False, "reason": "No leads available", "remaining": remaining_credits}
 
