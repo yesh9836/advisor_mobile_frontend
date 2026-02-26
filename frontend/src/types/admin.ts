@@ -237,3 +237,58 @@ export interface LeadBulkImportSchema {
     source: string;
   };
 }
+
+export interface AdminPlanItem {
+  id: number;
+  name: string;
+  price_cents: number;
+  currency: string;
+  stripe_product_id: string | null;
+  stripe_price_id: string;
+  state_limit: number | null;
+  credits_total: number;
+  catalog_visible: boolean;
+  is_archived: boolean;
+  archived_at: string | null;
+  effective_from: string | null;
+  effective_to: string | null;
+  created_at: string;
+  updated_at: string | null;
+  updated_by: number | null;
+  has_purchases: boolean;
+}
+
+export interface PaginatedAdminPlans {
+  items: AdminPlanItem[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+export interface AdminPlanFilters {
+  search?: string;
+  archived?: "all" | "archived" | "unarchived";
+  effective_at?: string;
+}
+
+export interface AdminPlanCreatePayload {
+  name: string;
+  price_cents: number;
+  credits_total: number;
+  state_limit?: number | null;
+  catalog_visible: boolean;
+  effective_from?: string | null;
+  effective_to?: string | null;
+  request_id: string;
+}
+
+export interface AdminPlanUpdatePayload {
+  name?: string;
+  price_cents?: number;
+  credits_total?: number;
+  state_limit?: number | null;
+  catalog_visible?: boolean;
+  effective_from?: string | null;
+  effective_to?: string | null;
+  request_id?: string;
+}
