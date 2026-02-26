@@ -3,6 +3,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.core.currency import require_usd_currency
+
 
 class PurchasePackageResponse(BaseModel):
     id: int
@@ -112,7 +114,7 @@ class FirstPurchaseAddonOfferUpdateRequest(BaseModel):
     starts_at: Optional[datetime] = None
     ends_at: Optional[datetime] = None
 
-    @field_validator("headline", "message", "cta_label", "offer_currency")
+    @field_validator("headline", "message", "cta_label")
     @classmethod
     def normalize_text_fields(cls, value: Optional[str]) -> Optional[str]:
         if value is None:
@@ -120,9 +122,17 @@ class FirstPurchaseAddonOfferUpdateRequest(BaseModel):
         clean = value.strip()
         if not clean:
             return None
-        if len(clean) == 3 and clean.isalpha():
-            return clean.upper()
         return clean
+
+    @field_validator("offer_currency")
+    @classmethod
+    def normalize_offer_currency(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        clean = value.strip()
+        if not clean:
+            return None
+        return require_usd_currency(clean, field_name="offer_currency")
 
 
 class FirstPurchaseAddonOfferConfigResponse(BaseModel):
