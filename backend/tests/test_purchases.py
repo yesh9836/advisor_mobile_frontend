@@ -395,6 +395,8 @@ def test_first_purchase_offer_eligibility_depends_on_first_completed_purchase(
     auth_headers,
     plan_factory,
     purchase_factory,
+    license_factory,
+    lead_factory,
 ):
     admin = user_factory(
         role="admin",
@@ -410,6 +412,14 @@ def test_first_purchase_offer_eligibility_depends_on_first_completed_purchase(
         email=f"advisor.offer.{uuid4().hex[:8]}@example.com",
         name="Offer Advisor",
     )
+    license_factory(
+        user_id=advisor.id,
+        state="CA",
+        status="verified",
+        license_number=f"CA-OFFER-{uuid4().hex[:8]}",
+    )
+    for index in range(6):
+        lead_factory(state_code="CA", mobile_phone=f"555-OFFER-ELIG-{index:04d}")
     advisor_headers = auth_headers(advisor.email, "AdvisorOffer123!")
 
     trigger_package = plan_factory(
@@ -439,7 +449,11 @@ def test_first_purchase_offer_eligibility_depends_on_first_completed_purchase(
         headers=advisor_headers,
     )
     assert before_purchase.status_code == 200, before_purchase.text
-    assert before_purchase.json() == {"eligible": False, "offer": None}
+    before_payload = before_purchase.json()
+    assert before_payload["eligible"] is False
+    assert before_payload["offer"] is None
+    assert before_payload["rejection_code"] == "OFFER_NOT_FIRST_PURCHASE"
+    assert before_payload["rejection_message"]
 
     first_purchase = purchase_factory(
         user_id=advisor.id,
@@ -473,7 +487,10 @@ def test_first_purchase_offer_eligibility_depends_on_first_completed_purchase(
         headers=advisor_headers,
     )
     assert after_second_purchase.status_code == 200, after_second_purchase.text
-    assert after_second_purchase.json() == {"eligible": False, "offer": None}
+    after_payload = after_second_purchase.json()
+    assert after_payload["eligible"] is False
+    assert after_payload["offer"] is None
+    assert after_payload["rejection_code"] == "OFFER_NOT_FIRST_PURCHASE"
 
 
 @pytest.mark.integration
@@ -512,7 +529,59 @@ def test_purchase_checkout_rejects_direct_managed_offer_when_not_eligible(
         json={"package_id": offer_package_id},
     )
     assert checkout_response.status_code == 403, checkout_response.text
-    assert checkout_response.json()["detail"] == "Package is not available for this account"
+    assert checkout_response.json()["detail"]["code"] == "OFFER_NOT_FIRST_PURCHASE"
+    assert checkout_response.json()["detail"]["message"]
+
+
+@pytest.mark.integration
+def test_first_purchase_offer_eligibility_returns_inventory_rejection_code(
+    client,
+    user_factory,
+    license_factory,
+    auth_headers,
+    plan_factory,
+    purchase_factory,
+):
+    admin = user_factory(
+        role="admin",
+        password="AdminOfferEligInventory123!",
+        email=f"admin.offer.elig.inventory.{uuid4().hex[:8]}@example.com",
+        name="Offer Admin Eligibility Inventory",
+    )
+    admin_headers = auth_headers(admin.email, "AdminOfferEligInventory123!")
+
+    advisor, advisor_headers = _create_advisor_with_verified_license(
+        user_factory,
+        license_factory,
+        auth_headers,
+    )
+
+    trigger_package = plan_factory(
+        name="OfferEligibilityInventoryTrigger",
+        price_cents=11000,
+        daily_download_limit=10,
+    )
+    _enable_first_purchase_offer(client, admin_headers, trigger_package.id)
+
+    purchase_factory(
+        user_id=advisor.id,
+        package_id=trigger_package.id,
+        status="completed",
+        credits_total=trigger_package.daily_download_limit,
+        stripe_checkout_session_id="cs_offer_elig_inventory_trigger",
+    )
+
+    response = client.get(
+        "/api/v1/purchases/first-purchase-offer?checkout_session_id=cs_offer_elig_inventory_trigger",
+        headers=advisor_headers,
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["eligible"] is False
+    assert payload["offer"] is None
+    assert payload["rejection_code"] == "INVENTORY_UNAVAILABLE"
+    assert isinstance(payload.get("inventory_available_count"), int)
+    assert isinstance(payload.get("inventory_required_count"), int)
 
 
 @pytest.mark.integration
@@ -523,6 +592,7 @@ def test_purchase_checkout_allows_managed_offer_for_first_eligible_purchase(
     auth_headers,
     plan_factory,
     purchase_factory,
+    lead_factory,
     monkeypatch,
 ):
     admin = user_factory(
@@ -553,6 +623,8 @@ def test_purchase_checkout_allows_managed_offer_for_first_eligible_purchase(
         credits_total=trigger_package.daily_download_limit,
         stripe_checkout_session_id="cs_offer_checkout_trigger_completed",
     )
+    for index in range(8):
+        lead_factory(state_code="CA", mobile_phone=f"555-OFFER-CHECKOUT-{index:04d}")
 
     monkeypatch.setattr(
         "app.services.payment_service.PaymentService.create_or_get_stripe_customer",
@@ -633,7 +705,58 @@ def test_purchase_checkout_rejects_managed_offer_after_second_completed_purchase
         json={"package_id": offer_package_id},
     )
     assert checkout_response.status_code == 403, checkout_response.text
-    assert checkout_response.json()["detail"] == "Package is not available for this account"
+    assert checkout_response.json()["detail"]["code"] == "OFFER_NOT_FIRST_PURCHASE"
+    assert checkout_response.json()["detail"]["message"]
+
+
+@pytest.mark.integration
+def test_purchase_checkout_rejects_managed_offer_when_inventory_unavailable(
+    client,
+    user_factory,
+    license_factory,
+    auth_headers,
+    plan_factory,
+    purchase_factory,
+):
+    admin = user_factory(
+        role="admin",
+        password="AdminOfferInventory123!",
+        email=f"admin.offer.inventory.{uuid4().hex[:8]}@example.com",
+        name="Offer Admin Inventory",
+    )
+    admin_headers = auth_headers(admin.email, "AdminOfferInventory123!")
+
+    advisor, advisor_headers = _create_advisor_with_verified_license(
+        user_factory,
+        license_factory,
+        auth_headers,
+    )
+
+    trigger_package = plan_factory(
+        name="OfferCheckoutInventoryTrigger",
+        price_cents=11000,
+        daily_download_limit=10,
+    )
+    offer_package_id = _enable_first_purchase_offer(client, admin_headers, trigger_package.id)
+
+    purchase_factory(
+        user_id=advisor.id,
+        package_id=trigger_package.id,
+        status="completed",
+        credits_total=trigger_package.daily_download_limit,
+        stripe_checkout_session_id="cs_offer_checkout_inventory_trigger",
+    )
+
+    checkout_response = client.post(
+        "/api/v1/purchases/checkout",
+        headers=advisor_headers,
+        json={"package_id": offer_package_id},
+    )
+    assert checkout_response.status_code == 409, checkout_response.text
+    detail = checkout_response.json()["detail"]
+    assert detail["code"] == "INVENTORY_UNAVAILABLE"
+    assert isinstance(detail.get("available_count"), int)
+    assert isinstance(detail.get("required_count"), int)
 
 
 @pytest.mark.integration

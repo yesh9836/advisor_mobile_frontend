@@ -248,6 +248,11 @@ def test_admin_can_configure_first_purchase_addon_offer(
     assert payload["offer_credits_total"] == 5
     assert payload["offer_currency"] == "USD"
     assert payload["updated_by"] == admin.id
+    assert "inventory_ready" in payload
+    assert "inventory_available_count" in payload
+    assert "inventory_required_count" in payload
+    assert "inventory_gate_code" in payload
+    assert "inventory_gate_message" in payload
 
     refreshed = client.get("/api/v1/admin/first-purchase-offer", headers=admin_headers)
     assert refreshed.status_code == 200, refreshed.text
