@@ -206,6 +206,13 @@ const AdminDashboard = () => {
             >
               Analytics
             </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => navigate("/admin/plans")}
+            >
+              Plans
+            </button>
           </div>
         </article>
 
