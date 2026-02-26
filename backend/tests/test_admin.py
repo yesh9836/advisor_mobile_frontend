@@ -268,6 +268,34 @@ def test_admin_can_configure_first_purchase_addon_offer(
     assert (audit_event.meta_data or {}).get("after", {}).get("is_enabled") is True
 
 
+def test_admin_first_purchase_offer_update_rejects_non_usd_currency(
+    client,
+    user_factory,
+    auth_headers,
+    plan_factory,
+):
+    _admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+    trigger_package = plan_factory(name="TriggerCurrencyGuard", price_cents=12000, daily_download_limit=10)
+
+    response = client.put(
+        "/api/v1/admin/first-purchase-offer",
+        headers=admin_headers,
+        json={
+            "is_enabled": True,
+            "trigger_package_id": trigger_package.id,
+            "offer_credits_total": 5,
+            "offer_price_cents": 7500,
+            "offer_currency": "EUR",
+            "headline": "First order bonus",
+            "message": "Upgrade this order and receive extra credits.",
+            "cta_label": "Upgrade to bonus package",
+        },
+    )
+
+    assert response.status_code == 422, response.text
+    assert "offer_currency must be USD" in response.text
+
+
 def test_admin_first_purchase_offer_update_preserves_client_http_errors(
     client,
     db,
@@ -591,7 +619,7 @@ def test_admin_orders_export_returns_csv_with_dollar_amounts(
         stripe_checkout_session_id="cs_orders_export_canceled_1",
     )
     completed_purchase.amount_cents = 12345
-    completed_purchase.currency = "usd"
+    completed_purchase.currency = "USD"
     db.add(completed_purchase)
     db.commit()
     db.refresh(completed_purchase)

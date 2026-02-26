@@ -446,7 +446,6 @@ def test_webhook_checkout_completed_uses_pending_purchase_snapshot_when_package_
     original_credits = int(purchase.credits_total)
 
     plan.price_cents = 9900
-    plan.currency = "EUR"
     plan.daily_download_limit = 77
     plan.features = {"credits_total": 77}
     db.add(plan)
@@ -521,7 +520,6 @@ def test_webhook_checkout_completed_uses_metadata_snapshot_when_pending_row_miss
     original_credits = int(plan.daily_download_limit or 0)
 
     plan.price_cents = 8400
-    plan.currency = "CAD"
     plan.daily_download_limit = 40
     plan.features = {"credits_total": 40}
     db.add(plan)

@@ -421,3 +421,89 @@ def test_b8_drop_legacy_subscription_tables_upgrade_is_rerunnable():
         table_names = set(inspector.get_table_names())
         assert "subscription_plans" not in table_names
         assert "subscriptions" not in table_names
+
+
+@pytest.mark.unit
+def test_e3_usd_currency_constraints_upgrade_is_rerunnable_and_enforced():
+    migration = _load_migration_module("e3f4a5b6c7d8_enforce_usd_currency_constraints.py")
+    engine = sa.create_engine("sqlite+pysqlite:///:memory:")
+
+    metadata = sa.MetaData()
+    lead_packages = sa.Table(
+        "lead_packages",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+        sa.Column("currency", sa.String(3), nullable=False, server_default=sa.text("'USD'")),
+    )
+    lead_purchases = sa.Table(
+        "lead_purchases",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+        sa.Column("currency", sa.String(3), nullable=False, server_default=sa.text("'USD'")),
+    )
+    first_purchase_addon_offers = sa.Table(
+        "first_purchase_addon_offers",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+        sa.Column("offer_currency", sa.String(3), nullable=False, server_default=sa.text("'USD'")),
+    )
+
+    with engine.begin() as connection:
+        metadata.create_all(connection)
+        connection.execute(lead_packages.insert(), [{"id": 1, "currency": "USD"}])
+        connection.execute(lead_purchases.insert(), [{"id": 1, "currency": "USD"}])
+        connection.execute(first_purchase_addon_offers.insert(), [{"id": 1, "offer_currency": "USD"}])
+
+        _run_migration(migration, "upgrade", connection)
+        _run_migration(migration, "upgrade", connection)
+
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                sa.text("INSERT INTO lead_packages (id, currency) VALUES (2, 'EUR')")
+            )
+
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                sa.text("INSERT INTO lead_purchases (id, currency) VALUES (2, 'CAD')")
+            )
+
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                sa.text(
+                    "INSERT INTO first_purchase_addon_offers (id, offer_currency) "
+                    "VALUES (2, 'GBP')"
+                )
+            )
+
+
+@pytest.mark.unit
+def test_e3_usd_currency_constraints_upgrade_fails_when_non_usd_rows_exist():
+    migration = _load_migration_module("e3f4a5b6c7d8_enforce_usd_currency_constraints.py")
+    engine = sa.create_engine("sqlite+pysqlite:///:memory:")
+
+    metadata = sa.MetaData()
+    lead_packages = sa.Table(
+        "lead_packages",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+        sa.Column("currency", sa.String(3), nullable=False, server_default=sa.text("'USD'")),
+    )
+    sa.Table(
+        "lead_purchases",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+        sa.Column("currency", sa.String(3), nullable=False, server_default=sa.text("'USD'")),
+    )
+    sa.Table(
+        "first_purchase_addon_offers",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+        sa.Column("offer_currency", sa.String(3), nullable=False, server_default=sa.text("'USD'")),
+    )
+
+    with engine.begin() as connection:
+        metadata.create_all(connection)
+        connection.execute(lead_packages.insert(), [{"id": 1, "currency": "EUR"}])
+
+        with pytest.raises(RuntimeError, match="USD-only migration blocked"):
+            _run_migration(migration, "upgrade", connection)
