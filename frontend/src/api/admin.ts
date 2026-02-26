@@ -7,6 +7,10 @@ import {
 } from "@/api/license-contract";
 import { leadSchema } from "@/api/leads";
 import type {
+  AdminPlanCreatePayload,
+  AdminPlanFilters,
+  AdminPlanItem,
+  AdminPlanUpdatePayload,
   AdminAnalyticsOverview,
   AdminLeadCreatePayload,
   AuditLogFilters,
@@ -17,6 +21,7 @@ import type {
   LeadInventoryFilters,
   LeadBulkImportResult,
   LicenseStatusSummaryItem,
+  PaginatedAdminPlans,
   PaginatedAuditLogs,
   PaginatedLeadInventory,
   PaginatedOrders,
@@ -370,6 +375,35 @@ const deactivateAdminUserResponseSchema = z
     detail: z.string(),
   });
 
+const adminPlanItemSchema: z.ZodType<AdminPlanItem> = z
+  .looseObject({
+    id: z.number(),
+    name: z.string(),
+    price_cents: z.number(),
+    currency: z.string(),
+    stripe_product_id: z.string().nullable(),
+    stripe_price_id: z.string(),
+    state_limit: z.number().nullable(),
+    credits_total: z.number(),
+    catalog_visible: z.boolean(),
+    is_archived: z.boolean(),
+    archived_at: z.string().nullable(),
+    effective_from: z.string().nullable(),
+    effective_to: z.string().nullable(),
+    created_at: z.string(),
+    updated_at: z.string().nullable(),
+    updated_by: z.number().nullable(),
+    has_purchases: z.boolean(),
+  });
+
+const paginatedAdminPlansSchema: z.ZodType<PaginatedAdminPlans> = z
+  .looseObject({
+    items: z.array(adminPlanItemSchema),
+    total: z.number(),
+    page: z.number(),
+    size: z.number(),
+  });
+
 export const getDashboardStats = async (): Promise<DashboardStats> => {
   const response = await apiClient.get<DashboardStats>("/admin/dashboard");
   return parseApiContract(
@@ -410,6 +444,129 @@ export const getAnalyticsOverview = async (): Promise<AdminAnalyticsOverview> =>
     adminAnalyticsOverviewSchema,
     response.data,
     "/admin/analytics",
+  );
+};
+
+export const getAdminPlans = async (
+  page: number,
+  size: number,
+  filters: AdminPlanFilters = {},
+): Promise<PaginatedAdminPlans> => {
+  const params = normalizeParams({
+    page,
+    size,
+    search: filters.search,
+    archived: filters.archived,
+    effective_at: filters.effective_at,
+  });
+
+  const response = await apiClient.get<PaginatedAdminPlans>("/admin/plans", {
+    params,
+  });
+  return parseApiContract(
+    paginatedAdminPlansSchema,
+    response.data,
+    "/admin/plans",
+  );
+};
+
+export const createAdminPlan = async (
+  payload: AdminPlanCreatePayload,
+): Promise<AdminPlanItem> => {
+  const requestPayload: Record<string, unknown> = {
+    name: payload.name.trim(),
+    price_cents: payload.price_cents,
+    credits_total: payload.credits_total,
+    catalog_visible: payload.catalog_visible,
+    request_id: payload.request_id.trim(),
+  };
+  if ("state_limit" in payload) {
+    requestPayload.state_limit = payload.state_limit ?? null;
+  }
+  if ("effective_from" in payload) {
+    requestPayload.effective_from = payload.effective_from ?? null;
+  }
+  if ("effective_to" in payload) {
+    requestPayload.effective_to = payload.effective_to ?? null;
+  }
+
+  const response = await apiClient.post<AdminPlanItem>(
+    "/admin/plans",
+    requestPayload,
+  );
+  return parseApiContract(adminPlanItemSchema, response.data, "/admin/plans");
+};
+
+export const updateAdminPlan = async (
+  planId: number,
+  payload: AdminPlanUpdatePayload,
+): Promise<AdminPlanItem> => {
+  const requestPayload: Record<string, unknown> = {};
+  if ("name" in payload && payload.name !== undefined) {
+    requestPayload.name = payload.name.trim();
+  }
+  if ("price_cents" in payload && payload.price_cents !== undefined) {
+    requestPayload.price_cents = payload.price_cents;
+  }
+  if ("credits_total" in payload && payload.credits_total !== undefined) {
+    requestPayload.credits_total = payload.credits_total;
+  }
+  if ("state_limit" in payload) {
+    requestPayload.state_limit = payload.state_limit ?? null;
+  }
+  if ("catalog_visible" in payload && payload.catalog_visible !== undefined) {
+    requestPayload.catalog_visible = payload.catalog_visible;
+  }
+  if ("effective_from" in payload) {
+    requestPayload.effective_from = payload.effective_from ?? null;
+  }
+  if ("effective_to" in payload) {
+    requestPayload.effective_to = payload.effective_to ?? null;
+  }
+  if ("request_id" in payload && payload.request_id !== undefined) {
+    requestPayload.request_id = payload.request_id.trim();
+  }
+
+  const response = await apiClient.put<AdminPlanItem>(
+    `/admin/plans/${planId}`,
+    requestPayload,
+  );
+  return parseApiContract(
+    adminPlanItemSchema,
+    response.data,
+    `/admin/plans/${planId}`,
+  );
+};
+
+export const archiveAdminPlan = async (
+  planId: number,
+  reason?: string,
+): Promise<AdminPlanItem> => {
+  const payload = normalizeParams({ reason });
+  const response = await apiClient.post<AdminPlanItem>(
+    `/admin/plans/${planId}/archive`,
+    payload,
+  );
+  return parseApiContract(
+    adminPlanItemSchema,
+    response.data,
+    `/admin/plans/${planId}/archive`,
+  );
+};
+
+export const unarchiveAdminPlan = async (
+  planId: number,
+  reason?: string,
+): Promise<AdminPlanItem> => {
+  const payload = normalizeParams({ reason });
+  const response = await apiClient.post<AdminPlanItem>(
+    `/admin/plans/${planId}/unarchive`,
+    payload,
+  );
+  return parseApiContract(
+    adminPlanItemSchema,
+    response.data,
+    `/admin/plans/${planId}/unarchive`,
   );
 };
 
