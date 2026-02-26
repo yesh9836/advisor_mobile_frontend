@@ -267,3 +267,112 @@ class LeadInventoryFilters(BaseModel):
             return None
         clean = value.strip().upper()
         return clean if clean else None
+
+
+class AdminPlanItem(BaseModel):
+    id: int
+    name: str
+    price_cents: int
+    currency: str
+    stripe_product_id: Optional[str] = None
+    stripe_price_id: str
+    state_limit: Optional[int] = None
+    credits_total: int
+    catalog_visible: bool
+    is_archived: bool
+    archived_at: Optional[datetime] = None
+    effective_from: Optional[datetime] = None
+    effective_to: Optional[datetime] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    updated_by: Optional[int] = None
+    has_purchases: bool = False
+
+
+class PaginatedAdminPlans(BaseModel):
+    items: List[AdminPlanItem]
+    total: int
+    page: int
+    size: int
+
+
+class AdminPlanCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    price_cents: int = Field(..., ge=1)
+    credits_total: int = Field(..., ge=1, le=1000000)
+    state_limit: Optional[int] = Field(default=None, ge=1)
+    catalog_visible: bool = True
+    effective_from: Optional[datetime] = None
+    effective_to: Optional[datetime] = None
+    request_id: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        clean = value.strip()
+        if not clean:
+            raise ValueError("name must not be empty")
+        return clean
+
+    @field_validator("request_id")
+    @classmethod
+    def normalize_request_id(cls, value: str) -> str:
+        clean = value.strip()
+        if not clean:
+            raise ValueError("request_id must not be empty")
+        return clean
+
+    @field_validator("effective_to")
+    @classmethod
+    def validate_window(cls, value: Optional[datetime], info):
+        starts_at = info.data.get("effective_from")
+        if value is not None and starts_at is not None and value < starts_at:
+            raise ValueError("effective_to must be greater than or equal to effective_from")
+        return value
+
+
+class AdminPlanUpdateRequest(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    price_cents: Optional[int] = Field(default=None, ge=1)
+    credits_total: Optional[int] = Field(default=None, ge=1, le=1000000)
+    state_limit: Optional[int] = Field(default=None, ge=1)
+    catalog_visible: Optional[bool] = None
+    effective_from: Optional[datetime] = None
+    effective_to: Optional[datetime] = None
+    request_id: Optional[str] = Field(default=None, min_length=8, max_length=128)
+
+    @field_validator("name", "request_id")
+    @classmethod
+    def normalize_optional_strings(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        clean = value.strip()
+        if not clean:
+            return None
+        return clean
+
+
+class AdminPlanArchiveRequest(BaseModel):
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def normalize_reason(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        clean = value.strip()
+        return clean if clean else None
+
+
+class AdminPlanListFilters(BaseModel):
+    search: Optional[str] = None
+    archived: Literal["all", "archived", "unarchived"] = "all"
+    effective_at: Optional[datetime] = None
+
+    @field_validator("search")
+    @classmethod
+    def normalize_search(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        clean = value.strip()
+        return clean if clean else None
