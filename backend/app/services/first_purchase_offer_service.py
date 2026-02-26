@@ -18,6 +18,7 @@ from app.schemas.purchase import (
     FirstPurchaseAddonOfferUpdateRequest,
 )
 from app.services.audit_service import AuditService
+from app.services.lead_service import LeadService
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,37 @@ class _OfferSnapshot:
     ends_at: Optional[datetime]
 
 
+@dataclass(frozen=True)
+class OfferEligibilityDecision:
+    allowed: bool
+    code: Optional[str] = None
+    message: Optional[str] = None
+    available_count: Optional[int] = None
+    required_count: Optional[int] = None
+
+    def to_error_detail(self) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "code": str(self.code or "UNKNOWN"),
+            "message": str(self.message or "Package is not available for this account"),
+        }
+        if self.available_count is not None:
+            payload["available_count"] = int(self.available_count)
+        if self.required_count is not None:
+            payload["required_count"] = int(self.required_count)
+        return payload
+
+
 class FirstPurchaseOfferService:
+    REJECTION_OFFER_DISABLED = "OFFER_DISABLED"
+    REJECTION_OFFER_WINDOW_CLOSED = "OFFER_WINDOW_CLOSED"
+    REJECTION_OFFER_NOT_CONFIGURED = "OFFER_NOT_CONFIGURED"
+    REJECTION_OFFER_PACKAGE_MISMATCH = "OFFER_PACKAGE_MISMATCH"
+    REJECTION_OFFER_NOT_FIRST_PURCHASE = "OFFER_NOT_FIRST_PURCHASE"
+    REJECTION_OFFER_TRIGGER_MISMATCH = "OFFER_TRIGGER_MISMATCH"
+    REJECTION_OFFER_CHECKOUT_MISMATCH = "OFFER_CHECKOUT_MISMATCH"
+    REJECTION_LICENSE_STATES_UNAVAILABLE = "LICENSE_STATES_UNAVAILABLE"
+    REJECTION_INVENTORY_UNAVAILABLE = "INVENTORY_UNAVAILABLE"
+
     @staticmethod
     def _require_offer_currency(value: Optional[str]) -> str:
         try:
@@ -183,6 +214,10 @@ class FirstPurchaseOfferService:
         db: Session,
         config: Optional[FirstPurchaseAddonOffer],
     ) -> FirstPurchaseAddonOfferConfigResponse:
+        inventory_gate = FirstPurchaseOfferService._build_admin_inventory_gate_snapshot(
+            db=db,
+            config=config,
+        )
         if config is None:
             return FirstPurchaseAddonOfferConfigResponse(
                 id=None,
@@ -194,13 +229,18 @@ class FirstPurchaseOfferService:
                 offer_price_cents=None,
                 offer_currency=None,
                 offer_credits_total=None,
-            headline=None,
-            message=None,
-            cta_label=None,
+                headline=None,
+                message=None,
+                cta_label=None,
                 starts_at=None,
                 ends_at=None,
                 updated_at=None,
                 updated_by=None,
+                inventory_ready=inventory_gate["inventory_ready"],
+                inventory_available_count=inventory_gate["inventory_available_count"],
+                inventory_required_count=inventory_gate["inventory_required_count"],
+                inventory_gate_code=inventory_gate["inventory_gate_code"],
+                inventory_gate_message=inventory_gate["inventory_gate_message"],
             )
 
         trigger_package_id = int(config.trigger_package_id) if config.trigger_package_id is not None else None
@@ -230,6 +270,11 @@ class FirstPurchaseOfferService:
             ends_at=config.ends_at,
             updated_at=config.updated_at,
             updated_by=(int(config.updated_by) if config.updated_by is not None else None),
+            inventory_ready=inventory_gate["inventory_ready"],
+            inventory_available_count=inventory_gate["inventory_available_count"],
+            inventory_required_count=inventory_gate["inventory_required_count"],
+            inventory_gate_code=inventory_gate["inventory_gate_code"],
+            inventory_gate_message=inventory_gate["inventory_gate_message"],
         )
 
     @staticmethod
@@ -338,25 +383,71 @@ class FirstPurchaseOfferService:
         return True
 
     @staticmethod
-    def _is_user_eligible_for_offer_package(
+    def _resolve_offer_required_inventory_count(
+        *,
+        config: FirstPurchaseAddonOffer,
+        offer_package: Optional[LeadPackage],
+    ) -> int:
+        if config.offer_credits_total is not None:
+            return max(int(config.offer_credits_total), 1)
+        if offer_package is not None:
+            return max(int(FirstPurchaseOfferService._resolve_package_credits(offer_package)), 1)
+        return 1
+
+    @staticmethod
+    def _decision_denied(
+        *,
+        code: str,
+        message: str,
+        available_count: Optional[int] = None,
+        required_count: Optional[int] = None,
+    ) -> OfferEligibilityDecision:
+        return OfferEligibilityDecision(
+            allowed=False,
+            code=code,
+            message=message,
+            available_count=available_count,
+            required_count=required_count,
+        )
+
+    @staticmethod
+    def _resolve_offer_purchase_eligibility(
         db: Session,
         *,
         user: User,
         offer_package_id: int,
         required_trigger_checkout_session_id: Optional[str] = None,
-    ) -> bool:
+    ) -> OfferEligibilityDecision:
         config = FirstPurchaseOfferService._get_singleton_config(db)
         if config is None or not config.is_enabled:
-            return False
+            return FirstPurchaseOfferService._decision_denied(
+                code=FirstPurchaseOfferService.REJECTION_OFFER_DISABLED,
+                message="First-purchase add-on offer is not enabled",
+            )
 
         if config.trigger_package_id is None:
-            return False
+            return FirstPurchaseOfferService._decision_denied(
+                code=FirstPurchaseOfferService.REJECTION_OFFER_NOT_CONFIGURED,
+                message="First-purchase add-on trigger package is not configured",
+            )
 
-        if config.offer_package_id is None or not FirstPurchaseOfferService._is_offer_window_active(config):
-            return False
+        if config.offer_package_id is None:
+            return FirstPurchaseOfferService._decision_denied(
+                code=FirstPurchaseOfferService.REJECTION_OFFER_NOT_CONFIGURED,
+                message="First-purchase add-on offer package is not configured",
+            )
+
+        if not FirstPurchaseOfferService._is_offer_window_active(config):
+            return FirstPurchaseOfferService._decision_denied(
+                code=FirstPurchaseOfferService.REJECTION_OFFER_WINDOW_CLOSED,
+                message="First-purchase add-on offer is currently outside its active window",
+            )
 
         if int(config.offer_package_id) != int(offer_package_id):
-            return False
+            return FirstPurchaseOfferService._decision_denied(
+                code=FirstPurchaseOfferService.REJECTION_OFFER_PACKAGE_MISMATCH,
+                message="Requested package does not match the configured first-purchase add-on offer",
+            )
 
         # Limit=2 lets us verify "exactly one completed purchase" with a single query.
         completed_purchases = (
@@ -370,19 +461,108 @@ class FirstPurchaseOfferService:
             .all()
         )
         if len(completed_purchases) != 1:
-            return False
+            return FirstPurchaseOfferService._decision_denied(
+                code=FirstPurchaseOfferService.REJECTION_OFFER_NOT_FIRST_PURCHASE,
+                message="First-purchase add-on is only available after exactly one completed purchase",
+            )
 
         first_completed_purchase = completed_purchases[0]
         if int(first_completed_purchase.package_id) != int(config.trigger_package_id):
-            return False
+            return FirstPurchaseOfferService._decision_denied(
+                code=FirstPurchaseOfferService.REJECTION_OFFER_TRIGGER_MISMATCH,
+                message="First completed purchase does not match the configured trigger package",
+            )
 
         if (
             required_trigger_checkout_session_id is not None
             and first_completed_purchase.stripe_checkout_session_id != required_trigger_checkout_session_id
         ):
-            return False
+            return FirstPurchaseOfferService._decision_denied(
+                code=FirstPurchaseOfferService.REJECTION_OFFER_CHECKOUT_MISMATCH,
+                message="Offer request is not tied to the triggering checkout session",
+            )
 
-        return True
+        offer_package = (
+            db.query(LeadPackage)
+            .filter(LeadPackage.id == int(config.offer_package_id))
+            .first()
+        )
+        required_count = FirstPurchaseOfferService._resolve_offer_required_inventory_count(
+            config=config,
+            offer_package=offer_package,
+        )
+        inventory_snapshot = LeadService.get_unsold_inventory_snapshot_for_user(db=db, user=user)
+        scoped_states = inventory_snapshot.get("state_codes") or []
+        available_count = int(inventory_snapshot.get("available_count") or 0)
+        if not scoped_states:
+            return FirstPurchaseOfferService._decision_denied(
+                code=FirstPurchaseOfferService.REJECTION_LICENSE_STATES_UNAVAILABLE,
+                message="No verified license states available for offer inventory eligibility",
+                available_count=available_count,
+                required_count=required_count,
+            )
+        if available_count < required_count:
+            return FirstPurchaseOfferService._decision_denied(
+                code=FirstPurchaseOfferService.REJECTION_INVENTORY_UNAVAILABLE,
+                message="Add-on inventory is temporarily unavailable for your licensed states",
+                available_count=available_count,
+                required_count=required_count,
+            )
+
+        return OfferEligibilityDecision(
+            allowed=True,
+            available_count=available_count,
+            required_count=required_count,
+        )
+
+    @staticmethod
+    def get_offer_purchase_eligibility_decision(
+        db: Session,
+        *,
+        user: User,
+        offer_package_id: int,
+        required_trigger_checkout_session_id: Optional[str] = None,
+    ) -> OfferEligibilityDecision:
+        return FirstPurchaseOfferService._resolve_offer_purchase_eligibility(
+            db=db,
+            user=user,
+            offer_package_id=offer_package_id,
+            required_trigger_checkout_session_id=required_trigger_checkout_session_id,
+        )
+
+    @staticmethod
+    def _build_admin_inventory_gate_snapshot(
+        db: Session,
+        *,
+        config: Optional[FirstPurchaseAddonOffer],
+    ) -> Dict[str, Any]:
+        if config is None or not config.is_enabled:
+            return {
+                "inventory_ready": None,
+                "inventory_available_count": None,
+                "inventory_required_count": None,
+                "inventory_gate_code": None,
+                "inventory_gate_message": None,
+            }
+
+        required_count = max(int(config.offer_credits_total or 0), 1)
+        available_count = LeadService.get_global_unsold_inventory_count(db=db)
+        if available_count < required_count:
+            return {
+                "inventory_ready": False,
+                "inventory_available_count": available_count,
+                "inventory_required_count": required_count,
+                "inventory_gate_code": FirstPurchaseOfferService.REJECTION_INVENTORY_UNAVAILABLE,
+                "inventory_gate_message": "Global add-on inventory is currently below the required threshold",
+            }
+
+        return {
+            "inventory_ready": True,
+            "inventory_available_count": available_count,
+            "inventory_required_count": required_count,
+            "inventory_gate_code": None,
+            "inventory_gate_message": None,
+        }
 
     @staticmethod
     def can_user_purchase_offer_package(
@@ -391,12 +571,12 @@ class FirstPurchaseOfferService:
         user: User,
         offer_package_id: int,
     ) -> bool:
-        return FirstPurchaseOfferService._is_user_eligible_for_offer_package(
+        return FirstPurchaseOfferService._resolve_offer_purchase_eligibility(
             db,
             user=user,
             offer_package_id=offer_package_id,
             required_trigger_checkout_session_id=None,
-        )
+        ).allowed
 
     @staticmethod
     def get_advisor_offer_eligibility(
@@ -407,15 +587,30 @@ class FirstPurchaseOfferService:
     ) -> FirstPurchaseAddonOfferEligibilityResponse:
         config = FirstPurchaseOfferService._get_singleton_config(db)
         if config is None or config.offer_package_id is None:
-            return FirstPurchaseAddonOfferEligibilityResponse(eligible=False, offer=None)
+            return FirstPurchaseAddonOfferEligibilityResponse(
+                eligible=False,
+                offer=None,
+                rejection_code=FirstPurchaseOfferService.REJECTION_OFFER_NOT_CONFIGURED,
+                rejection_message="First-purchase add-on offer is not configured",
+                inventory_available_count=None,
+                inventory_required_count=None,
+            )
 
-        if not FirstPurchaseOfferService._is_user_eligible_for_offer_package(
+        decision = FirstPurchaseOfferService._resolve_offer_purchase_eligibility(
             db,
             user=user,
             offer_package_id=int(config.offer_package_id),
             required_trigger_checkout_session_id=checkout_session_id,
-        ):
-            return FirstPurchaseAddonOfferEligibilityResponse(eligible=False, offer=None)
+        )
+        if not decision.allowed:
+            return FirstPurchaseAddonOfferEligibilityResponse(
+                eligible=False,
+                offer=None,
+                rejection_code=decision.code,
+                rejection_message=decision.message,
+                inventory_available_count=decision.available_count,
+                inventory_required_count=decision.required_count,
+            )
 
         offer_package = (
             db.query(LeadPackage)
@@ -423,7 +618,14 @@ class FirstPurchaseOfferService:
             .first()
         )
         if offer_package is None:
-            return FirstPurchaseAddonOfferEligibilityResponse(eligible=False, offer=None)
+            return FirstPurchaseAddonOfferEligibilityResponse(
+                eligible=False,
+                offer=None,
+                rejection_code=FirstPurchaseOfferService.REJECTION_OFFER_NOT_CONFIGURED,
+                rejection_message="Configured first-purchase add-on package was not found",
+                inventory_available_count=decision.available_count,
+                inventory_required_count=decision.required_count,
+            )
 
         offer = FirstPurchaseAddonOfferAdvisorResponse(
             trigger_package_id=int(config.trigger_package_id),
@@ -440,4 +642,11 @@ class FirstPurchaseOfferService:
             message=str(config.message or _DEFAULT_MESSAGE),
             cta_label=str(config.cta_label or _DEFAULT_CTA_LABEL),
         )
-        return FirstPurchaseAddonOfferEligibilityResponse(eligible=True, offer=offer)
+        return FirstPurchaseAddonOfferEligibilityResponse(
+            eligible=True,
+            offer=offer,
+            rejection_code=None,
+            rejection_message=None,
+            inventory_available_count=decision.available_count,
+            inventory_required_count=decision.required_count,
+        )
