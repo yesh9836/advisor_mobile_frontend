@@ -148,8 +148,8 @@ class Settings(BaseSettings):
     NOTIFICATIONS_ENABLED: bool = False
     NOTIFICATION_EMAIL_ENABLED: bool = True
     NOTIFICATION_SMS_ENABLED: bool = True
-    NOTIFICATION_EMAIL_PROVIDER: str = "smtp"  # smtp | sendgrid | noop
-    NOTIFICATION_SMS_PROVIDER: str = "noop"  # twilio | noop
+    NOTIFICATION_EMAIL_PROVIDER: str = "smtp2go"  # smtp2go | smtp | sendgrid | noop
+    NOTIFICATION_SMS_PROVIDER: str = "twilio"  # twilio | noop
     NOTIFICATION_FROM_EMAIL: Optional[str] = None
     NOTIFICATION_FROM_NAME: Optional[str] = None
     NOTIFICATION_OUTBOX_BATCH_SIZE: int = 100
@@ -413,8 +413,8 @@ class Settings(BaseSettings):
     @classmethod
     def validate_notification_email_provider(cls, value: str) -> str:
         normalized = value.strip().lower()
-        if normalized not in {"smtp", "sendgrid", "noop"}:
-            raise ValueError("NOTIFICATION_EMAIL_PROVIDER must be one of: smtp, sendgrid, noop")
+        if normalized not in {"smtp2go", "smtp", "sendgrid", "noop"}:
+            raise ValueError("NOTIFICATION_EMAIL_PROVIDER must be one of: smtp2go, smtp, sendgrid, noop")
         return normalized
 
     @field_validator("NOTIFICATION_SMS_PROVIDER", mode="after")
@@ -488,6 +488,36 @@ class Settings(BaseSettings):
 
         if self.RATE_LIMIT_ENABLED and self.RATE_LIMIT_BACKEND == "redis" and not self.REDIS_URL:
             raise ValueError("REDIS_URL must be set when Redis-backed rate limiting is enabled")
+
+        if self.NOTIFICATION_EMAIL_PROVIDER != "smtp2go":
+            raise ValueError(
+                "NOTIFICATION_EMAIL_PROVIDER must be 'smtp2go' in production"
+            )
+
+        smtp_host = (self.SMTP_HOST or "").strip().lower()
+        smtp_host_without_port = smtp_host.split(":", 1)[0]
+        if not smtp_host_without_port:
+            raise ValueError("SMTP_HOST must be set in production")
+        if not (
+            smtp_host_without_port == "smtp2go.com"
+            or smtp_host_without_port.endswith(".smtp2go.com")
+        ):
+            raise ValueError("SMTP_HOST must point to an SMTP2GO host in production")
+        if not self.SMTP_PORT:
+            raise ValueError("SMTP_PORT must be set in production")
+        if not (self.NOTIFICATION_FROM_EMAIL or self.SMTP_FROM_EMAIL):
+            raise ValueError("NOTIFICATION_FROM_EMAIL or SMTP_FROM_EMAIL must be set in production")
+
+        if self.NOTIFICATION_SMS_PROVIDER != "twilio":
+            raise ValueError(
+                "NOTIFICATION_SMS_PROVIDER must be 'twilio' in production"
+            )
+        if not self.TWILIO_ACCOUNT_SID or not self.TWILIO_AUTH_TOKEN:
+            raise ValueError("Twilio credentials must be configured in production")
+        if not self.TWILIO_MESSAGING_SERVICE_SID and not self.TWILIO_FROM_NUMBER:
+            raise ValueError(
+                "TWILIO_MESSAGING_SERVICE_SID or TWILIO_FROM_NUMBER is required in production"
+            )
 
         return self
 
