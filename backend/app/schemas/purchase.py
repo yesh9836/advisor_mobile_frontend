@@ -152,6 +152,11 @@ class FirstPurchaseAddonOfferConfigResponse(BaseModel):
     ends_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     updated_by: Optional[int] = None
+    inventory_ready: Optional[bool] = None
+    inventory_available_count: Optional[int] = None
+    inventory_required_count: Optional[int] = None
+    inventory_gate_code: Optional[str] = None
+    inventory_gate_message: Optional[str] = None
 
 
 class FirstPurchaseAddonOfferAdvisorResponse(BaseModel):
@@ -169,3 +174,7 @@ class FirstPurchaseAddonOfferAdvisorResponse(BaseModel):
 class FirstPurchaseAddonOfferEligibilityResponse(BaseModel):
     eligible: bool
     offer: Optional[FirstPurchaseAddonOfferAdvisorResponse] = None
+    rejection_code: Optional[str] = None
+    rejection_message: Optional[str] = None
+    inventory_available_count: Optional[int] = None
+    inventory_required_count: Optional[int] = None
