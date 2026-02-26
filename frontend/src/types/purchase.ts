@@ -85,6 +85,11 @@ export interface FirstPurchaseAddonOfferConfig {
   ends_at: string | null;
   updated_at: string | null;
   updated_by: number | null;
+  inventory_ready?: boolean | null;
+  inventory_available_count?: number | null;
+  inventory_required_count?: number | null;
+  inventory_gate_code?: string | null;
+  inventory_gate_message?: string | null;
 }
 
 export interface FirstPurchaseAddonOfferAdvisor {
@@ -102,4 +107,8 @@ export interface FirstPurchaseAddonOfferAdvisor {
 export interface FirstPurchaseAddonOfferEligibility {
   eligible: boolean;
   offer: FirstPurchaseAddonOfferAdvisor | null;
+  rejection_code?: string | null;
+  rejection_message?: string | null;
+  inventory_available_count?: number | null;
+  inventory_required_count?: number | null;
 }
