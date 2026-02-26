@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, List, Optional
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     Enum as SQLEnum,
     ForeignKey,
     Integer,
@@ -27,6 +28,9 @@ class LeadPackage(Base):
     """Catalog entry for one-time lead packages."""
 
     __tablename__ = "lead_packages"
+    __table_args__ = (
+        CheckConstraint("currency = 'USD'", name="ck_lead_packages_currency_usd"),
+    )
 
     id: Mapped[int] = mapped_column(
         BigInteger,
@@ -69,6 +73,9 @@ class LeadPurchase(Base):
     """Immutable record of a one-time package purchase."""
 
     __tablename__ = "lead_purchases"
+    __table_args__ = (
+        CheckConstraint("currency = 'USD'", name="ck_lead_purchases_currency_usd"),
+    )
 
     id: Mapped[int] = mapped_column(
         BigInteger,
@@ -472,6 +479,9 @@ class FirstPurchaseAddonOffer(Base):
     """Singleton-style config for first completed purchase upsell behavior."""
 
     __tablename__ = "first_purchase_addon_offers"
+    __table_args__ = (
+        CheckConstraint("offer_currency = 'USD'", name="ck_first_purchase_addon_offers_offer_currency_usd"),
+    )
 
     id: Mapped[int] = mapped_column(
         BigInteger,
