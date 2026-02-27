@@ -1164,6 +1164,7 @@ class LeadService:
     @staticmethod
     def bulk_import_leads(db: Session, csv_data: List[dict]) -> Dict[str, object]:
         errors: List[Dict[str, object]] = []
+        failed_rows = 0
 
         if not csv_data:
             return {"success": 0, "failed": 0, "errors": []}
@@ -1203,6 +1204,7 @@ class LeadService:
                 row_errors.append("Duplicate mobile_phone in file")
 
             if row_errors:
+                failed_rows += 1
                 for err in row_errors:
                     errors.append({"row": row_num, "error": err})
                 continue
@@ -1217,7 +1219,7 @@ class LeadService:
             valid_rows.append(clean_row)
 
         if errors:
-            return {"success": 0, "failed": len(errors), "errors": errors}
+            return {"success": 0, "failed": failed_rows, "errors": errors}
 
         try:
             leads = [Lead(**row) for row in valid_rows]
