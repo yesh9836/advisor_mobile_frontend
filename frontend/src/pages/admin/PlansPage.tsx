@@ -20,12 +20,18 @@ interface PlanFormState {
   effectiveTo: string;
 }
 
+interface PendingPlanLifecycleAction {
+  planId: number;
+  planName: string;
+  action: "archive" | "unarchive";
+}
+
 const defaultPlanFormState: PlanFormState = {
   name: "",
   priceDollars: "",
   creditsTotal: "",
   stateLimit: "",
-  catalogVisible: true,
+  catalogVisible: false,
   effectiveFrom: "",
   effectiveTo: "",
 };
@@ -112,6 +118,7 @@ const PlansPage = () => {
   const [success, setSuccess] = useState<string | null>(null);
   const [editingPlanId, setEditingPlanId] = useState<number | null>(null);
   const [form, setForm] = useState<PlanFormState>(defaultPlanFormState);
+  const [pendingLifecycleAction, setPendingLifecycleAction] = useState<PendingPlanLifecycleAction | null>(null);
 
   const editingPlan = useMemo(
     () => plans.find((plan) => plan.id === editingPlanId) ?? null,
@@ -290,25 +297,33 @@ const PlansPage = () => {
     }
   };
 
-  const handleArchiveToggle = async (plan: AdminPlanItem) => {
-    const actionLabel = plan.is_archived ? "unarchive" : "archive";
-    const confirmed = window.confirm(`Are you sure you want to ${actionLabel} "${plan.name}"?`);
-    if (!confirmed) return;
+  const promptArchiveToggle = (plan: AdminPlanItem) => {
+    setPendingLifecycleAction({
+      planId: plan.id,
+      planName: plan.name,
+      action: plan.is_archived ? "unarchive" : "archive",
+    });
+  };
 
-    setActionInFlight(plan.id);
+  const handleArchiveToggleConfirm = async () => {
+    if (!pendingLifecycleAction) return;
+    const { planId, planName, action } = pendingLifecycleAction;
+
+    setActionInFlight(planId);
     setError(null);
     setSuccess(null);
     try {
-      if (plan.is_archived) {
-        await unarchiveAdminPlan(plan.id);
-        setSuccess(`Plan "${plan.name}" unarchived.`);
+      if (action === "unarchive") {
+        await unarchiveAdminPlan(planId);
+        setSuccess(`Plan "${planName}" unarchived.`);
       } else {
-        await archiveAdminPlan(plan.id);
-        setSuccess(`Plan "${plan.name}" archived.`);
+        await archiveAdminPlan(planId);
+        setSuccess(`Plan "${planName}" archived.`);
       }
+      setPendingLifecycleAction(null);
       await loadPlans(1, search, archivedFilter);
     } catch (actionError) {
-      setError(getApiErrorMessage(actionError, `Unable to ${actionLabel} plan.`));
+      setError(getApiErrorMessage(actionError, `Unable to ${action} plan.`));
     } finally {
       setActionInFlight(null);
     }
@@ -508,7 +523,7 @@ const PlansPage = () => {
                 <button
                   type="button"
                   className="btn btn-secondary"
-                  onClick={() => void handleArchiveToggle(plan)}
+                  onClick={() => promptArchiveToggle(plan)}
                   disabled={actionInFlight === plan.id}
                 >
                   {actionInFlight === plan.id
@@ -545,6 +560,70 @@ const PlansPage = () => {
           </div>
         </div>
       </section>
+
+      {pendingLifecycleAction && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="plan-lifecycle-dialog-title"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15, 23, 42, 0.45)",
+            display: "grid",
+            placeItems: "center",
+            zIndex: 120,
+            padding: 16,
+          }}
+          onClick={() => {
+            if (actionInFlight !== pendingLifecycleAction.planId) {
+              setPendingLifecycleAction(null);
+            }
+          }}
+        >
+          <section
+            className="panel stack"
+            style={{
+              width: "min(520px, 100%)",
+              maxHeight: "90vh",
+              overflowY: "auto",
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div>
+              <h3 id="plan-lifecycle-dialog-title" style={{ margin: 0, fontSize: 26, color: "#0b1b49" }}>
+                {pendingLifecycleAction.action === "archive" ? "Confirm Archive" : "Confirm Unarchive"}
+              </h3>
+              <p style={{ margin: "8px 0 0 0", color: "#475569" }}>
+                {pendingLifecycleAction.action === "archive"
+                  ? `Archive "${pendingLifecycleAction.planName}"? This removes it from advisor catalog and checkout immediately.`
+                  : `Unarchive "${pendingLifecycleAction.planName}"? This makes it available again if it is within its effective window.`}
+              </p>
+            </div>
+
+            <div className="row" style={{ justifyContent: "flex-end", gap: 10 }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setPendingLifecycleAction(null)}
+                disabled={actionInFlight === pendingLifecycleAction.planId}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => void handleArchiveToggleConfirm()}
+                disabled={actionInFlight === pendingLifecycleAction.planId}
+              >
+                {actionInFlight === pendingLifecycleAction.planId
+                  ? "Working..."
+                  : (pendingLifecycleAction.action === "archive" ? "Confirm Archive" : "Confirm Unarchive")}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 };
