@@ -161,28 +161,72 @@ class PaymentService:
         Raises RuntimeError when Stripe returns retryable failures for one or more
         resources. Missing resources are treated as already-cleaned.
         """
+        result = PaymentService._set_stripe_plan_artifacts_active(
+            stripe_price_id=stripe_price_id,
+            stripe_product_id=stripe_product_id,
+            active=False,
+            treat_missing_as_success=True,
+        )
+        return {
+            "price_deactivated": bool(result["price_changed"]),
+            "product_deactivated": bool(result["product_changed"]),
+        }
+
+    @staticmethod
+    def activate_stripe_plan_artifacts(
+        *,
+        stripe_price_id: Optional[str],
+        stripe_product_id: Optional[str],
+    ) -> Dict[str, bool]:
+        """
+        Reactivate Stripe plan artifacts so archived plans can be re-enabled.
+
+        Raises RuntimeError when Stripe returns retryable failures or referenced
+        artifacts are missing.
+        """
+        result = PaymentService._set_stripe_plan_artifacts_active(
+            stripe_price_id=stripe_price_id,
+            stripe_product_id=stripe_product_id,
+            active=True,
+            treat_missing_as_success=False,
+        )
+        return {
+            "price_activated": bool(result["price_changed"]),
+            "product_activated": bool(result["product_changed"]),
+        }
+
+    @staticmethod
+    def _set_stripe_plan_artifacts_active(
+        *,
+        stripe_price_id: Optional[str],
+        stripe_product_id: Optional[str],
+        active: bool,
+        treat_missing_as_success: bool,
+    ) -> Dict[str, bool]:
         PaymentService._init_stripe()
 
         normalized_price_id = str(stripe_price_id or "").strip() or None
         normalized_product_id = str(stripe_product_id or "").strip() or None
         if normalized_price_id is None and normalized_product_id is None:
             return {
-                "price_deactivated": False,
-                "product_deactivated": False,
+                "price_changed": False,
+                "product_changed": False,
             }
 
-        price_deactivated = False
-        product_deactivated = False
+        price_changed = False
+        product_changed = False
         failures: list[str] = []
+        action_label = "activation" if active else "cleanup"
+        missing_label = "already missing during cleanup" if not active else "missing during activation"
 
         if normalized_price_id is not None:
             try:
-                stripe.Price.modify(normalized_price_id, active=False)
-                price_deactivated = True
+                stripe.Price.modify(normalized_price_id, active=active)
+                price_changed = True
             except stripe.error.InvalidRequestError as exc:
-                if PaymentService._is_missing_stripe_resource_error(exc):
-                    logger.info("Stripe price already missing during cleanup price_id=%s", normalized_price_id)
-                    price_deactivated = True
+                if treat_missing_as_success and PaymentService._is_missing_stripe_resource_error(exc):
+                    logger.info("Stripe price %s price_id=%s", missing_label, normalized_price_id)
+                    price_changed = True
                 else:
                     failures.append(f"price:{normalized_price_id}:{exc}")
             except stripe.error.StripeError as exc:
@@ -190,23 +234,23 @@ class PaymentService:
 
         if normalized_product_id is not None:
             try:
-                stripe.Product.modify(normalized_product_id, active=False)
-                product_deactivated = True
+                stripe.Product.modify(normalized_product_id, active=active)
+                product_changed = True
             except stripe.error.InvalidRequestError as exc:
-                if PaymentService._is_missing_stripe_resource_error(exc):
-                    logger.info("Stripe product already missing during cleanup product_id=%s", normalized_product_id)
-                    product_deactivated = True
+                if treat_missing_as_success and PaymentService._is_missing_stripe_resource_error(exc):
+                    logger.info("Stripe product %s product_id=%s", missing_label, normalized_product_id)
+                    product_changed = True
                 else:
                     failures.append(f"product:{normalized_product_id}:{exc}")
             except stripe.error.StripeError as exc:
                 failures.append(f"product:{normalized_product_id}:{exc}")
 
         if failures:
-            raise RuntimeError("; ".join(failures))
+            raise RuntimeError(f"Stripe plan artifact {action_label} failed: {'; '.join(failures)}")
 
         return {
-            "price_deactivated": price_deactivated,
-            "product_deactivated": product_deactivated,
+            "price_changed": price_changed,
+            "product_changed": product_changed,
         }
 
     @staticmethod
