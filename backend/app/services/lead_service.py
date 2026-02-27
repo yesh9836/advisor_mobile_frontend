@@ -205,6 +205,25 @@ class LeadService:
             setattr(lead, "downloaded_at", download.downloaded_at if download else None)
 
     @staticmethod
+    def _user_has_outcome_write_access(db: Session, user_id: int, lead_id: int) -> bool:
+        has_download_access = (
+            db.query(LeadDownload.id)
+            .filter(LeadDownload.user_id == user_id, LeadDownload.lead_id == lead_id)
+            .first()
+            is not None
+        )
+        if has_download_access:
+            return True
+
+        has_ownership_access = (
+            db.query(LeadOwnership.id)
+            .filter(LeadOwnership.user_id == user_id, LeadOwnership.lead_id == lead_id)
+            .first()
+            is not None
+        )
+        return has_ownership_access
+
+    @staticmethod
     def _user_has_owned_leads(db: Session, user_id: int) -> bool:
         return (
             db.query(LeadOwnership.id)
@@ -1223,25 +1242,15 @@ class LeadService:
         lead_id: int,
         payload: LeadOutcomeUpdateRequest,
     ) -> LeadOutcome:
-        states = LeadService._get_user_allowed_states_for_new_leads(db, user.id)
         lead = db.query(Lead).filter(Lead.id == lead_id).first()
         if not lead:
             raise HTTPException(status_code=404, detail="Lead not found")
 
-        has_download_access = (
-            db.query(LeadDownload.id)
-            .filter(LeadDownload.user_id == user.id, LeadDownload.lead_id == lead_id)
-            .first()
-            is not None
-        )
-        has_ownership_access = (
-            db.query(LeadOwnership.id)
-            .filter(LeadOwnership.user_id == user.id, LeadOwnership.lead_id == lead_id)
-            .first()
-            is not None
-        )
-        has_state_access = lead.state_code in states
-        if not has_download_access and not has_ownership_access and not has_state_access:
+        if not LeadService._user_has_outcome_write_access(
+            db=db,
+            user_id=user.id,
+            lead_id=lead_id,
+        ):
             raise HTTPException(status_code=404, detail="Lead not found")
 
         outcome = (
