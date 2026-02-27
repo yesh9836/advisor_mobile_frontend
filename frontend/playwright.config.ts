@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const viteApiBaseUrl = process.env.PLAYWRIGHT_VITE_API_BASE_URL ?? "/api/v1";
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
@@ -14,8 +16,7 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   webServer: {
-    command:
-      "VITE_API_BASE_URL=/api/v1 npm run dev -- --host 127.0.0.1 --port 4173 --strictPort",
+    command: `VITE_API_BASE_URL=${viteApiBaseUrl} npm run dev -- --host 127.0.0.1 --port 4173 --strictPort`,
     port: 4173,
     timeout: 120_000,
     reuseExistingServer: !process.env.CI,

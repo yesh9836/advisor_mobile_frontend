@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:mocked": "playwright test --grep @mocked",
+    "test:e2e:integration": "playwright test --grep @integration"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
