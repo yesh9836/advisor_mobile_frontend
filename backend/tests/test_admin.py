@@ -6,7 +6,7 @@ from app.core.config import settings
 from app.models.audit_log import AuditLog
 from app.models.auth_session import RefreshTokenSession
 from app.models.lead import LeadDownload, LeadOwnership
-from app.models.purchase import FirstPurchaseAddonOffer, StripePlanCleanupOutbox
+from app.models.purchase import FirstPurchaseAddonOffer, LeadPackage, StripePlanCleanupOutbox
 from app.models.user import User
 from app.services.first_purchase_offer_service import FirstPurchaseOfferService
 
@@ -44,6 +44,14 @@ def test_admin_endpoints_require_admin(client, user_factory, auth_headers, plan_
             "stripe_price_id": f"price_admin_plan_{kwargs['request_id']}",
             "stripe_product_id": "prod_admin_plan",
         },
+    )
+    monkeypatch.setattr(
+        "app.services.payment_service.PaymentService.deactivate_stripe_plan_artifacts",
+        lambda **_kwargs: {"price_deactivated": True, "product_deactivated": True},
+    )
+    monkeypatch.setattr(
+        "app.services.payment_service.PaymentService.activate_stripe_plan_artifacts",
+        lambda **_kwargs: {"price_activated": True, "product_activated": True},
     )
 
     ok_dashboard = client.get("/api/v1/admin/dashboard", headers=admin_headers)
@@ -467,6 +475,213 @@ def test_admin_first_purchase_offer_update_maps_unknown_errors_to_500(
     assert response.json() == {"detail": "Failed to save first-purchase add-on offer"}
 
 
+def test_admin_first_purchase_offer_archive_unarchive_reuses_internal_package(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+    plan_factory,
+):
+    _admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+    trigger_package = plan_factory(name="TriggerReuse", price_cents=12000, daily_download_limit=10)
+
+    enable_response = client.put(
+        "/api/v1/admin/first-purchase-offer",
+        headers=admin_headers,
+        json={
+            "is_enabled": True,
+            "trigger_package_id": trigger_package.id,
+            "offer_credits_total": 5,
+            "offer_price_cents": 7500,
+            "offer_currency": "USD",
+        },
+    )
+    assert enable_response.status_code == 200, enable_response.text
+    enabled_payload = enable_response.json()
+    first_offer_package_id = enabled_payload["offer_package_id"]
+    assert first_offer_package_id is not None
+
+    archive_response = client.put(
+        "/api/v1/admin/first-purchase-offer",
+        headers=admin_headers,
+        json={
+            "is_enabled": False,
+            "trigger_package_id": trigger_package.id,
+            "offer_credits_total": 5,
+            "offer_price_cents": 7500,
+            "offer_currency": "USD",
+        },
+    )
+    assert archive_response.status_code == 200, archive_response.text
+    assert archive_response.json()["offer_package_id"] == first_offer_package_id
+
+    unarchive_response = client.put(
+        "/api/v1/admin/first-purchase-offer",
+        headers=admin_headers,
+        json={
+            "is_enabled": True,
+            "trigger_package_id": trigger_package.id,
+            "offer_credits_total": 5,
+            "offer_price_cents": 7500,
+            "offer_currency": "USD",
+        },
+    )
+    assert unarchive_response.status_code == 200, unarchive_response.text
+    assert unarchive_response.json()["offer_package_id"] == first_offer_package_id
+
+    managed_rows = [
+        row
+        for row in db.query(LeadPackage).order_by(LeadPackage.id.asc()).all()
+        if FirstPurchaseOfferService._is_managed_internal_offer_package(row)
+    ]
+    assert len(managed_rows) == 1
+    assert int(managed_rows[0].id) == int(first_offer_package_id)
+
+
+def test_admin_first_purchase_offer_update_recovers_legacy_null_offer_package_link(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+    plan_factory,
+):
+    admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+    trigger_package = plan_factory(name="TriggerLegacy", price_cents=12000, daily_download_limit=10)
+
+    legacy_config = FirstPurchaseAddonOffer(
+        is_enabled=False,
+        trigger_package_id=trigger_package.id,
+        offer_package_id=None,
+        offer_credits_total=4,
+        offer_price_cents=5600,
+        offer_currency="USD",
+        updated_by=admin.id,
+    )
+    db.add(legacy_config)
+    db.commit()
+    db.refresh(legacy_config)
+
+    existing_managed_package = LeadPackage(
+        name=FirstPurchaseOfferService._build_internal_offer_package_name(
+            config_id=int(legacy_config.id),
+            offer_credits_total=4,
+        ),
+        price_cents=5600,
+        currency="USD",
+        stripe_price_id=f"dynamic_addon_legacy_{legacy_config.id}",
+        state_limit=trigger_package.state_limit,
+        daily_download_limit=4,
+        features={
+            "managed_by": "first_purchase_offer",
+            "catalog_visible": False,
+            "trigger_package_id": int(trigger_package.id),
+        },
+    )
+    db.add(existing_managed_package)
+    db.commit()
+    db.refresh(existing_managed_package)
+
+    response = client.put(
+        "/api/v1/admin/first-purchase-offer",
+        headers=admin_headers,
+        json={
+            "is_enabled": True,
+            "trigger_package_id": trigger_package.id,
+            "offer_credits_total": 6,
+            "offer_price_cents": 6800,
+            "offer_currency": "USD",
+        },
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["offer_package_id"] == existing_managed_package.id
+    assert payload["offer_price_cents"] == 6800
+    assert payload["offer_credits_total"] == 6
+
+    db.expire_all()
+    refreshed_package = (
+        db.query(LeadPackage)
+        .filter(LeadPackage.id == existing_managed_package.id)
+        .first()
+    )
+    assert refreshed_package is not None
+    assert refreshed_package.name.startswith("First Purchase Add-on")
+    assert refreshed_package.price_cents == 6800
+    assert refreshed_package.daily_download_limit == 6
+    assert isinstance(refreshed_package.features, dict)
+    assert refreshed_package.features.get("managed_config_id") == legacy_config.id
+    assert refreshed_package.features.get("trigger_package_id") == trigger_package.id
+
+
+def test_admin_first_purchase_offer_update_recovers_when_unmanaged_name_collision_exists(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+    plan_factory,
+):
+    admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+    trigger_package = plan_factory(name="TriggerCollision", price_cents=12000, daily_download_limit=10)
+
+    collision_config = FirstPurchaseAddonOffer(
+        is_enabled=False,
+        trigger_package_id=trigger_package.id,
+        offer_package_id=None,
+        offer_credits_total=5,
+        offer_price_cents=5900,
+        offer_currency="USD",
+        updated_by=admin.id,
+    )
+    db.add(collision_config)
+    db.commit()
+    db.refresh(collision_config)
+
+    unmanaged_collision_row = LeadPackage(
+        name=FirstPurchaseOfferService._build_internal_offer_package_name(
+            config_id=int(collision_config.id),
+            offer_credits_total=5,
+        ),
+        price_cents=9900,
+        currency="USD",
+        stripe_price_id=f"price_collision_{collision_config.id}",
+        state_limit=trigger_package.state_limit,
+        daily_download_limit=9,
+        features={"catalog_visible": True},
+    )
+    db.add(unmanaged_collision_row)
+    db.commit()
+
+    response = client.put(
+        "/api/v1/admin/first-purchase-offer",
+        headers=admin_headers,
+        json={
+            "is_enabled": True,
+            "trigger_package_id": trigger_package.id,
+            "offer_credits_total": 5,
+            "offer_price_cents": 5900,
+            "offer_currency": "USD",
+        },
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["offer_package_id"] is not None
+    assert int(payload["offer_package_id"]) != int(unmanaged_collision_row.id)
+    assert payload["is_enabled"] is True
+    assert payload["offer_price_cents"] == 5900
+    assert payload["offer_credits_total"] == 5
+
+    resolved_offer_package = (
+        db.query(LeadPackage)
+        .filter(LeadPackage.id == int(payload["offer_package_id"]))
+        .first()
+    )
+    assert resolved_offer_package is not None
+    assert isinstance(resolved_offer_package.features, dict)
+    assert resolved_offer_package.features.get("managed_by") == "first_purchase_offer"
+    assert resolved_offer_package.features.get("managed_config_id") == collision_config.id
+    assert resolved_offer_package.features.get("catalog_visible") is False
+
+
 def test_admin_plan_lifecycle_create_update_archive_and_audit(
     client,
     db,
@@ -476,6 +691,7 @@ def test_admin_plan_lifecycle_create_update_archive_and_audit(
     monkeypatch,
 ):
     admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+    stripe_toggles = {"deactivate": [], "activate": []}
 
     monkeypatch.setattr(
         "app.services.payment_service.PaymentService.create_stripe_price_for_plan",
@@ -483,6 +699,16 @@ def test_admin_plan_lifecycle_create_update_archive_and_audit(
             "stripe_price_id": f"price_admin_{kwargs['request_id']}",
             "stripe_product_id": f"prod_admin_{kwargs['request_id']}",
         },
+    )
+    monkeypatch.setattr(
+        "app.services.payment_service.PaymentService.deactivate_stripe_plan_artifacts",
+        lambda **kwargs: stripe_toggles["deactivate"].append(kwargs)
+        or {"price_deactivated": True, "product_deactivated": True},
+    )
+    monkeypatch.setattr(
+        "app.services.payment_service.PaymentService.activate_stripe_plan_artifacts",
+        lambda **kwargs: stripe_toggles["activate"].append(kwargs)
+        or {"price_activated": True, "product_activated": True},
     )
 
     create_response = client.post(
@@ -569,6 +795,18 @@ def test_admin_plan_lifecycle_create_update_archive_and_audit(
     unarchived = unarchive_response.json()
     assert unarchived["is_archived"] is False
     assert unarchived["archived_at"] is None
+    assert stripe_toggles["deactivate"] == [
+        {
+            "stripe_price_id": "price_admin_admin_plan_lifecycle_update_01",
+            "stripe_product_id": "prod_admin_admin_plan_lifecycle_update_01",
+        }
+    ]
+    assert stripe_toggles["activate"] == [
+        {
+            "stripe_price_id": "price_admin_admin_plan_lifecycle_update_01",
+            "stripe_product_id": "prod_admin_admin_plan_lifecycle_update_01",
+        }
+    ]
 
     actions = {
         row.action
@@ -735,6 +973,86 @@ def test_admin_plan_update_commit_failure_enqueues_stripe_cleanup_outbox_when_in
     assert outbox_row is not None
     assert outbox_row.status == "pending"
     assert outbox_row.stripe_product_id == "prod_conflict_for_cleanup_update"
+
+
+def test_admin_plan_archive_stripe_deactivation_failure_enqueues_cleanup_outbox(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+    plan_factory,
+    monkeypatch,
+):
+    _admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+    plan = plan_factory(
+        name="Archive Stripe Failure Plan",
+        stripe_price_id="price_archive_deactivate_fail",
+    )
+    plan.stripe_product_id = "prod_archive_deactivate_fail"
+    db.add(plan)
+    db.commit()
+
+    monkeypatch.setattr(
+        "app.services.payment_service.PaymentService.deactivate_stripe_plan_artifacts",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("forced archive deactivation failure")),
+    )
+
+    response = client.post(
+        f"/api/v1/admin/plans/{plan.id}/archive",
+        headers=admin_headers,
+        json={"reason": "retire"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["is_archived"] is True
+
+    outbox_row = (
+        db.query(StripePlanCleanupOutbox)
+        .filter(
+            StripePlanCleanupOutbox.source == "admin_plan_archive",
+            StripePlanCleanupOutbox.stripe_price_id == "price_archive_deactivate_fail",
+        )
+        .first()
+    )
+    assert outbox_row is not None
+    assert outbox_row.status == "pending"
+    assert outbox_row.stripe_product_id == "prod_archive_deactivate_fail"
+
+
+def test_admin_plan_unarchive_rejects_when_stripe_activation_fails(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+    plan_factory,
+    monkeypatch,
+):
+    _admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+    plan = plan_factory(
+        name="Unarchive Stripe Failure Plan",
+        stripe_price_id="price_unarchive_activate_fail",
+    )
+    plan.stripe_product_id = "prod_unarchive_activate_fail"
+    plan.is_archived = True
+    plan.archived_at = datetime.now(timezone.utc)
+    db.add(plan)
+    db.commit()
+
+    monkeypatch.setattr(
+        "app.services.payment_service.PaymentService.activate_stripe_plan_artifacts",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("forced unarchive activation failure")),
+    )
+
+    response = client.post(
+        f"/api/v1/admin/plans/{plan.id}/unarchive",
+        headers=admin_headers,
+        json={"reason": "restore"},
+    )
+    assert response.status_code == 502, response.text
+    assert response.json() == {"detail": "Failed to reactivate Stripe plan artifacts"}
+
+    db.refresh(plan)
+    assert plan.is_archived is True
+    assert plan.archived_at is not None
 
 
 def test_admin_plan_list_filters(client, db, user_factory, auth_headers, plan_factory):

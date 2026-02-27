@@ -95,6 +95,74 @@ def test_purchase_packages_exclude_archived_and_out_of_window(client, db, plan_f
 
 
 @pytest.mark.integration
+def test_purchase_packages_include_plan_again_after_admin_unarchive_when_catalog_visible(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+    plan_factory,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "app.services.payment_service.PaymentService.deactivate_stripe_plan_artifacts",
+        lambda **_kwargs: {"price_deactivated": True, "product_deactivated": True},
+    )
+    monkeypatch.setattr(
+        "app.services.payment_service.PaymentService.activate_stripe_plan_artifacts",
+        lambda **_kwargs: {"price_activated": True, "product_activated": True},
+    )
+
+    admin = user_factory(
+        role="admin",
+        password="AdminPurchases123!",
+        email="admin.purchases@example.com",
+        name="Admin Purchases",
+    )
+    admin_headers = auth_headers(admin.email, "AdminPurchases123!")
+
+    plus_plan = plan_factory(
+        name="PlusPlanVisible",
+        price_cents=25000,
+        stripe_price_id="price_plus_plan_visible",
+    )
+    plus_plan.features = {"credits_total": 25, "catalog_visible": True}
+    plus_plan.is_archived = False
+    plus_plan.archived_at = None
+    db.add(plus_plan)
+    db.commit()
+
+    initial_packages_response = client.get("/api/v1/purchases/packages")
+    assert initial_packages_response.status_code == 200, initial_packages_response.text
+    initial_package_ids = {int(item["id"]) for item in initial_packages_response.json()}
+    assert plus_plan.id in initial_package_ids
+
+    archive_response = client.post(
+        f"/api/v1/admin/plans/{plus_plan.id}/archive",
+        headers=admin_headers,
+        json={"reason": "lifecycle test archive"},
+    )
+    assert archive_response.status_code == 200, archive_response.text
+
+    archived_packages_response = client.get("/api/v1/purchases/packages")
+    assert archived_packages_response.status_code == 200, archived_packages_response.text
+    archived_package_ids = {int(item["id"]) for item in archived_packages_response.json()}
+    assert plus_plan.id not in archived_package_ids
+
+    unarchive_response = client.post(
+        f"/api/v1/admin/plans/{plus_plan.id}/unarchive",
+        headers=admin_headers,
+        json={"reason": "lifecycle test unarchive"},
+    )
+    assert unarchive_response.status_code == 200, unarchive_response.text
+    assert unarchive_response.json()["is_archived"] is False
+
+    final_packages_response = client.get("/api/v1/purchases/packages")
+    assert final_packages_response.status_code == 200, final_packages_response.text
+    final_package_ids = {int(item["id"]) for item in final_packages_response.json()}
+    assert plus_plan.id in final_package_ids
+
+
+@pytest.mark.integration
 def test_purchase_checkout_rejects_archived_package(
     client,
     db,
