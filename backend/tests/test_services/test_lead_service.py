@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.models.lead import LeadDownload, LeadOwnership
 from app.models.purchase import LeadCreditLedger
-from app.schemas.lead import LeadCreate
+from app.schemas.lead import LeadCreate, LeadOutcomeUpdateRequest
 from app.services.lead_service import LeadService
 
 
@@ -632,6 +632,104 @@ def test_download_delivered_leads_csv_deduplicates_same_lead(
 
     assert csv_text.count("555-DELIVERED-DEDUP-0001") == 1
     assert csv_text.count("555-DELIVERED-DEDUP-0002") == 1
+
+
+@pytest.mark.unit
+def test_upsert_lead_outcome_rejects_licensed_state_lead_without_delivery_or_ownership(
+    db,
+    user_factory,
+    plan_factory,
+    license_factory,
+    purchase_factory,
+    lead_factory,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LeadUnitOutcomeDeny123!",
+        email="lead.unit.outcome.deny@example.com",
+    )
+    plan = plan_factory(state_limit=1, stripe_price_id="price_outcome_deny")
+    license_factory(user_id=advisor.id, state="CA", status="verified")
+    purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=2,
+        credits_remaining=2,
+        status="completed",
+    )
+    lead = lead_factory(state_code="CA", mobile_phone="555-OUTCOME-DENY-0001")
+
+    with pytest.raises(HTTPException) as exc_info:
+        LeadService.upsert_lead_outcome(
+            db=db,
+            user=advisor,
+            lead_id=lead.id,
+            payload=LeadOutcomeUpdateRequest(status="contacted", notes="No access"),
+        )
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "Lead not found"
+
+
+@pytest.mark.unit
+def test_upsert_lead_outcome_allows_delivered_lead(
+    db,
+    user_factory,
+    lead_factory,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LeadUnitOutcomeDelivered123!",
+        email="lead.unit.outcome.delivered@example.com",
+    )
+    lead = lead_factory(state_code="CA", mobile_phone="555-OUTCOME-ALLOW-0001")
+    db.add(
+        LeadDownload(
+            user_id=advisor.id,
+            lead_id=lead.id,
+            csv_batch_id="batch_unit_outcome_delivered",
+        )
+    )
+    db.commit()
+
+    outcome = LeadService.upsert_lead_outcome(
+        db=db,
+        user=advisor,
+        lead_id=lead.id,
+        payload=LeadOutcomeUpdateRequest(status="appointment_set", notes="Delivered access"),
+    )
+
+    assert outcome.user_id == advisor.id
+    assert outcome.lead_id == lead.id
+    assert outcome.status == "appointment_set"
+    assert outcome.notes == "Delivered access"
+
+
+@pytest.mark.unit
+def test_upsert_lead_outcome_allows_owned_lead_before_download(
+    db,
+    user_factory,
+    lead_factory,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LeadUnitOutcomeOwned123!",
+        email="lead.unit.outcome.owned@example.com",
+    )
+    lead = lead_factory(state_code="CA", mobile_phone="555-OUTCOME-ALLOW-0002")
+    db.add(LeadOwnership(user_id=advisor.id, lead_id=lead.id))
+    db.commit()
+
+    outcome = LeadService.upsert_lead_outcome(
+        db=db,
+        user=advisor,
+        lead_id=lead.id,
+        payload=LeadOutcomeUpdateRequest(status="contacted", notes="Owned access"),
+    )
+
+    assert outcome.user_id == advisor.id
+    assert outcome.lead_id == lead.id
+    assert outcome.status == "contacted"
+    assert outcome.notes == "Owned access"
 
 
 @pytest.mark.unit

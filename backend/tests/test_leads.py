@@ -130,6 +130,111 @@ def test_save_outcome_rejects_lead_outside_licensed_states(
 
 
 @pytest.mark.integration
+def test_save_outcome_rejects_licensed_state_lead_when_not_delivered_or_owned(
+    client,
+    user_factory,
+    lead_factory,
+    license_factory,
+    plan_factory,
+    purchase_factory,
+    auth_headers,
+):
+    _advisor, _, headers = _create_advisor_with_access(
+        user_factory,
+        license_factory,
+        plan_factory,
+        purchase_factory,
+        auth_headers,
+    )
+    ca_lead = lead_factory(state_code="CA", mobile_phone="555-CA-2002")
+
+    response = client.put(
+        f"/api/v1/leads/{ca_lead.id}/outcome",
+        headers=headers,
+        json={"status": "contacted", "notes": "Should still be denied"},
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Lead not found"
+
+
+@pytest.mark.integration
+def test_save_outcome_allows_delivered_lead(
+    client,
+    db,
+    user_factory,
+    lead_factory,
+    license_factory,
+    plan_factory,
+    purchase_factory,
+    auth_headers,
+):
+    advisor, _, headers = _create_advisor_with_access(
+        user_factory,
+        license_factory,
+        plan_factory,
+        purchase_factory,
+        auth_headers,
+    )
+    ca_lead = lead_factory(state_code="CA", mobile_phone="555-CA-2003")
+    db.add(
+        LeadDownload(
+            user_id=advisor.id,
+            lead_id=ca_lead.id,
+            csv_batch_id="batch_outcome_delivered_access",
+        )
+    )
+    db.commit()
+
+    response = client.put(
+        f"/api/v1/leads/{ca_lead.id}/outcome",
+        headers=headers,
+        json={"status": "contacted", "notes": "Delivered lead"},
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["status"] == "contacted"
+    assert data["notes"] == "Delivered lead"
+
+
+@pytest.mark.integration
+def test_save_outcome_allows_owned_lead_before_download(
+    client,
+    db,
+    user_factory,
+    lead_factory,
+    license_factory,
+    plan_factory,
+    purchase_factory,
+    auth_headers,
+):
+    advisor, _, headers = _create_advisor_with_access(
+        user_factory,
+        license_factory,
+        plan_factory,
+        purchase_factory,
+        auth_headers,
+    )
+    ca_lead = lead_factory(state_code="CA", mobile_phone="555-CA-2004")
+    db.add(
+        LeadOwnership(
+            user_id=advisor.id,
+            lead_id=ca_lead.id,
+        )
+    )
+    db.commit()
+
+    response = client.put(
+        f"/api/v1/leads/{ca_lead.id}/outcome",
+        headers=headers,
+        json={"status": "appointment_set", "notes": "Owned lead"},
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["status"] == "appointment_set"
+    assert data["notes"] == "Owned lead"
+
+
+@pytest.mark.integration
 def test_download_csv_marks_leads_as_downloaded_in_default_list(
     client,
     db,
@@ -612,6 +717,7 @@ def test_list_leads_search_filters_delivered_results(
 @pytest.mark.integration
 def test_list_leads_outcome_status_filter_returns_expected_records(
     client,
+    db,
     user_factory,
     lead_factory,
     license_factory,
@@ -619,7 +725,7 @@ def test_list_leads_outcome_status_filter_returns_expected_records(
     purchase_factory,
     auth_headers,
 ):
-    _advisor, _, headers = _create_advisor_with_access(
+    advisor, _, headers = _create_advisor_with_access(
         user_factory,
         license_factory,
         plan_factory,
@@ -651,6 +757,15 @@ def test_list_leads_outcome_status_filter_returns_expected_records(
         first_name="Implicit",
         last_name="New",
     )
+    db.add_all(
+        [
+            LeadOwnership(user_id=advisor.id, lead_id=contacted_lead.id),
+            LeadOwnership(user_id=advisor.id, lead_id=appointment_lead.id),
+            LeadOwnership(user_id=advisor.id, lead_id=explicit_new_lead.id),
+            LeadOwnership(user_id=advisor.id, lead_id=implicit_new_lead.id),
+        ]
+    )
+    db.commit()
 
     contacted_response = client.put(
         f"/api/v1/leads/{contacted_lead.id}/outcome",
@@ -711,7 +826,7 @@ def test_list_leads_outcome_status_filter_returns_expected_records(
 
 
 @pytest.mark.integration
-def test_admin_can_create_lead_and_advisor_can_update_outcome(
+def test_admin_can_create_lead_and_assigned_advisor_can_update_outcome(
     client,
     user_factory,
     license_factory,
