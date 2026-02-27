@@ -7,7 +7,7 @@ import {
 } from "axios";
 import { afterEach, describe, expect, it } from "vitest";
 
-import apiClient, { isTerminalRefreshFailure } from "@/api/client";
+import apiClient, { classifyAuthEndpoint, isTerminalRefreshFailure } from "@/api/client";
 
 const originalAdapter = apiClient.defaults.adapter;
 
@@ -80,6 +80,21 @@ afterEach(() => {
 });
 
 describe("apiClient auth transport", () => {
+  it("classifies auth endpoints using exact normalized paths", () => {
+    expect(classifyAuthEndpoint("/auth/login")).toBe("public");
+    expect(classifyAuthEndpoint("/auth/login/")).toBe("public");
+    expect(classifyAuthEndpoint("/auth/login?next=%2Fdashboard")).toBe("public");
+
+    expect(classifyAuthEndpoint("/auth/refresh")).toBe("session");
+    expect(classifyAuthEndpoint("http://localhost:8000/api/v1/auth/logout?all=true")).toBe(
+      "session",
+    );
+
+    expect(classifyAuthEndpoint("/auth/refresh-token")).toBe("other");
+    expect(classifyAuthEndpoint("/foo/auth/logout-metadata")).toBe("other");
+    expect(classifyAuthEndpoint("/api/v1/auth/password-reset/requested")).toBe("other");
+  });
+
   it("does not inject Authorization headers from localStorage", async () => {
     localStorage.setItem("access_token", "legacy-token");
     const seen = installCaptureAdapter();
