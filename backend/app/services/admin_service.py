@@ -50,6 +50,7 @@ from app.schemas.admin import (
 from app.services.audit_service import AuditService
 from app.services.auth_service import AuthService
 from app.services.payment_service import PaymentService
+from app.services.stripe_plan_cleanup_outbox_service import StripePlanCleanupOutboxService
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +93,61 @@ class AdminService:
             raise HTTPException(
                 status_code=400,
                 detail="effective_to must be greater than or equal to effective_from",
+            )
+
+    @staticmethod
+    def _schedule_stripe_cleanup_after_plan_write_failure(
+        db: Session,
+        *,
+        source: str,
+        stripe_refs: Optional[Dict[str, Optional[str]]],
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if not stripe_refs:
+            return
+
+        stripe_price_id = str(stripe_refs.get("stripe_price_id") or "").strip() or None
+        stripe_product_id = str(stripe_refs.get("stripe_product_id") or "").strip() or None
+        if stripe_price_id is None and stripe_product_id is None:
+            return
+
+        try:
+            PaymentService.deactivate_stripe_plan_artifacts(
+                stripe_price_id=stripe_price_id,
+                stripe_product_id=stripe_product_id,
+            )
+            return
+        except Exception as cleanup_exc:
+            logger.warning(
+                "Immediate Stripe cleanup failed source=%s price_id=%s product_id=%s error=%s",
+                source,
+                stripe_price_id,
+                stripe_product_id,
+                cleanup_exc,
+            )
+
+        try:
+            enqueued = StripePlanCleanupOutboxService.enqueue_cleanup(
+                db=db,
+                source=source,
+                stripe_price_id=stripe_price_id,
+                stripe_product_id=stripe_product_id,
+                payload=payload,
+            )
+            if enqueued:
+                logger.warning(
+                    "Enqueued Stripe cleanup outbox row source=%s price_id=%s product_id=%s",
+                    source,
+                    stripe_price_id,
+                    stripe_product_id,
+                )
+        except Exception as enqueue_exc:
+            logger.exception(
+                "Failed to enqueue Stripe cleanup outbox source=%s price_id=%s product_id=%s error=%s",
+                source,
+                stripe_price_id,
+                stripe_product_id,
+                enqueue_exc,
             )
 
     @staticmethod
@@ -265,6 +321,15 @@ class AdminService:
             db.refresh(package)
         except Exception as exc:
             db.rollback()
+            AdminService._schedule_stripe_cleanup_after_plan_write_failure(
+                db,
+                source="admin_plan_create",
+                stripe_refs=stripe_refs,
+                payload={
+                    "plan_name": payload.name,
+                    "request_id": payload.request_id,
+                },
+            )
             logger.error("Failed to create admin plan name=%s: %s", payload.name, exc)
             raise HTTPException(status_code=500, detail="Failed to create plan")
 
@@ -329,10 +394,25 @@ class AdminService:
             effective_to=next_effective_to,
         )
 
+        next_name = str(package.name)
         if "name" in fields_set:
             if payload.name is None:
                 raise HTTPException(status_code=400, detail="name must not be empty")
-            package.name = payload.name
+            next_name = payload.name
+
+        duplicate_name = (
+            db.query(LeadPackage.id)
+            .filter(
+                LeadPackage.id != package.id,
+                LeadPackage.name == next_name,
+            )
+            .first()
+        )
+        if duplicate_name is not None:
+            raise HTTPException(status_code=409, detail="Plan name already exists")
+
+        if "name" in fields_set:
+            package.name = next_name
 
         if "state_limit" in fields_set:
             package.state_limit = payload.state_limit
@@ -351,6 +431,7 @@ class AdminService:
                 "catalog_visible": bool(payload.catalog_visible),
             }
 
+        stripe_refs: Optional[Dict[str, Optional[str]]] = None
         if commercial_changed:
             if payload.request_id is None:
                 raise HTTPException(
@@ -359,7 +440,7 @@ class AdminService:
                 )
             stripe_refs = PaymentService.create_stripe_price_for_plan(
                 request_id=payload.request_id,
-                plan_name=package.name,
+                plan_name=next_name,
                 price_cents=next_price_cents,
                 metadata={
                     "source": "admin_plan_update",
@@ -380,17 +461,6 @@ class AdminService:
         if features_payload != package.features:
             package.features = features_payload
 
-        duplicate_name = (
-            db.query(LeadPackage.id)
-            .filter(
-                LeadPackage.id != package.id,
-                LeadPackage.name == package.name,
-            )
-            .first()
-        )
-        if duplicate_name is not None:
-            raise HTTPException(status_code=409, detail="Plan name already exists")
-
         package.updated_by = int(admin_user.id)
         db.add(package)
         try:
@@ -398,6 +468,15 @@ class AdminService:
             db.refresh(package)
         except Exception as exc:
             db.rollback()
+            AdminService._schedule_stripe_cleanup_after_plan_write_failure(
+                db,
+                source="admin_plan_update",
+                stripe_refs=stripe_refs,
+                payload={
+                    "plan_id": int(package.id),
+                    "request_id": payload.request_id,
+                },
+            )
             logger.error("Failed to update admin plan id=%s: %s", package.id, exc)
             raise HTTPException(status_code=500, detail="Failed to update plan")
 
