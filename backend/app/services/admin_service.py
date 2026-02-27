@@ -557,6 +557,31 @@ class AdminService:
                 logger.error("Failed to archive plan id=%s: %s", package.id, exc)
                 raise HTTPException(status_code=500, detail="Failed to archive plan")
 
+            stripe_refs = {
+                "stripe_price_id": package.stripe_price_id,
+                "stripe_product_id": package.stripe_product_id,
+            }
+            try:
+                PaymentService.deactivate_stripe_plan_artifacts(
+                    stripe_price_id=stripe_refs.get("stripe_price_id"),
+                    stripe_product_id=stripe_refs.get("stripe_product_id"),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Stripe archive deactivation failed for plan id=%s, scheduling retry: %s",
+                    package.id,
+                    exc,
+                )
+                AdminService._schedule_stripe_cleanup_after_plan_write_failure(
+                    db,
+                    source="admin_plan_archive",
+                    stripe_refs=stripe_refs,
+                    payload={
+                        "plan_id": int(package.id),
+                        "reason": payload.reason,
+                    },
+                )
+
         after_snapshot = AdminService._serialize_plan_snapshot(package, has_purchases=has_purchases)
         if before_snapshot != after_snapshot:
             AuditService.log_event(
@@ -586,6 +611,21 @@ class AdminService:
         before_snapshot = AdminService._serialize_plan_snapshot(package, has_purchases=has_purchases)
 
         if package.is_archived:
+            stripe_price_id = package.stripe_price_id
+            stripe_product_id = package.stripe_product_id
+            try:
+                PaymentService.activate_stripe_plan_artifacts(
+                    stripe_price_id=stripe_price_id,
+                    stripe_product_id=stripe_product_id,
+                )
+            except Exception as exc:
+                logger.error(
+                    "Failed to reactivate Stripe artifacts before plan unarchive id=%s: %s",
+                    package.id,
+                    exc,
+                )
+                raise HTTPException(status_code=502, detail="Failed to reactivate Stripe plan artifacts")
+
             package.is_archived = False
             package.archived_at = None
             package.updated_by = int(admin_user.id)
@@ -595,6 +635,35 @@ class AdminService:
                 db.refresh(package)
             except Exception as exc:
                 db.rollback()
+                try:
+                    PaymentService.deactivate_stripe_plan_artifacts(
+                        stripe_price_id=stripe_price_id,
+                        stripe_product_id=stripe_product_id,
+                    )
+                except Exception as cleanup_exc:
+                    logger.warning(
+                        "Failed rollback Stripe deactivation after unarchive DB failure plan_id=%s: %s",
+                        package.id,
+                        cleanup_exc,
+                    )
+                    try:
+                        StripePlanCleanupOutboxService.enqueue_cleanup(
+                            db=db,
+                            source="admin_plan_unarchive_rollback",
+                            stripe_price_id=stripe_price_id,
+                            stripe_product_id=stripe_product_id,
+                            payload={
+                                "plan_id": int(package.id),
+                                "reason": payload.reason,
+                                "rollback": True,
+                            },
+                        )
+                    except Exception as outbox_exc:
+                        logger.error(
+                            "Failed to enqueue rollback cleanup after unarchive DB failure plan_id=%s: %s",
+                            package.id,
+                            outbox_exc,
+                        )
                 logger.error("Failed to unarchive plan id=%s: %s", package.id, exc)
                 raise HTTPException(status_code=500, detail="Failed to unarchive plan")
 
