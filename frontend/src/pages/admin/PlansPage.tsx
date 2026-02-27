@@ -29,6 +29,7 @@ const defaultPlanFormState: PlanFormState = {
   effectiveFrom: "",
   effectiveTo: "",
 };
+const PLAN_PAGE_SIZE = 20;
 
 const centsToDollarInputValue = (value: number): string => (value / 100).toFixed(2);
 
@@ -100,6 +101,8 @@ const buildRequestId = (prefix: string): string => {
 
 const PlansPage = () => {
   const [plans, setPlans] = useState<AdminPlanItem[]>([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [search, setSearch] = useState("");
   const [archivedFilter, setArchivedFilter] = useState<"all" | "archived" | "unarchived">("all");
   const [loading, setLoading] = useState(true);
@@ -114,18 +117,26 @@ const PlansPage = () => {
     () => plans.find((plan) => plan.id === editingPlanId) ?? null,
     [plans, editingPlanId],
   );
+  const totalPages = Math.max(1, Math.ceil(total / PLAN_PAGE_SIZE));
 
-  const loadPlans = useCallback(async (nextSearch: string, nextArchivedFilter: "all" | "archived" | "unarchived") => {
+  const loadPlans = useCallback(async (
+    nextPage: number,
+    nextSearch: string,
+    nextArchivedFilter: "all" | "archived" | "unarchived",
+  ) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await getAdminPlans(1, 100, {
+      const response = await getAdminPlans(nextPage, PLAN_PAGE_SIZE, {
         search: nextSearch,
         archived: nextArchivedFilter,
       });
       setPlans(response.items);
+      setTotal(response.total);
+      setPage(response.page);
     } catch (loadError) {
       setPlans([]);
+      setTotal(0);
       setError(getApiErrorMessage(loadError, "Unable to load admin plans."));
     } finally {
       setLoading(false);
@@ -133,7 +144,7 @@ const PlansPage = () => {
   }, []);
 
   useEffect(() => {
-    void loadPlans("", "all");
+    void loadPlans(1, "", "all");
   }, [loadPlans]);
 
   const resetForm = () => {
@@ -234,7 +245,7 @@ const PlansPage = () => {
       });
       setSuccess("Plan created.");
       resetForm();
-      await loadPlans(search, archivedFilter);
+      await loadPlans(1, search, archivedFilter);
     } catch (createError) {
       setError(getApiErrorMessage(createError, "Unable to create plan."));
     } finally {
@@ -271,7 +282,7 @@ const PlansPage = () => {
       });
       setSuccess("Plan updated.");
       resetForm();
-      await loadPlans(search, archivedFilter);
+      await loadPlans(1, search, archivedFilter);
     } catch (updateError) {
       setError(getApiErrorMessage(updateError, "Unable to update plan."));
     } finally {
@@ -295,7 +306,7 @@ const PlansPage = () => {
         await archiveAdminPlan(plan.id);
         setSuccess(`Plan "${plan.name}" archived.`);
       }
-      await loadPlans(search, archivedFilter);
+      await loadPlans(1, search, archivedFilter);
     } catch (actionError) {
       setError(getApiErrorMessage(actionError, `Unable to ${actionLabel} plan.`));
     } finally {
@@ -315,7 +326,7 @@ const PlansPage = () => {
         <button
           type="button"
           className="btn btn-secondary"
-          onClick={() => void loadPlans(search, archivedFilter)}
+          onClick={() => void loadPlans(page, search, archivedFilter)}
           disabled={loading}
         >
           Refresh
@@ -459,7 +470,7 @@ const PlansPage = () => {
           <button
             type="button"
             className="btn btn-secondary"
-            onClick={() => void loadPlans(search, archivedFilter)}
+            onClick={() => void loadPlans(1, search, archivedFilter)}
           >
             Apply Filters
           </button>
@@ -508,6 +519,31 @@ const PlansPage = () => {
             </div>
           </article>
         ))}
+
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ color: "#475569", fontSize: 14 }}>
+            Page {page} of {totalPages} • {total} total plans
+          </span>
+
+          <div className="row">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={loading || page <= 1}
+              onClick={() => void loadPlans(Math.max(1, page - 1), search, archivedFilter)}
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={loading || page >= totalPages}
+              onClick={() => void loadPlans(page + 1, search, archivedFilter)}
+            >
+              Next
+            </button>
+          </div>
+        </div>
       </section>
     </div>
   );
