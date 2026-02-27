@@ -222,6 +222,47 @@ class AdminService:
         return package
 
     @staticmethod
+    def _managed_by_value_expression(db: Session):
+        bind = db.get_bind()
+        dialect_name = bind.dialect.name if bind is not None else ""
+        if dialect_name == "mysql":
+            return func.json_unquote(func.json_extract(LeadPackage.features, "$.managed_by"))
+        return func.json_extract(LeadPackage.features, "$.managed_by")
+
+    @staticmethod
+    def _build_plan_listing_query(
+        db: Session,
+        *,
+        filters: AdminPlanListFilters,
+    ):
+        query = db.query(LeadPackage)
+        managed_by = AdminService._managed_by_value_expression(db)
+        query = query.filter(or_(managed_by.is_(None), managed_by != "first_purchase_offer"))
+
+        if filters.search:
+            query = query.filter(LeadPackage.name.ilike(f"%{filters.search}%"))
+
+        if filters.archived == "archived":
+            query = query.filter(LeadPackage.is_archived.is_(True))
+        elif filters.archived == "unarchived":
+            query = query.filter(LeadPackage.is_archived.is_(False))
+
+        if filters.effective_at is not None:
+            query = query.filter(
+                or_(
+                    LeadPackage.effective_from.is_(None),
+                    LeadPackage.effective_from <= filters.effective_at,
+                )
+            ).filter(
+                or_(
+                    LeadPackage.effective_to.is_(None),
+                    LeadPackage.effective_to >= filters.effective_at,
+                )
+            )
+
+        return query
+
+    @staticmethod
     def list_plans(
         db: Session,
         *,
@@ -229,45 +270,40 @@ class AdminService:
         size: int,
         filters: AdminPlanListFilters,
     ) -> PaginatedAdminPlans:
-        purchase_counts = dict(
-            db.query(
-                LeadPurchase.package_id.label("package_id"),
-                func.count(LeadPurchase.id).label("purchase_count"),
-            )
-            .group_by(LeadPurchase.package_id)
+        filtered_query = AdminService._build_plan_listing_query(db, filters=filters)
+        offset = max(0, (page - 1) * size)
+        total = filtered_query.with_entities(func.count(LeadPackage.id)).scalar() or 0
+        rows = (
+            filtered_query
+            .order_by(LeadPackage.created_at.desc(), LeadPackage.id.desc())
+            .offset(offset)
+            .limit(size)
             .all()
         )
 
-        rows = db.query(LeadPackage).order_by(LeadPackage.created_at.desc(), LeadPackage.id.desc()).all()
-        filtered: list[AdminPlanItem] = []
-        effective_at = filters.effective_at
-
-        for package in rows:
-            if AdminService._is_first_purchase_offer_managed_package(package):
-                continue
-
-            if filters.search and filters.search.lower() not in str(package.name or "").lower():
-                continue
-
-            if filters.archived == "archived" and not package.is_archived:
-                continue
-            if filters.archived == "unarchived" and package.is_archived:
-                continue
-
-            if effective_at is not None and not AdminService._is_plan_effective_at(package, effective_at):
-                continue
-
-            has_purchases = int(purchase_counts.get(package.id, 0) or 0) > 0
-            filtered.append(
-                AdminService._to_admin_plan_item(
-                    package,
-                    has_purchases=has_purchases,
+        purchase_counts: Dict[int, int] = {}
+        row_ids = [int(package.id) for package in rows]
+        if row_ids:
+            purchase_counts = {
+                int(package_id): int(purchase_count or 0)
+                for package_id, purchase_count in (
+                    db.query(
+                        LeadPurchase.package_id.label("package_id"),
+                        func.count(LeadPurchase.id).label("purchase_count"),
+                    )
+                    .filter(LeadPurchase.package_id.in_(row_ids))
+                    .group_by(LeadPurchase.package_id)
+                    .all()
                 )
-            )
+            }
 
-        total = len(filtered)
-        offset = max(0, (page - 1) * size)
-        items = filtered[offset: offset + size]
+        items = [
+            AdminService._to_admin_plan_item(
+                package,
+                has_purchases=bool(purchase_counts.get(int(package.id), 0)),
+            )
+            for package in rows
+        ]
         return PaginatedAdminPlans(items=items, total=total, page=page, size=size)
 
     @staticmethod
