@@ -4,7 +4,7 @@ FastAPI application entry point.
 
 from contextlib import asynccontextmanager
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,6 +30,19 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+_SENSITIVE_HEALTH_FIELDS = frozenset({"error", "last_error"})
+
+
+def _redact_health_payload(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _redact_health_payload(item)
+            for key, item in value.items()
+            if key not in _SENSITIVE_HEALTH_FIELDS
+        }
+    if isinstance(value, list):
+        return [_redact_health_payload(item) for item in value]
+    return value
 
 
 def _resolve_openapi_docs_config() -> tuple[Optional[str], Optional[str], Optional[str]]:
@@ -204,9 +217,10 @@ def health_ready():
             "stripe_webhook_pipeline": webhook_pipeline_status,
         },
     }
+    public_payload = _redact_health_payload(payload)
     if status_text != "healthy":
-        return JSONResponse(status_code=503, content=payload)
-    return payload
+        return JSONResponse(status_code=503, content=public_payload)
+    return public_payload
 
 
 if __name__ == "__main__":
