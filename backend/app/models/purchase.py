@@ -339,6 +339,109 @@ class StripePoisonEvent(Base):
     )
 
 
+class StripePlanCleanupOutbox(Base):
+    """Durable queue for Stripe plan artifact cleanup retries."""
+
+    __tablename__ = "stripe_plan_cleanup_outbox"
+    __table_args__ = (
+        CheckConstraint(
+            "stripe_price_id IS NOT NULL OR stripe_product_id IS NOT NULL",
+            name="ck_stripe_plan_cleanup_outbox_target_present",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+    )
+    source: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+        index=True,
+    )
+    stripe_price_id: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True,
+    )
+    stripe_product_id: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(
+        SQLEnum(
+            "pending",
+            "processing",
+            "processed",
+            "failed",
+            name="stripe_plan_cleanup_outbox_status_enum",
+        ),
+        nullable=False,
+        default="pending",
+        server_default=text("'pending'"),
+        index=True,
+    )
+    attempt_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    max_attempts: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=10,
+        server_default=text("10"),
+    )
+    next_retry_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        nullable=False,
+        default=utcnow,
+        server_default=text("CURRENT_TIMESTAMP"),
+        index=True,
+    )
+    locked_at: Mapped[Optional[datetime]] = mapped_column(
+        UTCDateTime(),
+        nullable=True,
+        index=True,
+    )
+    processed_at: Mapped[Optional[datetime]] = mapped_column(
+        UTCDateTime(),
+        nullable=True,
+        index=True,
+    )
+    last_error: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    idempotency_key: Mapped[str] = mapped_column(
+        String(191),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    payload: Mapped[Optional[dict]] = mapped_column(
+        JSON,
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        nullable=False,
+        default=utcnow,
+        server_default=text("CURRENT_TIMESTAMP"),
+        index=True,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        nullable=False,
+        default=utcnow,
+        onupdate=utcnow,
+        server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"),
+    )
+
+
 class StripeWebhookInbox(Base):
     """Durable inbox queue for Stripe webhook events."""
 
