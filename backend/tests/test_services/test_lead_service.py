@@ -355,8 +355,25 @@ def test_bulk_import_leads_rejects_duplicate_phones_in_payload(db):
 
     result = LeadService.bulk_import_leads(db=db, csv_data=rows)
     assert result["success"] == 0
-    assert result["failed"] >= 1
+    assert result["failed"] == 1
     assert any("Duplicate mobile_phone in file" in err["error"] for err in result["errors"])
+
+
+@pytest.mark.unit
+def test_bulk_import_leads_counts_failed_rows_not_error_count(db):
+    rows = [
+        {"state_code": "ZZ", "mobile_phone": "", "first_name": "Bad"},
+    ]
+
+    result = LeadService.bulk_import_leads(db=db, csv_data=rows)
+    assert result["success"] == 0
+    assert result["failed"] == 1
+    assert len(result["errors"]) == 2
+    assert {err["error"] for err in result["errors"]} == {
+        "Invalid state_code",
+        "Missing mobile_phone",
+    }
+    assert {err["row"] for err in result["errors"]} == {2}
 
 
 @pytest.mark.unit

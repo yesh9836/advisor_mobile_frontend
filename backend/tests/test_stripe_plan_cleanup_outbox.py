@@ -4,7 +4,6 @@ import pytest
 
 from app.models.purchase import StripePlanCleanupOutbox, StripeWebhookWorkerHeartbeat
 from app.services.stripe_plan_cleanup_outbox_service import StripePlanCleanupOutboxService
-from app.services.stripe_webhook_health_service import StripeWebhookHealthService
 
 
 @pytest.mark.integration
