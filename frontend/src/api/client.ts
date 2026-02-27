@@ -15,6 +15,8 @@ const PUBLIC_AUTH_ENDPOINTS = [
 const AUTH_SESSION_ENDPOINTS = ["/auth/refresh", "/auth/logout"];
 const MUTATING_METHODS = new Set(["post", "put", "patch", "delete"]);
 const REFRESH_TRANSIENT_FAILURE_COOLDOWN_MS = 3000;
+const URL_PARSE_BASE =
+  typeof window !== "undefined" ? window.location.origin : "http://localhost";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
@@ -28,8 +30,50 @@ type RetryableRequestConfig = InternalAxiosRequestConfig & {
 const isMutatingMethod = (method?: string): boolean =>
   MUTATING_METHODS.has((method ?? "get").toLowerCase());
 
-const urlMatchesAny = (url: string, paths: string[]): boolean =>
-  paths.some((path) => url.includes(path));
+const normalizePathname = (pathname: string): string => {
+  const normalized = pathname.replace(/\/+$/, "");
+  return normalized || "/";
+};
+
+const getApiBasePath = (): string => {
+  try {
+    return normalizePathname(new URL(API_BASE_URL, URL_PARSE_BASE).pathname);
+  } catch {
+    return "/";
+  }
+};
+
+const API_BASE_PATH = getApiBasePath();
+
+const toNormalizedRequestPath = (requestUrl: string): string => {
+  try {
+    const normalizedPath = normalizePathname(new URL(requestUrl, URL_PARSE_BASE).pathname);
+    if (API_BASE_PATH !== "/" && normalizedPath === API_BASE_PATH) {
+      return "/";
+    }
+    if (API_BASE_PATH !== "/" && normalizedPath.startsWith(`${API_BASE_PATH}/`)) {
+      return normalizePathname(normalizedPath.slice(API_BASE_PATH.length));
+    }
+    return normalizedPath;
+  } catch {
+    const pathOnly = requestUrl.split(/[?#]/, 1)[0] ?? "";
+    return normalizePathname(pathOnly);
+  }
+};
+
+const pathMatchesAny = (path: string, paths: string[]): boolean =>
+  paths.some((knownPath) => knownPath === path);
+
+export const classifyAuthEndpoint = (requestUrl: string): "public" | "session" | "other" => {
+  const normalizedPath = toNormalizedRequestPath(requestUrl);
+  if (pathMatchesAny(normalizedPath, PUBLIC_AUTH_ENDPOINTS)) {
+    return "public";
+  }
+  if (pathMatchesAny(normalizedPath, AUTH_SESSION_ENDPOINTS)) {
+    return "session";
+  }
+  return "other";
+};
 
 const readCookie = (cookieName: string): string | null => {
   const cookies = document.cookie ? document.cookie.split("; ") : [];
@@ -126,11 +170,13 @@ apiClient.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    if (urlMatchesAny(requestUrl, PUBLIC_AUTH_ENDPOINTS)) {
+    const endpointType = classifyAuthEndpoint(requestUrl);
+
+    if (endpointType === "public") {
       return Promise.reject(error);
     }
 
-    if (urlMatchesAny(requestUrl, AUTH_SESSION_ENDPOINTS) || originalRequest._retry) {
+    if (endpointType === "session" || originalRequest._retry) {
       dispatchForcedLogout();
       return Promise.reject(error);
     }
