@@ -1,15 +1,15 @@
 import { useEffect, useState } from "react";
 
 import {
+  getAdminPlans,
   getFirstPurchaseOfferConfig,
   updateFirstPurchaseOfferConfig,
 } from "@/api/admin";
-import { getPackages } from "@/api/purchases";
 import type {
   FirstPurchaseAddonOfferConfig,
   FirstPurchaseAddonOfferUpdatePayload,
-  PurchasePackage,
 } from "@/types/purchase";
+import type { AdminPlanItem } from "@/types/admin";
 import { getApiErrorMessage, parseApiError } from "@/utils/api-error";
 
 const toLocalDateTimeInputValue = (isoValue: string | null): string => {
@@ -50,6 +50,20 @@ const formatMoney = (value: number, currency: string): string => {
   });
 };
 
+const formatDateTime = (isoValue: string): string => {
+  const parsed = new Date(isoValue);
+  if (Number.isNaN(parsed.getTime())) {
+    return isoValue;
+  }
+  return parsed.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+};
+
 const centsToDollarInputValue = (value: number | null): string => {
   if (value === null || value === undefined) {
     return "";
@@ -86,6 +100,18 @@ interface OfferFormState {
   ends_at: string;
 }
 
+const defaultOfferFormState: OfferFormState = {
+  is_enabled: false,
+  trigger_package_id: "",
+  offer_credits_total: "",
+  offer_price_dollars: "",
+  headline: "",
+  message: "",
+  cta_label: "",
+  starts_at: "",
+  ends_at: "",
+};
+
 const buildFormFromConfig = (config: FirstPurchaseAddonOfferConfig): OfferFormState => {
   return {
     is_enabled: config.is_enabled,
@@ -100,20 +126,46 @@ const buildFormFromConfig = (config: FirstPurchaseAddonOfferConfig): OfferFormSt
   };
 };
 
+const buildPayloadFromConfig = (
+  config: FirstPurchaseAddonOfferConfig,
+  options: { isEnabled: boolean },
+): FirstPurchaseAddonOfferUpdatePayload => ({
+  is_enabled: options.isEnabled,
+  trigger_package_id: config.trigger_package_id,
+  offer_credits_total: config.offer_credits_total,
+  offer_price_cents: config.offer_price_cents,
+  offer_currency: "USD",
+  headline: config.headline,
+  message: config.message,
+  cta_label: config.cta_label,
+  starts_at: config.starts_at,
+  ends_at: config.ends_at,
+});
+
+const TRIGGER_PLAN_PAGE_SIZE = 100;
+
+const getAllUnarchivedTriggerPlans = async (): Promise<AdminPlanItem[]> => {
+  let page = 1;
+  let total = 0;
+  const rows: AdminPlanItem[] = [];
+
+  do {
+    const response = await getAdminPlans(page, TRIGGER_PLAN_PAGE_SIZE, {
+      archived: "unarchived",
+    });
+    rows.push(...response.items);
+    total = response.total;
+    page += 1;
+  } while ((page - 1) * TRIGGER_PLAN_PAGE_SIZE < total);
+
+  return rows;
+};
+
 const FirstPurchaseOfferPage = () => {
-  const [packages, setPackages] = useState<PurchasePackage[]>([]);
+  const [triggerPlans, setTriggerPlans] = useState<AdminPlanItem[]>([]);
   const [config, setConfig] = useState<FirstPurchaseAddonOfferConfig | null>(null);
-  const [form, setForm] = useState<OfferFormState>({
-    is_enabled: false,
-    trigger_package_id: "",
-    offer_credits_total: "",
-    offer_price_dollars: "",
-    headline: "",
-    message: "",
-    cta_label: "",
-    starts_at: "",
-    ends_at: "",
-  });
+  const [form, setForm] = useState<OfferFormState>(defaultOfferFormState);
+  const [isEditingExistingOffer, setIsEditingExistingOffer] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -126,17 +178,18 @@ const FirstPurchaseOfferPage = () => {
       setLoading(true);
       setError(null);
       try {
-        const [catalog, currentConfig] = await Promise.all([
-          getPackages(),
+        const [plans, currentConfig] = await Promise.all([
+          getAllUnarchivedTriggerPlans(),
           getFirstPurchaseOfferConfig(),
         ]);
         if (!active) {
           return;
         }
 
-        setPackages(catalog);
+        setTriggerPlans(plans);
         setConfig(currentConfig);
-        setForm(buildFormFromConfig(currentConfig));
+        setForm(defaultOfferFormState);
+        setIsEditingExistingOffer(false);
       } catch (loadError) {
         if (!active) {
           return;
@@ -203,10 +256,42 @@ const FirstPurchaseOfferPage = () => {
     try {
       const saved = await updateFirstPurchaseOfferConfig(payload);
       setConfig(saved);
-      setForm(buildFormFromConfig(saved));
+      setForm(defaultOfferFormState);
+      setIsEditingExistingOffer(false);
       setSuccess("First-purchase add-on offer saved.");
     } catch (saveError) {
       const parsedError = parseApiError(saveError, "Unable to save first-purchase offer settings.");
+      setError(parsedError.code ? `${parsedError.code}: ${parsedError.message}` : parsedError.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEditExistingOffer = () => {
+    if (!config || config.id === null) return;
+    setForm(buildFormFromConfig(config));
+    setIsEditingExistingOffer(true);
+    setError(null);
+    setSuccess(null);
+  };
+
+  const handleArchiveToggle = async () => {
+    if (!config || config.id === null) return;
+
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const nextEnabled = !config.is_enabled;
+      const saved = await updateFirstPurchaseOfferConfig(
+        buildPayloadFromConfig(config, { isEnabled: nextEnabled }),
+      );
+      setConfig(saved);
+      setForm(defaultOfferFormState);
+      setIsEditingExistingOffer(false);
+      setSuccess(nextEnabled ? "Offer unarchived." : "Offer archived.");
+    } catch (saveError) {
+      const parsedError = parseApiError(saveError, "Unable to update offer lifecycle.");
       setError(parsedError.code ? `${parsedError.code}: ${parsedError.message}` : parsedError.message);
     } finally {
       setSaving(false);
@@ -232,10 +317,13 @@ const FirstPurchaseOfferPage = () => {
           <div className="metric-note">Loading offer configuration...</div>
         </section>
       ) : (
-        <section className="panel stack">
+        <>
+          <section className="panel stack">
           <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
             <div>
-              <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>Offer Rules</h2>
+              <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>
+                {isEditingExistingOffer ? "Edit Offer" : "Create Offer"}
+              </h2>
               <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
                 Advisors qualify only on the redirect from their first completed checkout.
               </p>
@@ -285,9 +373,9 @@ const FirstPurchaseOfferPage = () => {
                 }
               >
                 <option value="">Select package</option>
-                {packages.map((pkg) => (
-                  <option key={pkg.id} value={String(pkg.id)}>
-                    {pkg.name} • {formatMoney(pkg.price_cents, pkg.currency)}
+                {triggerPlans.map((plan) => (
+                  <option key={plan.id} value={String(plan.id)}>
+                    {plan.name} • {formatMoney(plan.price_cents, plan.currency)}
                   </option>
                 ))}
               </select>
@@ -433,15 +521,14 @@ const FirstPurchaseOfferPage = () => {
               type="button"
               className="btn btn-secondary"
               onClick={() => {
-                if (config) {
-                  setForm(buildFormFromConfig(config));
-                  setError(null);
-                  setSuccess(null);
-                }
+                setForm(defaultOfferFormState);
+                setIsEditingExistingOffer(false);
+                setError(null);
+                setSuccess(null);
               }}
-              disabled={saving || config === null}
+              disabled={saving}
             >
-              Reset
+              Clear
             </button>
             <button
               type="button"
@@ -453,12 +540,74 @@ const FirstPurchaseOfferPage = () => {
             </button>
           </div>
 
-          {config?.updated_at && (
-            <p style={{ margin: 0, color: "#64748b", fontSize: 13 }}>
-              Last updated: {new Date(config.updated_at).toLocaleString("en-US")}
-            </p>
-          )}
-        </section>
+          </section>
+
+          <section className="panel stack">
+            <div className="page-header-row">
+              <div>
+                <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>Existing Offers</h2>
+                <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+                  Manage existing first-purchase offer configuration.
+                </p>
+              </div>
+            </div>
+
+            {config?.id ? (
+              <article className="panel" style={{ background: "#f8fafc" }}>
+                <div className="page-header-row">
+                  <div>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: "#0b1b49" }}>
+                      Offer #{config.id}
+                    </div>
+                    <div style={{ marginTop: 4, color: "#475569" }}>
+                      Status: {config.is_enabled ? "ACTIVE" : "ARCHIVED"} • Trigger:{" "}
+                      {config.trigger_package_name ?? "Not set"}
+                    </div>
+                    <div style={{ marginTop: 4, color: "#475569" }}>
+                      Add-on:{" "}
+                      {config.offer_price_cents !== null
+                        ? formatMoney(config.offer_price_cents, config.offer_currency ?? "USD")
+                        : "Not set"}{" "}
+                      • {config.offer_credits_total ?? 0} leads
+                    </div>
+                    <div style={{ marginTop: 4, color: "#64748b", fontSize: 13 }}>
+                      Window: {config.starts_at ? formatDateTime(config.starts_at) : "Not set"} →{" "}
+                      {config.ends_at ? formatDateTime(config.ends_at) : "Not set"}
+                    </div>
+                    {config.updated_at && (
+                      <div style={{ marginTop: 4, color: "#64748b", fontSize: 13 }}>
+                        Last updated: {new Date(config.updated_at).toLocaleString("en-US")}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={handleEditExistingOffer}
+                      disabled={saving}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => void handleArchiveToggle()}
+                      disabled={saving}
+                    >
+                      {saving
+                        ? "Working..."
+                        : (config.is_enabled ? "Archive" : "Unarchive")}
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ) : (
+              <div style={{ color: "#475569" }}>No offer config exists yet.</div>
+            )}
+          </section>
+        </>
       )}
     </div>
   );
