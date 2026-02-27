@@ -132,6 +132,30 @@ describe("AuthContext cookie session behavior", () => {
     });
   });
 
+  it("clears context user even when logout request fails", async () => {
+    mockGetCurrentUser.mockResolvedValueOnce(authenticatedUser);
+    mockLogout.mockRejectedValueOnce(new Error("logout failed"));
+
+    render(
+      <AuthProvider>
+        <ContextProbe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("user-email")).toHaveTextContent(
+        authenticatedUser.email,
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+
+    await waitFor(() => {
+      expect(mockLogout).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId("user-email")).toHaveTextContent("guest");
+    });
+  });
+
   it("uses login fallback copy when login throws non-api error", async () => {
     mockGetCurrentUser.mockRejectedValueOnce(new Error("Unauthenticated"));
     mockLogin.mockRejectedValueOnce("unexpected");
