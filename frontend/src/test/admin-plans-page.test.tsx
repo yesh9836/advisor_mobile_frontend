@@ -42,7 +42,6 @@ const buildPlan = (overrides: Partial<Record<string, unknown>> = {}) => ({
 describe("PlansPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.spyOn(window, "confirm").mockReturnValue(true);
 
     getAdminPlans.mockResolvedValue({
       items: [buildPlan()],
@@ -78,6 +77,7 @@ describe("PlansPage", () => {
     );
 
     await screen.findByText("Growth 25");
+    expect(screen.getByLabelText("Show in advisor catalog")).not.toBeChecked();
 
     fireEvent.change(screen.getByLabelText("Plan Name"), {
       target: { value: "Growth 40" },
@@ -104,7 +104,7 @@ describe("PlansPage", () => {
         price_cents: 40000,
         credits_total: 40,
         state_limit: 4,
-        catalog_visible: true,
+        catalog_visible: false,
       }),
     );
     expect(createAdminPlan.mock.calls[0][0].request_id).toMatch(/^plan_create_/);
@@ -141,6 +141,8 @@ describe("PlansPage", () => {
     expect(updateAdminPlan.mock.calls[0][1].request_id).toMatch(/^plan_update_/);
 
     fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+    expect(await screen.findByRole("dialog", { name: "Confirm Archive" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Archive" }));
     await waitFor(() => {
       expect(archiveAdminPlan).toHaveBeenCalledWith(7);
     });
@@ -162,6 +164,8 @@ describe("PlansPage", () => {
 
     await screen.findByText("Growth 25");
     fireEvent.click(screen.getByRole("button", { name: "Unarchive" }));
+    expect(await screen.findByRole("dialog", { name: "Confirm Unarchive" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Unarchive" }));
 
     await waitFor(() => {
       expect(unarchiveAdminPlan).toHaveBeenCalledWith(7);

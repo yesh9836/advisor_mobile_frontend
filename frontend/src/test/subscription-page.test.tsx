@@ -293,9 +293,126 @@ describe("SubscriptionPage license gate", () => {
     expect(await screen.findByText("checkout unavailable")).toBeInTheDocument();
   });
 
+  it("waits for purchase completion before checking first-purchase add-on eligibility", async () => {
+    const { getPurchaseHistory, getFirstPurchaseOfferEligibility } =
+      await import("@/api/purchases");
+    const { getMyLicenses } = await import("@/api/licenses");
+    vi.mocked(getMyLicenses).mockResolvedValueOnce([
+      {
+        id: 103,
+        user_id: 1,
+        state: "GA",
+        license_number: "GA-VERIFIED-001",
+        license_type: "Series 65",
+        has_document: true,
+        verification_status: "verified",
+        verified_at: "2026-02-19T00:00:00Z",
+        verified_by: 5,
+        rejection_reason: null,
+        created_at: "2026-02-19T00:00:00Z",
+      },
+    ]);
+    vi.mocked(getPurchaseHistory)
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 1,
+            order_reference: "cs_test_pending",
+            package_name: "Starter",
+            amount_cents: 20000,
+            currency: "USD",
+            credits_total: 10,
+            entitled_credits_total: 10,
+            credits_remaining: 10,
+            status: "pending",
+            assigned_count: 0,
+            unfulfilled_count: 10,
+            fulfillment_status: "pending",
+            purchased_at: "2026-02-19T00:00:00Z",
+            stripe_checkout_session_id: "cs_test_pending",
+            stripe_payment_intent_id: "pi_test_pending",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 1,
+            order_reference: "cs_test_pending",
+            package_name: "Starter",
+            amount_cents: 20000,
+            currency: "USD",
+            credits_total: 10,
+            entitled_credits_total: 10,
+            credits_remaining: 10,
+            status: "completed",
+            assigned_count: 10,
+            unfulfilled_count: 0,
+            fulfillment_status: "fulfilled",
+            purchased_at: "2026-02-19T00:00:00Z",
+            stripe_checkout_session_id: "cs_test_pending",
+            stripe_payment_intent_id: "pi_test_pending",
+          },
+        ],
+      })
+      .mockResolvedValue({
+        items: [],
+      });
+    vi.mocked(getFirstPurchaseOfferEligibility).mockResolvedValueOnce({
+      eligible: true,
+      offer: {
+        trigger_package_id: 1,
+        offer_package_id: 2,
+        offer_package_name: "Starter Plus",
+        offer_price_cents: 25000,
+        offer_currency: "USD",
+        offer_credits_total: 14,
+        headline: "First order bonus",
+        message: "Upgrade now for extra credits.",
+        cta_label: "Upgrade package",
+      },
+    });
+
+    renderRoute("/subscription?checkout=success&session_id=cs_test_pending");
+
+    await screen.findByText(
+      "Checkout completed. Delivered now: 0/10. Pending auto-delivery: 10.",
+    );
+    const callCountBeforeRetry = vi.mocked(getFirstPurchaseOfferEligibility).mock.calls.length;
+
+    await waitFor(
+      () => {
+        expect(vi.mocked(getFirstPurchaseOfferEligibility).mock.calls.length).toBeGreaterThan(
+          callCountBeforeRetry,
+        );
+        expect(getFirstPurchaseOfferEligibility).toHaveBeenCalledWith("cs_test_pending");
+      },
+      { timeout: 5000 },
+    );
+    expect(
+      await screen.findByRole("heading", { name: "First order bonus" }),
+    ).toBeInTheDocument();
+  });
+
   it("maps structured inventory rejection codes for add-on checkout", async () => {
     const { getPurchaseHistory, getFirstPurchaseOfferEligibility, createCheckout } =
       await import("@/api/purchases");
+    const { getMyLicenses } = await import("@/api/licenses");
+    vi.mocked(getMyLicenses).mockResolvedValueOnce([
+      {
+        id: 104,
+        user_id: 1,
+        state: "GA",
+        license_number: "GA-VERIFIED-002",
+        license_type: "Series 65",
+        has_document: true,
+        verification_status: "verified",
+        verified_at: "2026-02-19T00:00:00Z",
+        verified_by: 5,
+        rejection_reason: null,
+        created_at: "2026-02-19T00:00:00Z",
+      },
+    ]);
     vi.mocked(getPurchaseHistory).mockResolvedValueOnce({
       items: [
         {
