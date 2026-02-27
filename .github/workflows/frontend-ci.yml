@@ -1,0 +1,116 @@
+name: Frontend CI
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - ".github/workflows/frontend-ci.yml"
+
+jobs:
+  frontend-quality:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: lead_management_e2e
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: "frontend/package-lock.json"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run lint
+        run: npm run lint
+
+      - name: Run tests
+        run: npm run test
+
+      - name: Run build
+        run: npm run build
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run e2e mocked critical flows
+        run: npm run test:e2e:mocked
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: "backend/requirements.txt"
+
+      - name: Install backend dependencies for integration e2e
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Prepare backend schema and seed integration data
+        working-directory: backend
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: root
+          DB_PASSWORD: root
+          DB_NAME: lead_management_e2e
+          RATE_LIMIT_ENABLED: "false"
+          CORS_ORIGINS: http://127.0.0.1:4173
+          FRONTEND_URL: http://127.0.0.1:4173
+        run: |
+          alembic upgrade head
+          python scripts/seed_full_stack_data.py
+
+      - name: Start backend API for integration e2e
+        working-directory: backend
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: root
+          DB_PASSWORD: root
+          DB_NAME: lead_management_e2e
+          RATE_LIMIT_ENABLED: "false"
+          CORS_ORIGINS: http://127.0.0.1:4173
+          FRONTEND_URL: http://127.0.0.1:4173
+        run: |
+          nohup uvicorn app.main:app --host 127.0.0.1 --port 8000 > /tmp/backend-e2e.log 2>&1 &
+
+      - name: Wait for backend API readiness
+        run: |
+          for i in {1..45}; do
+            if curl -fsS http://127.0.0.1:8000/health/live >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Backend failed to become ready. Last backend log lines:"
+          tail -n 200 /tmp/backend-e2e.log || true
+          exit 1
+
+      - name: Run e2e backend integration smoke
+        env:
+          PLAYWRIGHT_VITE_API_BASE_URL: http://127.0.0.1:8000/api/v1
+          PLAYWRIGHT_E2E_BACKEND_URL: http://127.0.0.1:8000
+          PLAYWRIGHT_E2E_ADVISOR_EMAIL: advisor.demo@example.com
+          PLAYWRIGHT_E2E_ADVISOR_PASSWORD: Password123!
+        run: npm run test:e2e:integration
