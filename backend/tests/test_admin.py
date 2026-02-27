@@ -6,7 +6,7 @@ from app.core.config import settings
 from app.models.audit_log import AuditLog
 from app.models.auth_session import RefreshTokenSession
 from app.models.lead import LeadDownload, LeadOwnership
-from app.models.purchase import FirstPurchaseAddonOffer
+from app.models.purchase import FirstPurchaseAddonOffer, StripePlanCleanupOutbox
 from app.models.user import User
 from app.services.first_purchase_offer_service import FirstPurchaseOfferService
 
@@ -584,6 +584,157 @@ def test_admin_plan_lifecycle_create_update_archive_and_audit(
     assert "admin_plan_updated" in actions
     assert "admin_plan_archived" in actions
     assert "admin_plan_unarchived" in actions
+
+
+def test_admin_plan_update_duplicate_name_rejected_before_stripe_side_effects(
+    client,
+    user_factory,
+    auth_headers,
+    plan_factory,
+    monkeypatch,
+):
+    _admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+    target_plan = plan_factory(name="TargetPlan", price_cents=20000, daily_download_limit=20)
+    conflicting_plan = plan_factory(name="ConflictPlan", price_cents=25000, daily_download_limit=25)
+
+    call_counter = {"count": 0}
+
+    def _mock_create_price(**kwargs):
+        _ = kwargs
+        call_counter["count"] += 1
+        return {
+            "stripe_price_id": "price_should_not_be_created",
+            "stripe_product_id": "prod_should_not_be_created",
+        }
+
+    monkeypatch.setattr(
+        "app.services.payment_service.PaymentService.create_stripe_price_for_plan",
+        _mock_create_price,
+    )
+
+    response = client.put(
+        f"/api/v1/admin/plans/{target_plan.id}",
+        headers=admin_headers,
+        json={
+            "name": conflicting_plan.name,
+            "price_cents": 30000,
+            "credits_total": 30,
+            "request_id": "admin_plan_duplicate_guard_01",
+        },
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"] == "Plan name already exists"
+    assert call_counter["count"] == 0
+
+
+def test_admin_plan_create_commit_failure_enqueues_stripe_cleanup_outbox_when_inline_cleanup_fails(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+    plan_factory,
+    monkeypatch,
+):
+    _admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+    conflicting_plan = plan_factory(
+        name="ExistingPlan",
+        price_cents=19000,
+        daily_download_limit=19,
+        stripe_price_id="price_conflict_for_cleanup_create",
+    )
+    assert conflicting_plan is not None
+
+    monkeypatch.setattr(
+        "app.services.payment_service.PaymentService.create_stripe_price_for_plan",
+        lambda **_kwargs: {
+            "stripe_price_id": "price_conflict_for_cleanup_create",
+            "stripe_product_id": "prod_conflict_for_cleanup_create",
+        },
+    )
+    monkeypatch.setattr(
+        "app.services.payment_service.PaymentService.deactivate_stripe_plan_artifacts",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("forced cleanup failure")),
+    )
+
+    response = client.post(
+        "/api/v1/admin/plans",
+        headers=admin_headers,
+        json={
+            "name": "Plan Cleanup Create Failure",
+            "price_cents": 21000,
+            "credits_total": 21,
+            "state_limit": 2,
+            "catalog_visible": True,
+            "request_id": "admin_plan_cleanup_create_01",
+        },
+    )
+    assert response.status_code == 500, response.text
+    assert response.json() == {"detail": "Failed to create plan"}
+
+    outbox_row = (
+        db.query(StripePlanCleanupOutbox)
+        .filter(StripePlanCleanupOutbox.source == "admin_plan_create")
+        .first()
+    )
+    assert outbox_row is not None
+    assert outbox_row.status == "pending"
+    assert outbox_row.stripe_price_id == "price_conflict_for_cleanup_create"
+    assert outbox_row.stripe_product_id == "prod_conflict_for_cleanup_create"
+
+
+def test_admin_plan_update_commit_failure_enqueues_stripe_cleanup_outbox_when_inline_cleanup_fails(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+    plan_factory,
+    monkeypatch,
+):
+    _admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+    target_plan = plan_factory(name="CleanupUpdateTarget", price_cents=22000, daily_download_limit=22)
+    conflicting_plan = plan_factory(
+        name="CleanupUpdateConflict",
+        price_cents=23000,
+        daily_download_limit=23,
+        stripe_price_id="price_conflict_for_cleanup_update",
+    )
+    assert conflicting_plan is not None
+
+    monkeypatch.setattr(
+        "app.services.payment_service.PaymentService.create_stripe_price_for_plan",
+        lambda **_kwargs: {
+            "stripe_price_id": "price_conflict_for_cleanup_update",
+            "stripe_product_id": "prod_conflict_for_cleanup_update",
+        },
+    )
+    monkeypatch.setattr(
+        "app.services.payment_service.PaymentService.deactivate_stripe_plan_artifacts",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("forced cleanup failure")),
+    )
+
+    response = client.put(
+        f"/api/v1/admin/plans/{target_plan.id}",
+        headers=admin_headers,
+        json={
+            "price_cents": 24000,
+            "credits_total": 24,
+            "request_id": "admin_plan_cleanup_update_01",
+        },
+    )
+    assert response.status_code == 500, response.text
+    assert response.json() == {"detail": "Failed to update plan"}
+
+    outbox_row = (
+        db.query(StripePlanCleanupOutbox)
+        .filter(
+            StripePlanCleanupOutbox.source == "admin_plan_update",
+            StripePlanCleanupOutbox.stripe_price_id == "price_conflict_for_cleanup_update",
+        )
+        .first()
+    )
+    assert outbox_row is not None
+    assert outbox_row.status == "pending"
+    assert outbox_row.stripe_product_id == "prod_conflict_for_cleanup_update"
 
 
 def test_admin_plan_list_filters(client, db, user_factory, auth_headers, plan_factory):

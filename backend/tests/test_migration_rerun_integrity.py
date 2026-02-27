@@ -641,3 +641,62 @@ def test_a6_lead_package_lifecycle_upgrade_is_rerunnable_and_enforced():
                     ")"
                 )
             )
+
+
+@pytest.mark.unit
+def test_b9_stripe_plan_cleanup_outbox_upgrade_creates_constraints_and_indexes():
+    migration = _load_migration_module("b9c0d1e2f3a4_add_stripe_plan_cleanup_outbox.py")
+    engine = sa.create_engine("sqlite+pysqlite:///:memory:")
+
+    with engine.begin() as connection:
+        _run_migration(migration, "upgrade", connection)
+
+        columns = {
+            column.get("name")
+            for column in sa.inspect(connection).get_columns("stripe_plan_cleanup_outbox")
+        }
+        assert "source" in columns
+        assert "stripe_price_id" in columns
+        assert "stripe_product_id" in columns
+        assert "idempotency_key" in columns
+        assert "status" in columns
+
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                sa.text(
+                    "INSERT INTO stripe_plan_cleanup_outbox "
+                    "(id, source, stripe_price_id, stripe_product_id, idempotency_key) "
+                    "VALUES (1, 'admin_plan_create', NULL, NULL, 'cleanup_no_target')"
+                )
+            )
+
+        connection.execute(
+            sa.text(
+                "INSERT INTO stripe_plan_cleanup_outbox "
+                "("
+                "id, source, stripe_price_id, stripe_product_id, idempotency_key, status, attempt_count, "
+                "max_attempts, next_retry_at"
+                ") "
+                "VALUES "
+                "("
+                "2, 'admin_plan_update', 'price_cleanup_u1', 'prod_cleanup_u1', "
+                "'cleanup_unique_key', 'pending', 0, 10, CURRENT_TIMESTAMP"
+                ")"
+            )
+        )
+
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                sa.text(
+                    "INSERT INTO stripe_plan_cleanup_outbox "
+                    "("
+                    "id, source, stripe_price_id, stripe_product_id, idempotency_key, status, attempt_count, "
+                    "max_attempts, next_retry_at"
+                    ") "
+                    "VALUES "
+                    "("
+                    "3, 'admin_plan_update', 'price_cleanup_u2', 'prod_cleanup_u2', "
+                    "'cleanup_unique_key', 'pending', 0, 10, CURRENT_TIMESTAMP"
+                    ")"
+                )
+            )

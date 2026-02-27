@@ -28,6 +28,12 @@ def _install_stripe_stub() -> None:
     class StripeError(Exception):
         pass
 
+    class InvalidRequestError(StripeError):
+        def __init__(self, message=None, param=None, code=None):
+            super().__init__(message or "invalid request")
+            self.param = param
+            self.code = code
+
     class SignatureVerificationError(StripeError):
         pass
 
@@ -73,12 +79,22 @@ def _install_stripe_stub() -> None:
         def create(*args, **kwargs):
             raise NotImplementedError("stripe.Price.create must be mocked in tests")
 
+        @staticmethod
+        def modify(*args, **kwargs):
+            raise NotImplementedError("stripe.Price.modify must be mocked in tests")
+
+    class _Product:
+        @staticmethod
+        def modify(*args, **kwargs):
+            raise NotImplementedError("stripe.Product.modify must be mocked in tests")
+
     class _RequestsClient:
         def __init__(self, timeout=None):
             self.timeout = timeout
 
     stripe.error = types.SimpleNamespace(
         StripeError=StripeError,
+        InvalidRequestError=InvalidRequestError,
         SignatureVerificationError=SignatureVerificationError,
     )
     stripe.Webhook = _Webhook
@@ -88,6 +104,7 @@ def _install_stripe_stub() -> None:
     stripe.Invoice = _Invoice
     stripe.Event = _Event
     stripe.Price = _Price
+    stripe.Product = _Product
     stripe.http_client = types.SimpleNamespace(RequestsClient=_RequestsClient)
     stripe.api_key = None
     stripe.api_version = None

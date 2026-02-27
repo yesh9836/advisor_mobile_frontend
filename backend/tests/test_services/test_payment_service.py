@@ -154,3 +154,48 @@ def test_checkout_session_idempotency_key_rejects_invalid_retry_token():
 
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == "Invalid checkout retry token"
+
+
+@pytest.mark.unit
+def test_deactivate_stripe_plan_artifacts_deactivates_price_and_product(monkeypatch):
+    monkeypatch.setattr("app.services.payment_service.settings.STRIPE_SECRET_KEY", "sk_test_123")
+    captured = {}
+
+    def _mock_price_modify(price_id, **kwargs):
+        captured["price_id"] = price_id
+        captured["price_kwargs"] = kwargs
+        return {"id": price_id, "active": kwargs.get("active", True)}
+
+    def _mock_product_modify(product_id, **kwargs):
+        captured["product_id"] = product_id
+        captured["product_kwargs"] = kwargs
+        return {"id": product_id, "active": kwargs.get("active", True)}
+
+    monkeypatch.setattr("app.services.payment_service.stripe.Price.modify", _mock_price_modify)
+    monkeypatch.setattr("app.services.payment_service.stripe.Product.modify", _mock_product_modify)
+
+    result = PaymentService.deactivate_stripe_plan_artifacts(
+        stripe_price_id="price_cleanup_123",
+        stripe_product_id="prod_cleanup_123",
+    )
+    assert result == {"price_deactivated": True, "product_deactivated": True}
+    assert captured["price_id"] == "price_cleanup_123"
+    assert captured["price_kwargs"] == {"active": False}
+    assert captured["product_id"] == "prod_cleanup_123"
+    assert captured["product_kwargs"] == {"active": False}
+
+
+@pytest.mark.unit
+def test_deactivate_stripe_plan_artifacts_raises_runtime_error_on_stripe_failure(monkeypatch):
+    monkeypatch.setattr("app.services.payment_service.settings.STRIPE_SECRET_KEY", "sk_test_123")
+    monkeypatch.setattr(
+        "app.services.payment_service.stripe.Price.modify",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(stripe.error.StripeError("rate limited")),
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        PaymentService.deactivate_stripe_plan_artifacts(
+            stripe_price_id="price_cleanup_fail",
+            stripe_product_id=None,
+        )
+    assert "price:price_cleanup_fail" in str(exc_info.value)
