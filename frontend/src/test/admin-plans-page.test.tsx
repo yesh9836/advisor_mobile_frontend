@@ -48,7 +48,7 @@ describe("PlansPage", () => {
       items: [buildPlan()],
       total: 1,
       page: 1,
-      size: 100,
+      size: 20,
     });
     createAdminPlan.mockResolvedValue(buildPlan({ id: 8, name: "Growth 40" }));
     updateAdminPlan.mockResolvedValue(buildPlan({ name: "Growth 30", credits_total: 30 }));
@@ -64,7 +64,7 @@ describe("PlansPage", () => {
     );
 
     expect(await screen.findByText("Growth 25")).toBeInTheDocument();
-    expect(getAdminPlans).toHaveBeenCalledWith(1, 100, {
+    expect(getAdminPlans).toHaveBeenCalledWith(1, 20, {
       archived: "all",
       search: "",
     });
@@ -151,7 +151,7 @@ describe("PlansPage", () => {
       items: [buildPlan({ is_archived: true, archived_at: "2026-02-27T10:00:00Z" })],
       total: 1,
       page: 1,
-      size: 100,
+      size: 20,
     });
 
     render(
@@ -166,5 +166,39 @@ describe("PlansPage", () => {
     await waitFor(() => {
       expect(unarchiveAdminPlan).toHaveBeenCalledWith(7);
     });
+  });
+
+  it("loads the next page when pagination advances", async () => {
+    getAdminPlans.mockReset();
+    getAdminPlans
+      .mockResolvedValueOnce({
+        items: [buildPlan({ id: 7, name: "Growth 25" })],
+        total: 21,
+        page: 1,
+        size: 20,
+      })
+      .mockResolvedValueOnce({
+        items: [buildPlan({ id: 8, name: "Growth 40" })],
+        total: 21,
+        page: 2,
+        size: 20,
+      });
+
+    render(
+      <MemoryRouter>
+        <PlansPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Growth 25")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    await waitFor(() => {
+      expect(getAdminPlans).toHaveBeenNthCalledWith(2, 2, 20, {
+        archived: "all",
+        search: "",
+      });
+    });
+    expect(await screen.findByText("Growth 40")).toBeInTheDocument();
   });
 });
