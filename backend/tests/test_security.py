@@ -49,6 +49,19 @@ def _production_settings_kwargs(**overrides):
     return kwargs
 
 
+def _find_sensitive_health_keys(payload):
+    found: list[str] = []
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            if key in {"error", "last_error"}:
+                found.append(key)
+            found.extend(_find_sensitive_health_keys(value))
+    elif isinstance(payload, list):
+        for item in payload:
+            found.extend(_find_sensitive_health_keys(item))
+    return found
+
+
 @pytest.fixture(autouse=True)
 def reset_rate_limit_observability():
     reset_rate_limit_metrics()
@@ -271,9 +284,31 @@ def test_health_ready_reports_503_when_database_probe_is_unhealthy(client, monke
     payload = response.json()
     assert payload["status"] == "unhealthy"
     assert payload["checks"]["database"]["status"] == "unhealthy"
-    assert payload["checks"]["database"]["error"] == "db unavailable"
     assert payload["checks"]["notification_outbox_pipeline"]["reason"] == "database_unavailable"
     assert payload["checks"]["stripe_webhook_pipeline"]["reason"] == "database_unavailable"
+    assert _find_sensitive_health_keys(payload) == []
+
+
+@pytest.mark.integration
+def test_health_ready_redacts_notification_worker_last_error(client, db, monkeypatch):
+    monkeypatch.setattr(settings, "NOTIFICATIONS_ENABLED", True)
+    monkeypatch.setattr(settings, "NOTIFICATION_OUTBOX_HEALTH_HEARTBEAT_MAX_AGE_SECONDS", 600)
+    now = utcnow()
+    db.add(
+        NotificationOutboxWorkerHeartbeat(
+            source="notification_outbox_worker",
+            last_started_at=now,
+            last_completed_at=now,
+            last_success_at=now,
+            last_error="provider outage",
+        )
+    )
+    db.commit()
+
+    response = client.get("/health/ready")
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert _find_sensitive_health_keys(payload) == []
 
 
 @pytest.mark.integration

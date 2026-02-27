@@ -782,6 +782,70 @@ def test_admin_plan_list_filters(client, db, user_factory, auth_headers, plan_fa
     assert future_plan.id not in effective_ids
 
 
+def test_admin_plan_list_pagination_and_managed_offer_exclusion(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+    plan_factory,
+):
+    _admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+
+    paged_plans = []
+    for index in range(5):
+        plan = plan_factory(
+            name=f"PagedPlan{index}",
+            stripe_price_id=f"price_paged_plan_{index}",
+        )
+        plan.features = {"credits_total": 10, "catalog_visible": True}
+        paged_plans.append(plan)
+
+    managed_plan = plan_factory(
+        name="PagedPlan Managed",
+        stripe_price_id="price_paged_plan_managed",
+    )
+    managed_plan.features = {
+        "managed_by": "first_purchase_offer",
+        "catalog_visible": False,
+    }
+    db.commit()
+
+    page_one = client.get(
+        "/api/v1/admin/plans?page=1&size=2&search=PagedPlan",
+        headers=admin_headers,
+    )
+    assert page_one.status_code == 200, page_one.text
+    page_one_payload = page_one.json()
+    assert page_one_payload["total"] == 5
+    assert len(page_one_payload["items"]) == 2
+
+    page_two = client.get(
+        "/api/v1/admin/plans?page=2&size=2&search=PagedPlan",
+        headers=admin_headers,
+    )
+    assert page_two.status_code == 200, page_two.text
+    page_two_payload = page_two.json()
+    assert page_two_payload["total"] == 5
+    assert len(page_two_payload["items"]) == 2
+
+    page_three = client.get(
+        "/api/v1/admin/plans?page=3&size=2&search=PagedPlan",
+        headers=admin_headers,
+    )
+    assert page_three.status_code == 200, page_three.text
+    page_three_payload = page_three.json()
+    assert page_three_payload["total"] == 5
+    assert len(page_three_payload["items"]) == 1
+    assert {
+        item["id"]
+        for item in [*page_one_payload["items"], *page_two_payload["items"], *page_three_payload["items"]]
+    } == {int(plan.id) for plan in paged_plans}
+    assert all(
+        item["id"] != managed_plan.id
+        for item in [*page_one_payload["items"], *page_two_payload["items"], *page_three_payload["items"]]
+    )
+
+
 def test_admin_dashboard_counts_match_seeded_data(
     client,
     db,
