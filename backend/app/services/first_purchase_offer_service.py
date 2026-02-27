@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 from uuid import uuid4
 
 from fastapi import HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.currency import USD_CURRENCY, require_usd_currency
@@ -72,6 +73,9 @@ class FirstPurchaseOfferService:
     REJECTION_OFFER_CHECKOUT_MISMATCH = "OFFER_CHECKOUT_MISMATCH"
     REJECTION_LICENSE_STATES_UNAVAILABLE = "LICENSE_STATES_UNAVAILABLE"
     REJECTION_INVENTORY_UNAVAILABLE = "INVENTORY_UNAVAILABLE"
+    _MANAGED_PACKAGE_NAME_CONFLICT_DETAIL = (
+        "Managed first-purchase add-on package name is already in use by another plan"
+    )
 
     @staticmethod
     def _require_offer_currency(value: Optional[str]) -> str:
@@ -149,6 +153,107 @@ class FirstPurchaseOfferService:
         return package.features.get("managed_by") == "first_purchase_offer"
 
     @staticmethod
+    def _build_internal_offer_package_name(
+        *,
+        config_id: int,
+        offer_credits_total: int,
+    ) -> str:
+        return f"First Purchase Add-on {int(config_id)} (+{int(offer_credits_total)} leads)"
+
+    @staticmethod
+    def _build_internal_offer_package_name_prefix(*, config_id: int) -> str:
+        return f"First Purchase Add-on {int(config_id)} ("
+
+    @staticmethod
+    def _build_internal_offer_package_fallback_name(*, config_id: int) -> str:
+        return f"First Purchase Add-on {int(config_id)} (managed {uuid4().hex[:6]})"
+
+    @staticmethod
+    def _is_duplicate_managed_package_name_integrity_error(exc: IntegrityError) -> bool:
+        details = " ".join(
+            [
+                str(exc).lower(),
+                str(getattr(exc, "orig", "")).lower(),
+                str(getattr(exc, "statement", "")).lower(),
+                str(getattr(exc, "params", "")).lower(),
+            ]
+        )
+        has_duplicate_marker = any(
+            marker in details
+            for marker in (
+                "duplicate",
+                "duplicate entry",
+                "duplicate key value",
+                "unique constraint",
+                "unique constraint failed",
+            )
+        )
+        has_package_name_marker = any(
+            marker in details
+            for marker in (
+                "lead_packages",
+                "ix_lead_packages_name",
+                "lead_packages.name",
+            )
+        )
+        return has_duplicate_marker and has_package_name_marker
+
+    @staticmethod
+    def _resolve_managed_package_when_link_missing(
+        db: Session,
+        *,
+        config: FirstPurchaseAddonOffer,
+        expected_name: str,
+    ) -> Optional[LeadPackage]:
+        exact_name_row = db.query(LeadPackage).filter(LeadPackage.name == expected_name).first()
+        if exact_name_row is not None:
+            if FirstPurchaseOfferService._is_managed_internal_offer_package(exact_name_row):
+                return exact_name_row
+
+        name_prefix = FirstPurchaseOfferService._build_internal_offer_package_name_prefix(config_id=int(config.id))
+        prefix_rows = (
+            db.query(LeadPackage)
+            .filter(LeadPackage.name.like(f"{name_prefix}%"))
+            .order_by(LeadPackage.id.desc())
+            .all()
+        )
+        managed_candidates = [
+            row for row in prefix_rows if FirstPurchaseOfferService._is_managed_internal_offer_package(row)
+        ]
+        if not managed_candidates:
+            return None
+
+        for row in managed_candidates:
+            features = row.features if isinstance(row.features, dict) else {}
+            if int(features.get("managed_config_id") or 0) == int(config.id):
+                return row
+        return managed_candidates[0]
+
+    @staticmethod
+    def _apply_managed_offer_package_values(
+        *,
+        offer_package: LeadPackage,
+        config: FirstPurchaseAddonOffer,
+        trigger_package: LeadPackage,
+        offer_currency: str,
+        expected_name: str,
+    ) -> None:
+        offer_package.price_cents = int(config.offer_price_cents or 0)
+        offer_package.currency = offer_currency
+        offer_package.daily_download_limit = int(config.offer_credits_total or 0)
+        if not str(offer_package.name or "").strip():
+            offer_package.name = expected_name
+        offer_package.state_limit = trigger_package.state_limit
+        existing_features = offer_package.features if isinstance(offer_package.features, dict) else {}
+        offer_package.features = {
+            **existing_features,
+            "managed_by": "first_purchase_offer",
+            "managed_config_id": int(config.id),
+            "catalog_visible": False,
+            "trigger_package_id": int(trigger_package.id),
+        }
+
+    @staticmethod
     def _upsert_internal_offer_package(
         db: Session,
         *,
@@ -175,9 +280,19 @@ class FirstPurchaseOfferService:
                 )
 
         offer_currency = FirstPurchaseOfferService._require_offer_currency(config.offer_currency)
+        expected_name = FirstPurchaseOfferService._build_internal_offer_package_name(
+            config_id=int(config.id),
+            offer_credits_total=int(config.offer_credits_total),
+        )
         if offer_package is None:
-            offer_package = LeadPackage(
-                name=f"First Purchase Add-on {int(config.id)} (+{int(config.offer_credits_total)} leads)",
+            offer_package = FirstPurchaseOfferService._resolve_managed_package_when_link_missing(
+                db,
+                config=config,
+                expected_name=expected_name,
+            )
+        if offer_package is None:
+            new_offer_package = LeadPackage(
+                name=expected_name,
                 price_cents=int(config.offer_price_cents),
                 currency=offer_currency,
                 stripe_price_id=f"dynamic_addon_{uuid4().hex[:24]}",
@@ -185,26 +300,60 @@ class FirstPurchaseOfferService:
                 daily_download_limit=int(config.offer_credits_total),
                 features={
                     "managed_by": "first_purchase_offer",
+                    "managed_config_id": int(config.id),
                     "catalog_visible": False,
                     "trigger_package_id": int(trigger_package.id),
                 },
             )
-            db.add(offer_package)
-            db.flush()
-            return offer_package
+            try:
+                # Savepoint keeps parent transaction alive for duplicate-name races.
+                with db.begin_nested():
+                    db.add(new_offer_package)
+                    db.flush()
+                return new_offer_package
+            except IntegrityError as exc:
+                if not FirstPurchaseOfferService._is_duplicate_managed_package_name_integrity_error(exc):
+                    raise
+                offer_package = FirstPurchaseOfferService._resolve_managed_package_when_link_missing(
+                    db,
+                    config=config,
+                    expected_name=expected_name,
+                )
+                if offer_package is None:
+                    fallback_offer_package = LeadPackage(
+                        name=FirstPurchaseOfferService._build_internal_offer_package_fallback_name(
+                            config_id=int(config.id)
+                        ),
+                        price_cents=int(config.offer_price_cents),
+                        currency=offer_currency,
+                        stripe_price_id=f"dynamic_addon_{uuid4().hex[:24]}",
+                        state_limit=trigger_package.state_limit,
+                        daily_download_limit=int(config.offer_credits_total),
+                        features={
+                            "managed_by": "first_purchase_offer",
+                            "managed_config_id": int(config.id),
+                            "catalog_visible": False,
+                            "trigger_package_id": int(trigger_package.id),
+                        },
+                    )
+                    try:
+                        with db.begin_nested():
+                            db.add(fallback_offer_package)
+                            db.flush()
+                        return fallback_offer_package
+                    except IntegrityError:
+                        raise HTTPException(
+                            status_code=409,
+                            detail=FirstPurchaseOfferService._MANAGED_PACKAGE_NAME_CONFLICT_DETAIL,
+                        ) from exc
 
-        offer_package.price_cents = int(config.offer_price_cents)
-        offer_package.currency = offer_currency
-        offer_package.daily_download_limit = int(config.offer_credits_total)
-        offer_package.name = f"First Purchase Add-on {int(config.id)} (+{int(config.offer_credits_total)} leads)"
-        offer_package.state_limit = trigger_package.state_limit
-        existing_features = offer_package.features if isinstance(offer_package.features, dict) else {}
-        offer_package.features = {
-            **existing_features,
-            "managed_by": "first_purchase_offer",
-            "catalog_visible": False,
-            "trigger_package_id": int(trigger_package.id),
-        }
+        FirstPurchaseOfferService._apply_managed_offer_package_values(
+            offer_package=offer_package,
+            config=config,
+            trigger_package=trigger_package,
+            offer_currency=offer_currency,
+            expected_name=expected_name,
+        )
         db.add(offer_package)
         db.flush()
         return offer_package
@@ -344,8 +493,6 @@ class FirstPurchaseOfferService:
                     trigger_package=trigger_package,
                 )
                 config.offer_package_id = int(managed_offer_package.id)
-            elif not config.is_enabled:
-                config.offer_package_id = None
 
             db.add(config)
             db.commit()
@@ -353,6 +500,15 @@ class FirstPurchaseOfferService:
         except HTTPException:
             db.rollback()
             raise
+        except IntegrityError as exc:
+            db.rollback()
+            if FirstPurchaseOfferService._is_duplicate_managed_package_name_integrity_error(exc):
+                raise HTTPException(
+                    status_code=409,
+                    detail=FirstPurchaseOfferService._MANAGED_PACKAGE_NAME_CONFLICT_DETAIL,
+                ) from exc
+            logger.error("Failed to update first-purchase add-on offer config with integrity error: %s", exc)
+            raise HTTPException(status_code=500, detail="Failed to save first-purchase add-on offer")
         except Exception as exc:
             db.rollback()
             logger.error("Failed to update first-purchase add-on offer config: %s", exc)
