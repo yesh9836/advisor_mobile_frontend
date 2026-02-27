@@ -73,9 +73,14 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
   }, []);
 
   const logout = useCallback(async () => {
-    await logoutUser();
-    setUser(null);
-    setError(null);
+    try {
+      await logoutUser();
+    } catch (error) {
+      void error;
+    } finally {
+      setUser(null);
+      setError(null);
+    }
   }, []);
 
   useEffect(() => {
