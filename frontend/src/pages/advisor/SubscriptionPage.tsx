@@ -90,6 +90,8 @@ const OFFER_REJECTION_MESSAGE_BY_CODE: Record<string, string> = {
     "Add-on checkout is temporarily unavailable because live inventory is below the required threshold.",
   LICENSE_STATES_UNAVAILABLE:
     "Add-on checkout requires at least one verified license state with matching inventory.",
+  OFFER_NOT_FIRST_PURCHASE:
+    "First-purchase add-on is only available after your first completed checkout.",
 };
 
 const resolveOfferCheckoutErrorMessage = (error: unknown): string => {
@@ -337,6 +339,17 @@ const SubscriptionPage = () => {
         if (!matched) {
           setAddOnOffer(null);
           if (syncAttempt < CHECKOUT_SYNC_MAX_ATTEMPTS - 1) {
+            syncAttempt += 1;
+            retryTimerId = setTimeout(() => {
+              void loadCheckoutNotice();
+            }, CHECKOUT_SYNC_RETRY_DELAY_MS);
+          }
+          return;
+        }
+
+        if (matched.status !== "completed") {
+          setAddOnOffer(null);
+          if (matched.status === "pending" && syncAttempt < CHECKOUT_SYNC_MAX_ATTEMPTS - 1) {
             syncAttempt += 1;
             retryTimerId = setTimeout(() => {
               void loadCheckoutNotice();
