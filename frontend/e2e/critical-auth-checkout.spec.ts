@@ -165,7 +165,7 @@ const setupApiMockRouter = async (
   };
 };
 
-test.describe("critical auth and checkout browser journeys", () => {
+test.describe("critical auth and checkout browser journeys @mocked", () => {
   test("uses auth cookies and CSRF header when starting checkout", async ({
     page,
     baseURL,
