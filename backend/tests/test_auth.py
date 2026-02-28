@@ -6,7 +6,12 @@ from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
-from app.core.security import create_access_token, hash_password_reset_token, hash_refresh_token
+from app.core.security import (
+    create_access_token,
+    create_password_reset_token,
+    hash_password_reset_token,
+    hash_refresh_token,
+)
 from app.db.timezone import utcnow
 from app.models.auth_session import RefreshTokenSession
 from app.models.notification import NotificationOutbox
@@ -726,6 +731,130 @@ def test_password_reset_confirm_updates_password_revokes_old_family_and_marks_to
         cookies={settings.AUTH_ACCESS_COOKIE_NAME: old_access},
     )
     assert old_family_me.status_code == 401
+
+
+@pytest.mark.integration
+def test_password_reset_request_invalidates_prior_active_tokens(client, db):
+    payload = {
+        "email": "reset.single-active@example.com",
+        "password": "ResetSingleActive123!",
+        "name": "Reset Single Active",
+        "phone": "555-1670",
+    }
+    register = client.post("/api/v1/auth/register", json=payload)
+    assert register.status_code == 201, register.text
+    user_id = register.json()["id"]
+
+    first_request = client.post(
+        "/api/v1/auth/password-reset/request",
+        json={"email": payload["email"]},
+    )
+    assert first_request.status_code == 202, first_request.text
+    first_token = _extract_password_reset_token_from_outbox(db, user_id=user_id)
+    first_token_hash = hash_password_reset_token(first_token)
+
+    second_request = client.post(
+        "/api/v1/auth/password-reset/request",
+        json={"email": payload["email"]},
+    )
+    assert second_request.status_code == 202, second_request.text
+    second_token = _extract_password_reset_token_from_outbox(db, user_id=user_id)
+    second_token_hash = hash_password_reset_token(second_token)
+    assert second_token_hash != first_token_hash
+
+    first_row = (
+        db.query(PasswordResetToken)
+        .filter(PasswordResetToken.token_hash == first_token_hash)
+        .first()
+    )
+    second_row = (
+        db.query(PasswordResetToken)
+        .filter(PasswordResetToken.token_hash == second_token_hash)
+        .first()
+    )
+    assert first_row is not None
+    assert second_row is not None
+    assert first_row.used_at is not None
+    assert second_row.used_at is None
+
+    active_token_count = (
+        db.query(PasswordResetToken)
+        .filter(
+            PasswordResetToken.user_id == user_id,
+            PasswordResetToken.used_at.is_(None),
+            PasswordResetToken.expires_at > utcnow(),
+        )
+        .count()
+    )
+    assert active_token_count == 1
+
+    old_confirm = client.post(
+        "/api/v1/auth/password-reset/confirm",
+        json={"token": first_token, "new_password": "ResetSingleOld123!"},
+    )
+    assert old_confirm.status_code == 400
+    assert old_confirm.json()["detail"] == "Invalid or expired password reset token"
+
+    new_confirm = client.post(
+        "/api/v1/auth/password-reset/confirm",
+        json={"token": second_token, "new_password": "ResetSingleNew123!"},
+    )
+    assert new_confirm.status_code == 204, new_confirm.text
+
+
+@pytest.mark.integration
+def test_password_reset_confirm_marks_other_active_tokens_used(client, db):
+    payload = {
+        "email": "reset.confirm.all@example.com",
+        "password": "ResetConfirmAll123!",
+        "name": "Reset Confirm All",
+        "phone": "555-1671",
+    }
+    register = client.post("/api/v1/auth/register", json=payload)
+    assert register.status_code == 201, register.text
+    user_id = register.json()["id"]
+
+    request_reset = client.post(
+        "/api/v1/auth/password-reset/request",
+        json={"email": payload["email"]},
+    )
+    assert request_reset.status_code == 202, request_reset.text
+    primary_token = _extract_password_reset_token_from_outbox(db, user_id=user_id)
+
+    secondary_raw_token = create_password_reset_token()
+    secondary_hash = hash_password_reset_token(secondary_raw_token)
+    db.add(
+        PasswordResetToken(
+            user_id=user_id,
+            token_hash=secondary_hash,
+            expires_at=utcnow() + timedelta(minutes=settings.PASSWORD_RESET_TOKEN_EXPIRE_MINUTES),
+        )
+    )
+    db.commit()
+
+    secondary_row = (
+        db.query(PasswordResetToken)
+        .filter(PasswordResetToken.token_hash == secondary_hash)
+        .first()
+    )
+    assert secondary_row is not None
+    assert secondary_row.used_at is None
+
+    confirm = client.post(
+        "/api/v1/auth/password-reset/confirm",
+        json={"token": primary_token, "new_password": "ResetConfirmAllNew123!"},
+    )
+    assert confirm.status_code == 204, confirm.text
+
+    db.refresh(secondary_row)
+    assert secondary_row.used_at is not None
+
+    secondary_confirm = client.post(
+        "/api/v1/auth/password-reset/confirm",
+        json={"token": secondary_raw_token, "new_password": "ResetConfirmAllAnother123!"},
+    )
+    assert secondary_confirm.status_code == 400
+    assert secondary_confirm.json()["detail"] == "Invalid or expired password reset token"
 
 
 @pytest.mark.integration
