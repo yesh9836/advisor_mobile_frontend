@@ -115,6 +115,99 @@ def test_process_outbox_batch_retries_then_fails_after_max_attempts(db, monkeypa
 
 
 @pytest.mark.integration
+def test_process_outbox_batch_skips_cleanup_when_artifact_is_referenced_by_unarchived_plan(
+    db,
+    monkeypatch,
+    plan_factory,
+):
+    plan = plan_factory(
+        name="Cleanup Guard Active Plan",
+        stripe_price_id="price_cleanup_guard_active",
+    )
+    plan.stripe_product_id = "prod_cleanup_guard_active"
+    db.add(plan)
+    db.commit()
+
+    StripePlanCleanupOutboxService.enqueue_cleanup(
+        db=db,
+        source="admin_plan_update",
+        stripe_price_id="price_cleanup_guard_active",
+        stripe_product_id="prod_cleanup_guard_active",
+    )
+
+    called = {"count": 0}
+
+    def _should_not_deactivate(**_kwargs):
+        called["count"] += 1
+        raise AssertionError("deactivate_stripe_plan_artifacts should not be called for active references")
+
+    monkeypatch.setattr(
+        "app.services.stripe_plan_cleanup_outbox_service.PaymentService.deactivate_stripe_plan_artifacts",
+        _should_not_deactivate,
+    )
+
+    summary = StripePlanCleanupOutboxService.process_outbox_batch(db=db, batch_size=10)
+    assert summary == {"selected": 1, "processed": 0, "retried": 0, "failed": 1}
+    assert called["count"] == 0
+
+    row = (
+        db.query(StripePlanCleanupOutbox)
+        .filter(StripePlanCleanupOutbox.stripe_price_id == "price_cleanup_guard_active")
+        .first()
+    )
+    assert row is not None
+    assert row.status == "failed"
+    assert row.last_error == "cleanup skipped: stripe artifact is referenced by an unarchived lead package"
+
+
+@pytest.mark.integration
+def test_process_outbox_batch_deactivates_when_only_archived_plan_references_artifact(
+    db,
+    monkeypatch,
+    plan_factory,
+):
+    plan = plan_factory(
+        name="Cleanup Guard Archived Plan",
+        stripe_price_id="price_cleanup_guard_archived",
+    )
+    plan.stripe_product_id = "prod_cleanup_guard_archived"
+    plan.is_archived = True
+    plan.archived_at = datetime.now(timezone.utc)
+    db.add(plan)
+    db.commit()
+
+    StripePlanCleanupOutboxService.enqueue_cleanup(
+        db=db,
+        source="admin_plan_archive",
+        stripe_price_id="price_cleanup_guard_archived",
+        stripe_product_id="prod_cleanup_guard_archived",
+    )
+
+    called = {"count": 0}
+
+    def _deactivate(**_kwargs):
+        called["count"] += 1
+        return {"price_deactivated": True, "product_deactivated": True}
+
+    monkeypatch.setattr(
+        "app.services.stripe_plan_cleanup_outbox_service.PaymentService.deactivate_stripe_plan_artifacts",
+        _deactivate,
+    )
+
+    summary = StripePlanCleanupOutboxService.process_outbox_batch(db=db, batch_size=10)
+    assert summary == {"selected": 1, "processed": 1, "retried": 0, "failed": 0}
+    assert called["count"] == 1
+
+    row = (
+        db.query(StripePlanCleanupOutbox)
+        .filter(StripePlanCleanupOutbox.stripe_price_id == "price_cleanup_guard_archived")
+        .first()
+    )
+    assert row is not None
+    assert row.status == "processed"
+
+
+@pytest.mark.integration
 def test_reclaim_stale_processing_rows_requeues_or_fails_based_on_attempts(db):
     now = datetime.now(timezone.utc)
     requeue_row = StripePlanCleanupOutbox(
