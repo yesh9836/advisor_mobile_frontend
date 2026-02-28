@@ -604,6 +604,27 @@ class AuthService:
         )
 
     @staticmethod
+    def _invalidate_active_password_reset_tokens(
+        db: Session,
+        *,
+        user_id: int,
+        now: datetime,
+        exclude_token_hash: str | None = None,
+    ) -> int:
+        query = db.query(PasswordResetToken).filter(
+            PasswordResetToken.user_id == user_id,
+            PasswordResetToken.used_at.is_(None),
+            PasswordResetToken.expires_at > now,
+        )
+        if exclude_token_hash:
+            query = query.filter(PasswordResetToken.token_hash != exclude_token_hash)
+        updated_rows = query.update(
+            {PasswordResetToken.used_at: now},
+            synchronize_session=False,
+        )
+        return int(updated_rows or 0)
+
+    @staticmethod
     def request_password_reset(
         db: Session,
         payload: PasswordResetRequest,
@@ -643,6 +664,11 @@ class AuthService:
                 return
             if user.email != normalized_email:
                 user.email = normalized_email
+            AuthService._invalidate_active_password_reset_tokens(
+                db,
+                user_id=user.id,
+                now=now,
+            )
 
             raw_token = create_password_reset_token()
             token_hash = hash_password_reset_token(raw_token)
@@ -703,6 +729,12 @@ class AuthService:
 
             user.password_hash = get_password_hash(payload.new_password)
             token_row.used_at = now
+            AuthService._invalidate_active_password_reset_tokens(
+                db,
+                user_id=token_row.user_id,
+                now=now,
+                exclude_token_hash=token_row.token_hash,
+            )
             AuthService.revoke_all_user_refresh_sessions(
                 db,
                 user_id=user.id,
