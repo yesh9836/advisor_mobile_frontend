@@ -116,6 +116,14 @@ class EmailService:
                     smtp.starttls(context=ssl.create_default_context())
                     smtp.ehlo()
                 except smtplib.SMTPNotSupportedError:
+                    if settings.is_production:
+                        logger.error(
+                            "SMTP server does not support STARTTLS in production; refusing plaintext send"
+                        )
+                        return EmailSendResult(
+                            success=False,
+                            error="SMTP TLS is required in production",
+                        )
                     logger.warning("SMTP server does not support STARTTLS; sending without TLS")
                 if settings.SMTP_USER and settings.SMTP_PASSWORD:
                     smtp.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
