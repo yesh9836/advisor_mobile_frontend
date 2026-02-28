@@ -3,12 +3,13 @@ import logging
 from datetime import timedelta
 from typing import Any, Dict, Optional
 
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.timezone import utcnow
-from app.models.purchase import StripePlanCleanupOutbox
+from app.models.purchase import LeadPackage, StripePlanCleanupOutbox
 from app.services.metrics_service import MetricsService
 from app.services.payment_service import PaymentService
 
@@ -92,6 +93,32 @@ class StripePlanCleanupOutboxService:
         cap = max(int(settings.STRIPE_PLAN_CLEANUP_RETRY_MAX_SECONDS), base)
         exponent = max(int(attempt_count) - 1, 0)
         return min(base * (2 ** exponent), cap)
+
+    @staticmethod
+    def _is_referenced_by_unarchived_plan(
+        db: Session,
+        *,
+        stripe_price_id: Optional[str],
+        stripe_product_id: Optional[str],
+    ) -> bool:
+        filters = []
+        if stripe_price_id:
+            filters.append(LeadPackage.stripe_price_id == stripe_price_id)
+        if stripe_product_id:
+            filters.append(LeadPackage.stripe_product_id == stripe_product_id)
+        if not filters:
+            return False
+
+        existing_plan = (
+            db.query(LeadPackage.id)
+            .filter(
+                LeadPackage.is_archived.is_(False),
+                or_(*filters),
+            )
+            .limit(1)
+            .first()
+        )
+        return existing_plan is not None
 
     @staticmethod
     def reclaim_stale_processing_rows(
@@ -189,6 +216,34 @@ class StripePlanCleanupOutboxService:
         for row in rows:
             source_tag = str(row.source or "unknown")
             try:
+                if StripePlanCleanupOutboxService._is_referenced_by_unarchived_plan(
+                    db,
+                    stripe_price_id=row.stripe_price_id,
+                    stripe_product_id=row.stripe_product_id,
+                ):
+                    row.status = "failed"
+                    row.locked_at = None
+                    row.next_retry_at = now
+                    row.last_error = (
+                        "cleanup skipped: stripe artifact is referenced by an unarchived lead package"
+                    )
+                    failed_count += 1
+                    MetricsService.increment(
+                        "stripe_plan_cleanup_skipped_active_reference_total",
+                        tags={"source": source_tag},
+                    )
+                    logger.warning(
+                        (
+                            "Stripe cleanup skipped; artifact still referenced by unarchived plan "
+                            "outbox_id=%s source=%s price_id=%s product_id=%s"
+                        ),
+                        row.id,
+                        source_tag,
+                        row.stripe_price_id,
+                        row.stripe_product_id,
+                    )
+                    continue
+
                 PaymentService.deactivate_stripe_plan_artifacts(
                     stripe_price_id=row.stripe_price_id,
                     stripe_product_id=row.stripe_product_id,
