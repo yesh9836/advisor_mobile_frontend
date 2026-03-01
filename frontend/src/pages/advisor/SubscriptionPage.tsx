@@ -614,10 +614,6 @@ const SubscriptionPage = () => {
                     ? "License Verification Required"
                     : "Checkout"}
               </button>
-
-              <button type="button" className="btn btn-secondary">
-                View Details
-              </button>
             </article>
           ))
         )}

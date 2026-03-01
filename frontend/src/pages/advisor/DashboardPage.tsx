@@ -357,14 +357,12 @@ const DashboardPage = () => {
           <div className="metric-value">
             {loading ? "..." : (summary?.leads_delivered_7_days ?? 0)}
           </div>
-          <div className="metric-note">Pulled from current lead records</div>
         </article>
         <article className="panel">
           <div className="metric-title">Appointments Set (7 days)</div>
           <div className="metric-value">
             {loading ? "..." : (summary?.appointments_set_7_days ?? 0)}
           </div>
-          <div className="metric-note">From saved lead outcomes</div>
         </article>
         <article className="panel">
           <div className="metric-title">Cost per Appointment</div>
@@ -375,9 +373,6 @@ const DashboardPage = () => {
                   summary?.cost_per_appointment ?? 0,
                   summary?.currency ?? "USD",
                 )}
-          </div>
-          <div className="metric-note">
-            Current formula: plan price / appointments set (7 days)
           </div>
         </article>
       </section>
@@ -474,13 +469,6 @@ const DashboardPage = () => {
                     ? settings.target_states.join(", ")
                     : "-"}
                 </strong>
-              </div>
-              <div>
-                Min assets: <strong>{settings?.min_assets ?? "Not set"}</strong>
-              </div>
-              <div>
-                Daily lead cap:{" "}
-                <strong>{settings?.daily_download_limit ?? "-"}</strong>
               </div>
             </div>
           </section>
