@@ -46,20 +46,30 @@ class NotificationTemplateService:
         *,
         app_name: str,
         recipient_name: Optional[str],
-        lead_display_name: str,
-        state_code: str,
+        delivered_count: int,
+        total_count: int,
         inbox_url: str,
     ) -> EmailTemplate:
         display_name = (recipient_name or "").strip() or "Advisor"
-        subject = f"{app_name}: New lead delivered ({state_code})"
+        normalized_total = max(int(total_count), 0)
+        normalized_delivered = max(int(delivered_count), 0)
+        if normalized_total > 0:
+            normalized_delivered = min(normalized_delivered, normalized_total)
+            progress_text = f"{normalized_delivered}/{normalized_total}"
+        else:
+            progress_text = str(normalized_delivered)
+
+        subject = f"{app_name}: Lead delivery update ({progress_text})"
         text_body = (
             f"Hi {display_name},\n\n"
-            f"A new lead was delivered to your inbox: {lead_display_name} ({state_code}).\n\n"
+            "You have a lead delivery update.\n\n"
+            f"Leads delivered: {progress_text}\n\n"
             f"Open your lead inbox: {inbox_url}\n"
         )
         html_body = (
             f"<p>Hi {display_name},</p>"
-            f"<p>A new lead was delivered to your inbox: <strong>{lead_display_name} ({state_code})</strong>.</p>"
+            "<p>You have a lead delivery update.</p>"
+            f"<p><strong>Leads delivered: {progress_text}</strong></p>"
             f"<p><a href=\"{inbox_url}\">Open your lead inbox</a></p>"
         )
         return EmailTemplate(subject=subject, text_body=text_body, html_body=html_body)
@@ -67,14 +77,21 @@ class NotificationTemplateService:
     @staticmethod
     def render_lead_delivery_sms(
         *,
-        app_name: str,
-        lead_display_name: str,
-        state_code: str,
-        inbox_url: str,
+        recipient_name: Optional[str],
+        delivered_count: int,
+        total_count: int,
     ) -> SmsTemplate:
+        display_name = (recipient_name or "").strip() or "Advisor"
+        normalized_total = max(int(total_count), 0)
+        normalized_delivered = max(int(delivered_count), 0)
+        if normalized_total > 0:
+            normalized_delivered = min(normalized_delivered, normalized_total)
+            progress_text = f"{normalized_delivered}/{normalized_total}"
+        else:
+            progress_text = str(normalized_delivered)
         return SmsTemplate(
             body=(
-                f"{app_name}: New lead delivered ({state_code}) - "
-                f"{lead_display_name}. Inbox: {inbox_url}"
+                f"{display_name}, {normalized_total} leads purchased "
+                f"({progress_text}) delivered. Check your account for details"
             )
         )

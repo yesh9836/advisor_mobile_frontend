@@ -629,6 +629,8 @@ class LeadService:
                     lead_ids=newly_assigned_ids,
                     purchase_id=int(purchase_id),
                     source_event=source_event,
+                    purchase_total_leads=requested_count,
+                    delivered_leads_count=assigned_count,
                 )
             AuditService.log_purchase_event(
                 actor_user_id=purchase.user_id,

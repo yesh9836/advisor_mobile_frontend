@@ -1243,12 +1243,16 @@ class SubscriptionService:
         ]
         notification_summary = {"enqueued_total": 0, "enqueued_email": 0, "enqueued_sms": 0}
         if purchase.status == "completed" and newly_assigned_lead_ids:
+            requested_count = int(allocation_summary.get("requested_count", 0) or 0)
+            assigned_count = int(allocation_summary.get("assigned_count", 0) or 0)
             notification_summary = NotificationService.enqueue_lead_delivery_notifications(
                 db=db,
                 user_id=int(purchase.user_id),
                 lead_ids=newly_assigned_lead_ids,
                 purchase_id=int(purchase.id) if purchase.id is not None else None,
                 source_event=notification_source_event,
+                purchase_total_leads=requested_count,
+                delivered_leads_count=assigned_count,
             )
 
         db.add(purchase)
