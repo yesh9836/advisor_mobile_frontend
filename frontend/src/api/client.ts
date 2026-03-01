@@ -4,6 +4,8 @@ import axios, {
   type InternalAxiosRequestConfig,
 } from "axios";
 
+import { APP_LOGIN_PATH, isAuthRoutePath } from "@/lib/app-path";
+
 export const AUTH_LOGOUT_EVENT = "auth:logout";
 
 const PUBLIC_AUTH_ENDPOINTS = [
@@ -114,8 +116,8 @@ const withCsrfHeader = (
 const dispatchForcedLogout = () => {
   window.dispatchEvent(new Event(AUTH_LOGOUT_EVENT));
 
-  if (window.location.pathname !== "/login" && window.location.pathname !== "/register") {
-    window.location.assign("/login");
+  if (!isAuthRoutePath(window.location.pathname)) {
+    window.location.assign(APP_LOGIN_PATH);
   }
 };
 
