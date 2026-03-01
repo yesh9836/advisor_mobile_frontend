@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.models.delivery_settings import AdvisorDeliverySettings
 from app.models.user import User
 from app.services.audit_service import AuditService
+from app.utils.phone import normalize_phone_number
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ class DeliverySettingsService:
     @staticmethod
     def get_warnings_for_user(user: User, settings: AdvisorDeliverySettings) -> List[str]:
         warnings: List[str] = []
-        if settings.sms_alerts_enabled and not (user.phone and user.phone.strip()):
+        if settings.sms_alerts_enabled and not normalize_phone_number(user.phone):
             warnings.append("SMS alerts are enabled, but no phone number is on file.")
         return warnings
 

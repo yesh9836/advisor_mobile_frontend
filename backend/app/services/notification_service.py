@@ -17,6 +17,7 @@ from app.services.email_service import EmailService
 from app.services.metrics_service import MetricsService
 from app.services.notification_template_service import NotificationTemplateService
 from app.services.sms_service import SmsService
+from app.utils.phone import normalize_phone_number
 
 logger = logging.getLogger(__name__)
 
@@ -154,10 +155,11 @@ class NotificationService:
             .filter(AdvisorDeliverySettings.user_id == user_id)
             .first()
         )
+        normalized_sms_phone = normalize_phone_number(user.phone)
         email_opt_in = bool(delivery_settings and delivery_settings.email_alerts_enabled)
         sms_opt_in = bool(delivery_settings and delivery_settings.sms_alerts_enabled)
         enable_email = settings.NOTIFICATION_EMAIL_ENABLED and email_opt_in and bool(user.email)
-        enable_sms = settings.NOTIFICATION_SMS_ENABLED and sms_opt_in and bool((user.phone or "").strip())
+        enable_sms = settings.NOTIFICATION_SMS_ENABLED and sms_opt_in and bool(normalized_sms_phone)
 
         if not enable_email and not enable_sms:
             return {"enqueued_total": 0, "enqueued_email": 0, "enqueued_sms": 0}
@@ -239,7 +241,7 @@ class NotificationService:
                     purchase_id=purchase_id,
                     channel="sms",
                     event_type=NotificationService.LEAD_DELIVERED_EVENT,
-                    recipient=(user.phone or "").strip(),
+                    recipient=normalized_sms_phone or "",
                     subject=None,
                     message_body=sms_template.body,
                     payload={
