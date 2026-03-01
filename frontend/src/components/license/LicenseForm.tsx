@@ -218,7 +218,7 @@ const LicenseForm = ({ onSubmitted }: LicenseFormProps) => {
           value={licenseType}
           onChange={(event) => setLicenseType(event.target.value)}
           className="w-full rounded-xl border border-[#d9e4f8] px-3 py-2 text-sm text-[#0a1633] focus:border-[#8ea4d8] focus:outline-none"
-          placeholder="Example: Series 65, Insurance Producer"
+          placeholder="Enter license type"
         />
       </label>
 
