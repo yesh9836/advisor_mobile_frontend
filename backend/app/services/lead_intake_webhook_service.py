@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.models.lead import Lead, LeadIntakeWebhookEvent
 from app.schemas.lead import LeadCreate
 from app.services.lead_service import LeadService, US_STATE_CODES
+from app.utils.phone import normalize_phone_number
 
 logger = logging.getLogger(__name__)
 
@@ -469,6 +470,8 @@ class LeadIntakeWebhookService:
             for key, value in lead_payload.items()
             if value is not None
         }
+        if "mobile_phone" in filtered_payload:
+            filtered_payload["mobile_phone"] = normalize_phone_number(filtered_payload["mobile_phone"])
 
         try:
             return LeadCreate.model_validate(filtered_payload)
