@@ -6,17 +6,16 @@ interface ErrorBoundaryProps {
 
 interface ErrorBoundaryState {
   hasError: boolean;
-  message: string;
 }
 
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public state: ErrorBoundaryState = {
     hasError: false,
-    message: "",
   };
 
   public static getDerivedStateFromError(error: Error): ErrorBoundaryState {
-    return { hasError: true, message: error.message };
+    void error;
+    return { hasError: true };
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
@@ -35,7 +34,9 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
             <h1 className="font-display text-xl font-semibold text-slate-900">
               Something went wrong
             </h1>
-            <p className="mt-2 text-sm text-slate-600">{this.state.message}</p>
+            <p className="mt-2 text-sm text-slate-600">
+              An unexpected error occurred. Please reload and try again.
+            </p>
             <button
               type="button"
               onClick={this.handleReload}
