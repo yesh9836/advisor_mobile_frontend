@@ -1323,30 +1323,45 @@ class LeadService:
             email_alerts_enabled = bool(delivery_settings.email_alerts_enabled)
             sms_alerts_enabled = bool(delivery_settings.sms_alerts_enabled)
 
-        leads_delivered_7_days = 0
-        appointments_set_7_days = 0
-        leads_delivered_7_days = (
-            db.query(func.count(func.distinct(LeadDownload.lead_id)))
-            .filter(LeadDownload.user_id == user.id)
-            .filter(LeadDownload.downloaded_at >= seven_days_ago)
-            .scalar()
-        ) or 0
-
-        recent_delivered_lead_ids = (
+        recent_owned_lead_ids = (
+            select(LeadOwnership.lead_id)
+            .filter(
+                LeadOwnership.user_id == user.id,
+                LeadOwnership.assigned_at >= seven_days_ago,
+            )
+            .distinct()
+        )
+        # Backward compatibility for legacy delivered rows that predate ownership rollout.
+        recent_legacy_downloaded_lead_ids = (
             select(LeadDownload.lead_id)
             .filter(
                 LeadDownload.user_id == user.id,
                 LeadDownload.downloaded_at >= seven_days_ago,
+                ~select(LeadOwnership.id)
+                .filter(
+                    LeadOwnership.user_id == user.id,
+                    LeadOwnership.lead_id == LeadDownload.lead_id,
+                )
+                .exists(),
             )
             .distinct()
         )
+        recent_delivered_lead_ids = (
+            recent_owned_lead_ids.union(recent_legacy_downloaded_lead_ids)
+        ).subquery(name="recent_delivered_lead_ids")
+
+        leads_delivered_7_days = (
+            db.query(func.count())
+            .select_from(recent_delivered_lead_ids)
+            .scalar()
+        ) or 0
 
         appointments_set_7_days = (
             db.query(func.count(func.distinct(LeadOutcome.lead_id)))
             .filter(
                 LeadOutcome.user_id == user.id,
                 LeadOutcome.status == "appointment_set",
-                LeadOutcome.lead_id.in_(recent_delivered_lead_ids),
+                LeadOutcome.lead_id.in_(select(recent_delivered_lead_ids.c.lead_id)),
             )
             .scalar()
         ) or 0
