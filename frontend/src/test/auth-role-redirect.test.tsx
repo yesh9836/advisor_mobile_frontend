@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -74,5 +74,27 @@ describe("Auth pages role-based redirect", () => {
     renderAuthRoute("/register");
 
     expect(await screen.findByText("Admin Dashboard")).toBeInTheDocument();
+  });
+
+  it("prefills register phone field with +1", () => {
+    mockUseAuth.mockReturnValue(baseAuth);
+
+    renderAuthRoute("/register");
+
+    const phoneInput = screen.getByLabelText("Phone");
+    expect(phoneInput).toHaveValue("+1");
+  });
+
+  it("normalizes register phone input to +1 digits only", async () => {
+    mockUseAuth.mockReturnValue(baseAuth);
+
+    renderAuthRoute("/register");
+
+    const phoneInput = screen.getByLabelText("Phone");
+    fireEvent.change(phoneInput, { target: { value: "+1 (305)-495-9490" } });
+
+    await waitFor(() => {
+      expect(phoneInput).toHaveValue("+13054959490");
+    });
   });
 });
