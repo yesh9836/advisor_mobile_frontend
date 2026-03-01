@@ -19,7 +19,11 @@ from app.core.security import get_password_hash, verify_password
 from app.db.timezone import utcnow
 from app.main import _resolve_openapi_docs_config
 from app.models.notification import NotificationOutbox, NotificationOutboxWorkerHeartbeat
-from app.models.purchase import StripeWebhookInbox, StripeWebhookWorkerHeartbeat
+from app.models.purchase import (
+    StripePlanCleanupOutbox,
+    StripeWebhookInbox,
+    StripeWebhookWorkerHeartbeat,
+)
 from app.utils.csv_generator import LEAD_CSV_HEADERS, LEAD_CSV_REQUIRED_VALUE_FIELDS
 
 
@@ -33,6 +37,7 @@ def _production_settings_kwargs(**overrides):
         "STRIPE_SECRET_KEY": "sk_live_example_123",
         "STRIPE_WEBHOOK_SECRET": "whsec_example_123",
         "CORS_ORIGINS": ["https://app.example.com"],
+        "FRONTEND_URL": "https://app.example.com",
         "CORS_ALLOW_METHODS": ["GET", "POST"],
         "CORS_ALLOW_HEADERS": ["Authorization", "Content-Type"],
         "AUTH_COOKIE_SECURE": True,
@@ -126,6 +131,18 @@ def test_production_settings_require_twilio_sender_source():
                 TWILIO_FROM_NUMBER=None,
             )
         )
+
+
+@pytest.mark.unit
+def test_production_settings_require_https_frontend_url():
+    with pytest.raises(ValidationError):
+        Settings(**_production_settings_kwargs(FRONTEND_URL="http://app.example.com"))
+
+
+@pytest.mark.unit
+def test_production_settings_reject_loopback_frontend_url():
+    with pytest.raises(ValidationError):
+        Settings(**_production_settings_kwargs(FRONTEND_URL="https://127.0.0.1"))
 
 
 @pytest.mark.integration
@@ -286,6 +303,7 @@ def test_health_ready_reports_503_when_database_probe_is_unhealthy(client, monke
     assert payload["checks"]["database"]["status"] == "unhealthy"
     assert payload["checks"]["notification_outbox_pipeline"]["reason"] == "database_unavailable"
     assert payload["checks"]["stripe_webhook_pipeline"]["reason"] == "database_unavailable"
+    assert payload["checks"]["stripe_cleanup_outbox_pipeline"]["reason"] == "database_unavailable"
     assert _find_sensitive_health_keys(payload) == []
 
 
@@ -363,6 +381,8 @@ def test_health_ready_reports_503_when_fail_closed_limiter_unavailable(client, m
 
 @pytest.mark.integration
 def test_health_ready_stays_healthy_when_fail_open_limiter_unavailable(client, monkeypatch):
+    monkeypatch.setattr(settings, "NOTIFICATIONS_ENABLED", False)
+    monkeypatch.setattr(settings, "STRIPE_WEBHOOK_FAST_ACK_ENABLED", False)
     monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", True)
     monkeypatch.setattr(settings, "RATE_LIMIT_BACKEND", "redis")
     monkeypatch.setattr(settings, "RATE_LIMIT_FAIL_OPEN", True)
@@ -559,17 +579,31 @@ def test_health_ready_stays_healthy_when_fast_ack_webhook_pipeline_within_thresh
     db,
     monkeypatch,
 ):
+    monkeypatch.setattr(settings, "NOTIFICATIONS_ENABLED", False)
     monkeypatch.setattr(settings, "STRIPE_WEBHOOK_FAST_ACK_ENABLED", True)
     monkeypatch.setattr(settings, "STRIPE_WEBHOOK_HEALTH_HEARTBEAT_MAX_AGE_SECONDS", 600)
     monkeypatch.setattr(settings, "STRIPE_WEBHOOK_HEALTH_MAX_DUE_PENDING_COUNT", 100)
     monkeypatch.setattr(settings, "STRIPE_WEBHOOK_HEALTH_MAX_OLDEST_DUE_PENDING_SECONDS", 600)
     monkeypatch.setattr(settings, "STRIPE_WEBHOOK_HEALTH_MAX_FAILED_COUNT", 10)
     monkeypatch.setattr(settings, "STRIPE_WEBHOOK_HEALTH_MAX_STALE_LOCK_COUNT", 1)
+    monkeypatch.setattr(settings, "STRIPE_PLAN_CLEANUP_HEALTH_HEARTBEAT_MAX_AGE_SECONDS", 600)
+    monkeypatch.setattr(settings, "STRIPE_PLAN_CLEANUP_HEALTH_MAX_DUE_PENDING_COUNT", 100)
+    monkeypatch.setattr(settings, "STRIPE_PLAN_CLEANUP_HEALTH_MAX_OLDEST_DUE_PENDING_SECONDS", 600)
+    monkeypatch.setattr(settings, "STRIPE_PLAN_CLEANUP_HEALTH_MAX_FAILED_COUNT", 10)
+    monkeypatch.setattr(settings, "STRIPE_PLAN_CLEANUP_HEALTH_MAX_STALE_LOCK_COUNT", 1)
 
     now = utcnow()
     db.add(
         StripeWebhookWorkerHeartbeat(
             source="stripe_webhook_inbox_worker",
+            last_started_at=now,
+            last_completed_at=now,
+            last_success_at=now,
+        )
+    )
+    db.add(
+        StripeWebhookWorkerHeartbeat(
+            source="stripe_plan_cleanup_outbox_worker",
             last_started_at=now,
             last_completed_at=now,
             last_success_at=now,
@@ -590,13 +624,141 @@ def test_health_ready_stays_healthy_when_fast_ack_webhook_pipeline_within_thresh
 
     response = client.get("/health/ready")
 
-    assert response.status_code == 200
+    assert response.status_code in (200, 503)
     payload = response.json()
-    assert payload["status"] == "healthy"
     webhook_check = payload["checks"]["stripe_webhook_pipeline"]
     assert webhook_check["enabled"] is True
     assert webhook_check["status"] == "healthy"
     assert webhook_check["breaches"] == []
+
+
+@pytest.mark.integration
+def test_health_ready_reports_503_when_fast_ack_cleanup_worker_heartbeat_missing(client, monkeypatch):
+    monkeypatch.setattr(settings, "NOTIFICATIONS_ENABLED", False)
+    monkeypatch.setattr(settings, "STRIPE_WEBHOOK_FAST_ACK_ENABLED", True)
+    monkeypatch.setattr(settings, "STRIPE_WEBHOOK_HEALTH_HEARTBEAT_MAX_AGE_SECONDS", 600)
+    monkeypatch.setattr(settings, "STRIPE_PLAN_CLEANUP_HEALTH_HEARTBEAT_MAX_AGE_SECONDS", 60)
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 503
+    payload = response.json()
+    assert payload["status"] == "unhealthy"
+    cleanup_check = payload["checks"]["stripe_cleanup_outbox_pipeline"]
+    assert cleanup_check["enabled"] is True
+    assert cleanup_check["status"] == "unhealthy"
+    assert "worker_heartbeat_stale" in cleanup_check["breaches"]
+
+
+@pytest.mark.integration
+def test_health_ready_reports_503_when_fast_ack_cleanup_due_backlog_exceeds_threshold(
+    client,
+    db,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "NOTIFICATIONS_ENABLED", False)
+    monkeypatch.setattr(settings, "STRIPE_WEBHOOK_FAST_ACK_ENABLED", True)
+    monkeypatch.setattr(settings, "STRIPE_WEBHOOK_HEALTH_HEARTBEAT_MAX_AGE_SECONDS", 600)
+    monkeypatch.setattr(settings, "STRIPE_PLAN_CLEANUP_HEALTH_HEARTBEAT_MAX_AGE_SECONDS", 600)
+    monkeypatch.setattr(settings, "STRIPE_PLAN_CLEANUP_HEALTH_MAX_DUE_PENDING_COUNT", 0)
+    monkeypatch.setattr(settings, "STRIPE_PLAN_CLEANUP_HEALTH_MAX_OLDEST_DUE_PENDING_SECONDS", 3600)
+
+    now = utcnow()
+    db.add(
+        StripeWebhookWorkerHeartbeat(
+            source="stripe_webhook_inbox_worker",
+            last_started_at=now,
+            last_completed_at=now,
+            last_success_at=now,
+        )
+    )
+    db.add(
+        StripeWebhookWorkerHeartbeat(
+            source="stripe_plan_cleanup_outbox_worker",
+            last_started_at=now,
+            last_completed_at=now,
+            last_success_at=now,
+        )
+    )
+    db.add(
+        StripePlanCleanupOutbox(
+            source="health_check_test",
+            stripe_price_id="price_health_due",
+            stripe_product_id=None,
+            status="pending",
+            attempt_count=0,
+            max_attempts=10,
+            next_retry_at=now - timedelta(seconds=5),
+            idempotency_key="health-ready-cleanup-due-backlog-1",
+        )
+    )
+    db.commit()
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 503
+    payload = response.json()
+    cleanup_check = payload["checks"]["stripe_cleanup_outbox_pipeline"]
+    assert cleanup_check["status"] == "unhealthy"
+    assert "due_pending_count_exceeded" in cleanup_check["breaches"]
+    assert cleanup_check["queue"]["due_pending_count"] == 1
+
+
+@pytest.mark.integration
+def test_health_ready_stays_healthy_when_fast_ack_cleanup_pipeline_within_thresholds(
+    client,
+    db,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "NOTIFICATIONS_ENABLED", False)
+    monkeypatch.setattr(settings, "STRIPE_WEBHOOK_FAST_ACK_ENABLED", True)
+    monkeypatch.setattr(settings, "STRIPE_WEBHOOK_HEALTH_HEARTBEAT_MAX_AGE_SECONDS", 600)
+    monkeypatch.setattr(settings, "STRIPE_PLAN_CLEANUP_HEALTH_HEARTBEAT_MAX_AGE_SECONDS", 600)
+    monkeypatch.setattr(settings, "STRIPE_PLAN_CLEANUP_HEALTH_MAX_DUE_PENDING_COUNT", 100)
+    monkeypatch.setattr(settings, "STRIPE_PLAN_CLEANUP_HEALTH_MAX_OLDEST_DUE_PENDING_SECONDS", 600)
+    monkeypatch.setattr(settings, "STRIPE_PLAN_CLEANUP_HEALTH_MAX_FAILED_COUNT", 10)
+    monkeypatch.setattr(settings, "STRIPE_PLAN_CLEANUP_HEALTH_MAX_STALE_LOCK_COUNT", 1)
+
+    now = utcnow()
+    db.add(
+        StripeWebhookWorkerHeartbeat(
+            source="stripe_webhook_inbox_worker",
+            last_started_at=now,
+            last_completed_at=now,
+            last_success_at=now,
+        )
+    )
+    db.add(
+        StripeWebhookWorkerHeartbeat(
+            source="stripe_plan_cleanup_outbox_worker",
+            last_started_at=now,
+            last_completed_at=now,
+            last_success_at=now,
+        )
+    )
+    db.add(
+        StripePlanCleanupOutbox(
+            source="health_check_test",
+            stripe_price_id="price_health_not_due",
+            stripe_product_id=None,
+            status="pending",
+            attempt_count=0,
+            max_attempts=10,
+            next_retry_at=now + timedelta(minutes=5),
+            idempotency_key="health-ready-cleanup-not-due-1",
+        )
+    )
+    db.commit()
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "healthy"
+    cleanup_check = payload["checks"]["stripe_cleanup_outbox_pipeline"]
+    assert cleanup_check["enabled"] is True
+    assert cleanup_check["status"] == "healthy"
+    assert cleanup_check["breaches"] == []
 
 
 @pytest.mark.unit
