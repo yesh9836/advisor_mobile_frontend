@@ -7,6 +7,12 @@ import { z } from "zod";
 import { useAuth } from "@/context/AuthContext";
 import { getHomeRouteByRole } from "@/utils/role-routing";
 
+const normalizeUsPhoneInput = (value: string): string => {
+  const digits = value.replace(/\D/g, "");
+  const localDigits = digits.startsWith("1") ? digits.slice(1) : digits;
+  return `+1${localDigits.slice(0, 10)}`;
+};
+
 const registerSchema = z
   .object({
     name: z.string().min(2, "Name must be at least 2 characters"),
@@ -17,8 +23,11 @@ const registerSchema = z
       .optional()
       .or(z.literal(""))
       .refine(
-        (value) => !value || /^[0-9+\-() ]{7,20}$/.test(value),
-        "Enter a valid phone number",
+        (value) => {
+          const normalized = value?.trim() ?? "";
+          return !normalized || normalized === "+1" || /^\+1\d{10}$/.test(normalized);
+        },
+        "Enter a valid US phone number",
       ),
     password: z.string().min(8, "Password must be at least 8 characters"),
     confirmPassword: z.string().min(8, "Confirm your password"),
@@ -43,15 +52,20 @@ const RegisterPage = () => {
     clearError,
   } = useAuth();
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [phoneInputValue, setPhoneInputValue] = useState("+1");
 
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
     setError,
   } = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
     mode: "onBlur",
+    defaultValues: {
+      phone: "+1",
+    },
   });
 
   useEffect(() => {
@@ -71,12 +85,16 @@ const RegisterPage = () => {
   }, [successMessage, navigate]);
 
   const onSubmit = async (values: RegisterFormValues) => {
+    const normalizedPhone = values.phone?.trim() ?? "";
+    const phoneForSubmission =
+      normalizedPhone === "" || normalizedPhone === "+1" ? undefined : normalizedPhone;
+
     try {
       await registerUser({
         name: values.name,
         email: values.email,
         password: values.password,
-        phone: values.phone || undefined,
+        phone: phoneForSubmission,
       });
 
       setSuccessMessage(
@@ -170,7 +188,20 @@ const RegisterPage = () => {
               id="phone"
               type="tel"
               className={inputClass}
+              inputMode="numeric"
+              autoComplete="tel-national"
+              maxLength={12}
+              placeholder="+15551234567"
               {...register("phone")}
+              value={phoneInputValue}
+              onChange={(event) => {
+                const nextValue = normalizeUsPhoneInput(event.target.value);
+                setPhoneInputValue(nextValue);
+                setValue("phone", nextValue, {
+                  shouldDirty: true,
+                  shouldValidate: true,
+                });
+              }}
             />
             {errors.phone && (
               <p className="mt-1 text-xs text-red-600">
