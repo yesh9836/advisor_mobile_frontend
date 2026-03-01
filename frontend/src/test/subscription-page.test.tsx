@@ -126,6 +126,7 @@ describe("SubscriptionPage license gate", () => {
     expect(screen.queryByText(/support:\s*email/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/credits_total:\s*30/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/catalog_visible:\s*true/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "View Details" })).not.toBeInTheDocument();
   });
 
   it("shows explicit no-license message and blocks checkout", async () => {

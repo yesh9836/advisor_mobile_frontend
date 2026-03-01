@@ -220,6 +220,24 @@ describe("Advisor Dashboard delivery settings editor", () => {
     });
   });
 
+  it("hides deprecated metric notes and targeting placeholders", async () => {
+    getLeadDashboardSummaryMock.mockResolvedValue(summaryWithSettings(false, false));
+
+    renderRoute();
+
+    await waitFor(() => {
+      expect(getLeadDashboardSummaryMock).toHaveBeenCalledTimes(1);
+    });
+
+    expect(screen.queryByText("Pulled from current lead records")).not.toBeInTheDocument();
+    expect(screen.queryByText("From saved lead outcomes")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Current formula: plan price / appointments set (7 days)"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Min assets:")).not.toBeInTheDocument();
+    expect(screen.queryByText("Daily lead cap:")).not.toBeInTheDocument();
+  });
+
   it("does not attempt state updates after unmount when initial load resolves late", async () => {
     const summaryDeferred = createDeferred<ReturnType<typeof summaryWithSettings>>();
     const leadsDeferred = createDeferred<{
