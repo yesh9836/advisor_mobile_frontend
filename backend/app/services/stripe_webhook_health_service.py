@@ -9,11 +9,16 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.timezone import ensure_utc, utcnow
-from app.models.purchase import StripeWebhookInbox, StripeWebhookWorkerHeartbeat
+from app.models.purchase import (
+    StripePlanCleanupOutbox,
+    StripeWebhookInbox,
+    StripeWebhookWorkerHeartbeat,
+)
 
 
 class StripeWebhookHealthService:
     INBOX_WORKER_HEARTBEAT_SOURCE = "stripe_webhook_inbox_worker"
+    CLEANUP_WORKER_HEARTBEAT_SOURCE = "stripe_plan_cleanup_outbox_worker"
 
     @staticmethod
     def _isoformat_or_none(value: Optional[datetime]) -> Optional[str]:
@@ -86,12 +91,58 @@ class StripeWebhookHealthService:
         *,
         now: Optional[datetime] = None,
     ) -> Dict[str, Any]:
+        return StripeWebhookHealthService._get_pipeline_health_snapshot(
+            db,
+            queue_model=StripeWebhookInbox,
+            heartbeat_source=StripeWebhookHealthService.INBOX_WORKER_HEARTBEAT_SOURCE,
+            heartbeat_max_age_seconds=settings.STRIPE_WEBHOOK_HEALTH_HEARTBEAT_MAX_AGE_SECONDS,
+            max_due_pending_count=settings.STRIPE_WEBHOOK_HEALTH_MAX_DUE_PENDING_COUNT,
+            max_oldest_due_pending_seconds=settings.STRIPE_WEBHOOK_HEALTH_MAX_OLDEST_DUE_PENDING_SECONDS,
+            max_failed_count=settings.STRIPE_WEBHOOK_HEALTH_MAX_FAILED_COUNT,
+            stale_lock_seconds=settings.STRIPE_WEBHOOK_HEALTH_STALE_LOCK_SECONDS,
+            max_stale_lock_count=settings.STRIPE_WEBHOOK_HEALTH_MAX_STALE_LOCK_COUNT,
+            now=now,
+        )
+
+    @staticmethod
+    def get_cleanup_pipeline_health_snapshot(
+        db: Session,
+        *,
+        now: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
+        return StripeWebhookHealthService._get_pipeline_health_snapshot(
+            db,
+            queue_model=StripePlanCleanupOutbox,
+            heartbeat_source=StripeWebhookHealthService.CLEANUP_WORKER_HEARTBEAT_SOURCE,
+            heartbeat_max_age_seconds=settings.STRIPE_PLAN_CLEANUP_HEALTH_HEARTBEAT_MAX_AGE_SECONDS,
+            max_due_pending_count=settings.STRIPE_PLAN_CLEANUP_HEALTH_MAX_DUE_PENDING_COUNT,
+            max_oldest_due_pending_seconds=settings.STRIPE_PLAN_CLEANUP_HEALTH_MAX_OLDEST_DUE_PENDING_SECONDS,
+            max_failed_count=settings.STRIPE_PLAN_CLEANUP_HEALTH_MAX_FAILED_COUNT,
+            stale_lock_seconds=settings.STRIPE_PLAN_CLEANUP_STALE_LOCK_SECONDS,
+            max_stale_lock_count=settings.STRIPE_PLAN_CLEANUP_HEALTH_MAX_STALE_LOCK_COUNT,
+            now=now,
+        )
+
+    @staticmethod
+    def _get_pipeline_health_snapshot(
+        db: Session,
+        *,
+        queue_model: Any,
+        heartbeat_source: str,
+        heartbeat_max_age_seconds: int,
+        max_due_pending_count: int,
+        max_oldest_due_pending_seconds: int,
+        max_failed_count: int,
+        stale_lock_seconds: int,
+        max_stale_lock_count: int,
+        now: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
         current = ensure_utc(now) or utcnow()
         heartbeat_row = (
             db.query(StripeWebhookWorkerHeartbeat)
             .filter(
                 StripeWebhookWorkerHeartbeat.source
-                == StripeWebhookHealthService.INBOX_WORKER_HEARTBEAT_SOURCE
+                == heartbeat_source
             )
             .first()
         )
@@ -108,34 +159,34 @@ class StripeWebhookHealthService:
 
         due_pending_count, oldest_due_retry_at = (
             db.query(
-                func.count(StripeWebhookInbox.id),
-                func.min(StripeWebhookInbox.next_retry_at),
+                func.count(queue_model.id),
+                func.min(queue_model.next_retry_at),
             )
             .filter(
-                StripeWebhookInbox.status == "pending",
-                StripeWebhookInbox.next_retry_at <= current,
+                queue_model.status == "pending",
+                queue_model.next_retry_at <= current,
             )
             .one()
         )
         total_pending_count = (
-            db.query(func.count(StripeWebhookInbox.id))
-            .filter(StripeWebhookInbox.status == "pending")
+            db.query(func.count(queue_model.id))
+            .filter(queue_model.status == "pending")
             .scalar()
             or 0
         )
         failed_count = (
-            db.query(func.count(StripeWebhookInbox.id))
-            .filter(StripeWebhookInbox.status == "failed")
+            db.query(func.count(queue_model.id))
+            .filter(queue_model.status == "failed")
             .scalar()
             or 0
         )
-        stale_lock_cutoff = current - timedelta(seconds=settings.STRIPE_WEBHOOK_HEALTH_STALE_LOCK_SECONDS)
+        stale_lock_cutoff = current - timedelta(seconds=stale_lock_seconds)
         stale_processing_count = (
-            db.query(func.count(StripeWebhookInbox.id))
+            db.query(func.count(queue_model.id))
             .filter(
-                StripeWebhookInbox.status == "processing",
-                StripeWebhookInbox.locked_at.is_not(None),
-                StripeWebhookInbox.locked_at <= stale_lock_cutoff,
+                queue_model.status == "processing",
+                queue_model.locked_at.is_not(None),
+                queue_model.locked_at <= stale_lock_cutoff,
             )
             .scalar()
             or 0
@@ -152,20 +203,20 @@ class StripeWebhookHealthService:
         breaches: list[str] = []
         heartbeat_stale = (
             heartbeat_age_seconds is None
-            or heartbeat_age_seconds > settings.STRIPE_WEBHOOK_HEALTH_HEARTBEAT_MAX_AGE_SECONDS
+            or heartbeat_age_seconds > heartbeat_max_age_seconds
         )
         if heartbeat_stale:
             breaches.append("worker_heartbeat_stale")
-        if int(due_pending_count or 0) > settings.STRIPE_WEBHOOK_HEALTH_MAX_DUE_PENDING_COUNT:
+        if int(due_pending_count or 0) > max_due_pending_count:
             breaches.append("due_pending_count_exceeded")
         if (
             oldest_due_pending_age_seconds is not None
-            and oldest_due_pending_age_seconds > settings.STRIPE_WEBHOOK_HEALTH_MAX_OLDEST_DUE_PENDING_SECONDS
+            and oldest_due_pending_age_seconds > max_oldest_due_pending_seconds
         ):
             breaches.append("oldest_due_pending_age_exceeded")
-        if int(failed_count or 0) > settings.STRIPE_WEBHOOK_HEALTH_MAX_FAILED_COUNT:
+        if int(failed_count or 0) > max_failed_count:
             breaches.append("failed_count_exceeded")
-        if int(stale_processing_count or 0) > settings.STRIPE_WEBHOOK_HEALTH_MAX_STALE_LOCK_COUNT:
+        if int(stale_processing_count or 0) > max_stale_lock_count:
             breaches.append("stale_processing_locks_exceeded")
 
         status = "healthy" if not breaches else "unhealthy"
@@ -173,7 +224,7 @@ class StripeWebhookHealthService:
             "status": status,
             "breaches": breaches,
             "heartbeat": {
-                "source": StripeWebhookHealthService.INBOX_WORKER_HEARTBEAT_SOURCE,
+                "source": heartbeat_source,
                 "missing": heartbeat_row is None,
                 "stale": heartbeat_stale,
                 "age_seconds": heartbeat_age_seconds,
@@ -205,12 +256,11 @@ class StripeWebhookHealthService:
                 "oldest_due_pending_age_seconds": oldest_due_pending_age_seconds,
             },
             "thresholds": {
-                "heartbeat_max_age_seconds": settings.STRIPE_WEBHOOK_HEALTH_HEARTBEAT_MAX_AGE_SECONDS,
-                "max_due_pending_count": settings.STRIPE_WEBHOOK_HEALTH_MAX_DUE_PENDING_COUNT,
-                "max_oldest_due_pending_seconds": settings.STRIPE_WEBHOOK_HEALTH_MAX_OLDEST_DUE_PENDING_SECONDS,
-                "max_failed_count": settings.STRIPE_WEBHOOK_HEALTH_MAX_FAILED_COUNT,
-                "stale_lock_seconds": settings.STRIPE_WEBHOOK_HEALTH_STALE_LOCK_SECONDS,
-                "max_stale_processing_count": settings.STRIPE_WEBHOOK_HEALTH_MAX_STALE_LOCK_COUNT,
+                "heartbeat_max_age_seconds": heartbeat_max_age_seconds,
+                "max_due_pending_count": max_due_pending_count,
+                "max_oldest_due_pending_seconds": max_oldest_due_pending_seconds,
+                "max_failed_count": max_failed_count,
+                "stale_lock_seconds": stale_lock_seconds,
+                "max_stale_processing_count": max_stale_lock_count,
             },
         }
-
