@@ -148,10 +148,62 @@ class Lead(Base):
         back_populates="lead",
         cascade="all, delete-orphan",
     )
+    intake_events: Mapped[list["LeadIntakeWebhookEvent"]] = relationship(
+        "LeadIntakeWebhookEvent",
+        back_populates="lead",
+        cascade="all, delete-orphan",
+    )
 
 
     def __repr__(self) -> str:
         return f"<Lead(id={self.id}, state='{self.state_code}', name='{self.first_name} {self.last_name}')>"
+
+
+class LeadIntakeWebhookEvent(Base):
+    """
+    Idempotency registry for public lead intake webhooks.
+
+    Prevents duplicate lead inserts when providers retry webhook deliveries.
+    """
+
+    __tablename__ = "lead_intake_webhook_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider",
+            "external_entry_id",
+            name="uq_lead_intake_webhook_events_provider_entry",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+    )
+    provider: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    external_entry_id: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    payload_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    lead_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("leads.id", onupdate="CASCADE", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        nullable=False,
+        default=utcnow,
+        server_default=text("CURRENT_TIMESTAMP"),
+        index=True,
+    )
+
+    lead: Mapped[Optional["Lead"]] = relationship("Lead", back_populates="intake_events")
+
+    def __repr__(self) -> str:
+        return (
+            f"<LeadIntakeWebhookEvent(id={self.id}, provider='{self.provider}', "
+            f"external_entry_id='{self.external_entry_id}', lead_id={self.lead_id})>"
+        )
 
 
 class LeadDownload(Base):
