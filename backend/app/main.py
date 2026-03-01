@@ -180,6 +180,10 @@ def health_ready():
         "status": "skipped",
         "enabled": bool(settings.STRIPE_WEBHOOK_FAST_ACK_ENABLED),
     }
+    cleanup_pipeline_status = {
+        "status": "skipped",
+        "enabled": bool(settings.STRIPE_WEBHOOK_FAST_ACK_ENABLED),
+    }
     if settings.STRIPE_WEBHOOK_FAST_ACK_ENABLED and database_available:
         db = SessionLocal()
         try:
@@ -202,8 +206,34 @@ def health_ready():
             }
         finally:
             db.close()
+        db = SessionLocal()
+        try:
+            pipeline_snapshot = StripeWebhookHealthService.get_cleanup_pipeline_health_snapshot(db)
+            cleanup_pipeline_status = {
+                "status": pipeline_snapshot.get("status", "unhealthy"),
+                "enabled": True,
+                **pipeline_snapshot,
+            }
+            if cleanup_pipeline_status["status"] != "healthy":
+                status_text = "unhealthy"
+        except Exception as exc:
+            logger.exception("Failed to evaluate Stripe cleanup outbox readiness: %s", exc)
+            status_text = "unhealthy"
+            cleanup_pipeline_status = {
+                "status": "unhealthy",
+                "enabled": True,
+                "breaches": ["health_snapshot_error"],
+                "error": str(exc),
+            }
+        finally:
+            db.close()
     elif settings.STRIPE_WEBHOOK_FAST_ACK_ENABLED and not database_available:
         webhook_pipeline_status = {
+            "status": "skipped",
+            "enabled": True,
+            "reason": "database_unavailable",
+        }
+        cleanup_pipeline_status = {
             "status": "skipped",
             "enabled": True,
             "reason": "database_unavailable",
@@ -215,6 +245,7 @@ def health_ready():
             "rate_limiter": limiter_status,
             "notification_outbox_pipeline": notification_pipeline_status,
             "stripe_webhook_pipeline": webhook_pipeline_status,
+            "stripe_cleanup_outbox_pipeline": cleanup_pipeline_status,
         },
     }
     public_payload = _redact_health_payload(payload)
