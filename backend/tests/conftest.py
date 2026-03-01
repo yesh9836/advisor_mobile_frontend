@@ -186,6 +186,7 @@ def test_settings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setattr(settings, "STRIPE_SECRET_KEY", "sk_test_local")
     monkeypatch.setattr(settings, "STRIPE_WEBHOOK_SECRET", "whsec_test")
     monkeypatch.setattr(settings, "STRIPE_WEBHOOK_FAST_ACK_ENABLED", False)
+    monkeypatch.setattr(settings, "WPFORMS_WEBHOOK_HMAC_SECRET", "wpforms_test_secret")
     monkeypatch.setattr(settings, "FRONTEND_URL", "http://localhost:5173")
     monkeypatch.setattr(settings, "UPLOAD_DIR", str(tmp_path / "uploads"))
     monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", False)
