@@ -521,6 +521,12 @@ password_reset_route_rate_limit_dependency = _build_rate_limit_dependency(
     seconds_setting="RATE_LIMIT_AUTH_PASSWORD_RESET_ROUTE_SECONDS",
 )
 
+wpforms_webhook_rate_limit_dependency = _build_rate_limit_dependency(
+    endpoint="webhooks.wpforms_survey",
+    times_setting="RATE_LIMIT_WPFORMS_WEBHOOK_TIMES",
+    seconds_setting="RATE_LIMIT_WPFORMS_WEBHOOK_SECONDS",
+)
+
 
 __all__ = [
     "client_ip_identifier",
@@ -536,4 +542,5 @@ __all__ = [
     "register_rate_limit_dependency",
     "reset_rate_limit_metrics",
     "shutdown_rate_limiter",
+    "wpforms_webhook_rate_limit_dependency",
 ]

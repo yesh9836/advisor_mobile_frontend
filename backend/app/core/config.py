@@ -115,6 +115,13 @@ class Settings(BaseSettings):
     STRIPE_PLAN_CLEANUP_RETRY_MAX_SECONDS: int = 1800
     STRIPE_PLAN_CLEANUP_STALE_LOCK_SECONDS: int = 900
 
+    # Public website intake webhook (WPForms via relay)
+    WPFORMS_WEBHOOK_HMAC_SECRET: str = ""
+    WPFORMS_WEBHOOK_SIGNATURE_HEADER: str = "X-Webhook-Signature"
+    WPFORMS_WEBHOOK_TIMESTAMP_HEADER: str = "X-Webhook-Timestamp"
+    WPFORMS_WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS: int = 300
+    WPFORMS_WEBHOOK_ALLOW_BODY_ONLY_SIGNATURE: bool = False
+
     # One-time purchase rollout controls
     ONE_TIME_PURCHASES_ENABLED: bool = True
     PURCHASE_WEBHOOK_CREDIT_GRANT_ENABLED: bool = True
@@ -206,6 +213,8 @@ class Settings(BaseSettings):
     RATE_LIMIT_REFRESH_SECONDS: int = 60
     RATE_LIMIT_AUTH_PASSWORD_RESET_ROUTE_TIMES: int = 20
     RATE_LIMIT_AUTH_PASSWORD_RESET_ROUTE_SECONDS: int = 60
+    RATE_LIMIT_WPFORMS_WEBHOOK_TIMES: int = 120
+    RATE_LIMIT_WPFORMS_WEBHOOK_SECONDS: int = 60
 
     # Legacy global limiter knobs (deprecated but retained for compatibility).
     RATE_LIMIT_PER_MINUTE: int = 60
@@ -316,6 +325,8 @@ class Settings(BaseSettings):
         "RATE_LIMIT_REFRESH_SECONDS",
         "RATE_LIMIT_AUTH_PASSWORD_RESET_ROUTE_TIMES",
         "RATE_LIMIT_AUTH_PASSWORD_RESET_ROUTE_SECONDS",
+        "RATE_LIMIT_WPFORMS_WEBHOOK_TIMES",
+        "RATE_LIMIT_WPFORMS_WEBHOOK_SECONDS",
         "LICENSE_RESUBMISSION_MAX_ATTEMPTS",
         "LICENSE_RESUBMISSION_WINDOW_DAYS",
         "ACCESS_TOKEN_EXPIRE_MINUTES",
@@ -341,6 +352,7 @@ class Settings(BaseSettings):
         "STRIPE_PLAN_CLEANUP_RETRY_BASE_SECONDS",
         "STRIPE_PLAN_CLEANUP_RETRY_MAX_SECONDS",
         "STRIPE_PLAN_CLEANUP_STALE_LOCK_SECONDS",
+        "WPFORMS_WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS",
         mode="after",
     )
     @classmethod
