@@ -4,9 +4,13 @@ from typing import Any, Dict
 import asyncio
 import stripe
 from time import perf_counter
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.rate_limit import wpforms_webhook_rate_limit_dependency
+from app.api.deps import get_db
+from app.services.lead_intake_webhook_service import LeadIntakeWebhookService
 from app.services.metrics_service import MetricsService
 from app.services.stripe_webhook_inbox_service import StripeWebhookInboxService
 from app.services.subscription_service import (
@@ -18,6 +22,57 @@ from app.services.subscription_service import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
+
+
+@router.post(
+    "/wpforms/survey",
+    status_code=status.HTTP_200_OK,
+    summary="WPForms survey intake webhook endpoint",
+    dependencies=[Depends(wpforms_webhook_rate_limit_dependency)],
+)
+async def wpforms_survey_webhook(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    raw_body = await request.body()
+    try:
+        result = LeadIntakeWebhookService.process_wpforms_submission(
+            db=db,
+            raw_body=raw_body,
+            headers=request.headers,
+        )
+    except HTTPException as exc:
+        MetricsService.increment(
+            "lead_intake_wpforms_webhook_requests_total",
+            tags={
+                "outcome": "rejected",
+                "status_code": str(exc.status_code),
+            },
+        )
+        raise
+    except Exception as exc:
+        logger.exception("Unexpected WPForms webhook failure: %s", exc)
+        MetricsService.increment(
+            "lead_intake_wpforms_webhook_requests_total",
+            tags={
+                "outcome": "failed",
+                "status_code": "500",
+            },
+        )
+        raise HTTPException(status_code=500, detail="Webhook processing failed")
+
+    MetricsService.increment(
+        "lead_intake_wpforms_webhook_requests_total",
+        tags={
+            "outcome": "idempotent_replay" if result["idempotent_replay"] else "accepted",
+            "status_code": "200",
+        },
+    )
+    return {
+        "status": "ok",
+        "idempotent_replay": bool(result["idempotent_replay"]),
+        "lead_id": result["lead_id"],
+    }
 
 
 @router.post(
