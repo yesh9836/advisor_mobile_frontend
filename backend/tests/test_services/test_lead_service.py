@@ -360,6 +360,19 @@ def test_bulk_import_leads_rejects_duplicate_phones_in_payload(db):
 
 
 @pytest.mark.unit
+def test_bulk_import_leads_rejects_same_phone_with_and_without_plus_one(db):
+    rows = [
+        {"state_code": "CA", "mobile_phone": "3054959490", "first_name": "A"},
+        {"state_code": "CA", "mobile_phone": "+13054959490", "first_name": "B"},
+    ]
+
+    result = LeadService.bulk_import_leads(db=db, csv_data=rows)
+    assert result["success"] == 0
+    assert result["failed"] == 1
+    assert any("Duplicate mobile_phone in file" in err["error"] for err in result["errors"])
+
+
+@pytest.mark.unit
 def test_bulk_import_leads_counts_failed_rows_not_error_count(db):
     rows = [
         {"state_code": "ZZ", "mobile_phone": "", "first_name": "Bad"},
@@ -374,6 +387,22 @@ def test_bulk_import_leads_counts_failed_rows_not_error_count(db):
         "Missing mobile_phone",
     }
     assert {err["row"] for err in result["errors"]} == {2}
+
+
+@pytest.mark.unit
+def test_create_lead_normalizes_10_digit_mobile_phone_to_plus_one(db):
+    lead = LeadService.create_lead(
+        db=db,
+        data=LeadCreate(
+            state_code="CA",
+            mobile_phone="3054959490",
+            first_name="Phone",
+            last_name="Normalized",
+            source="manual_entry",
+        ),
+    )
+
+    assert lead.mobile_phone == "+13054959490"
 
 
 @pytest.mark.unit

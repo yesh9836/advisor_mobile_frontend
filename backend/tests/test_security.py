@@ -162,7 +162,7 @@ def test_cookie_auth_mutation_without_csrf_header_returns_403(client, plan_facto
         "email": "csrf.missing@example.com",
         "password": "CsrfMissing123!",
         "name": "CSRF Missing",
-        "phone": "555-1010",
+        "phone": "+13055551010",
     }
     register = client.post("/api/v1/auth/register", json=register_payload)
     assert register.status_code == 201, register.text
@@ -185,7 +185,7 @@ def test_cookie_auth_mutation_with_csrf_header_succeeds(client):
         "email": "csrf.valid@example.com",
         "password": "CsrfValid123!",
         "name": "CSRF Valid",
-        "phone": "555-2020",
+        "phone": "+13055552020",
     }
     register = client.post("/api/v1/auth/register", json=register_payload)
     assert register.status_code == 201, register.text
@@ -210,7 +210,7 @@ def test_cookie_auth_get_endpoints_do_not_require_csrf_header(client):
         "email": "csrf.get@example.com",
         "password": "CsrfGet123!",
         "name": "CSRF GET",
-        "phone": "555-3030",
+        "phone": "+13055553030",
     }
     register = client.post("/api/v1/auth/register", json=register_payload)
     assert register.status_code == 201, register.text

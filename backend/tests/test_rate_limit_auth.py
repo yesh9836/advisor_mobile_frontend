@@ -84,7 +84,7 @@ def test_login_route_rate_limits_with_redis(redis_rate_limited_client):
         "email": "redis.login.limit@example.com",
         "password": "RedisLogin123!",
         "name": "Redis Login",
-        "phone": "555-9292",
+        "phone": "+13055559292",
     }
     register = redis_rate_limited_client.post("/api/v1/auth/register", json=register_payload)
     assert register.status_code == 201, register.text
@@ -117,7 +117,7 @@ def test_password_reset_route_limit_and_business_limit_both_apply(
         "email": "redis.reset.route@example.com",
         "password": "RedisReset123!",
         "name": "Redis Reset Route",
-        "phone": "555-9393",
+        "phone": "+13055559393",
     }
     register = redis_rate_limited_client.post("/api/v1/auth/register", json=user_payload)
     assert register.status_code == 201, register.text
@@ -149,7 +149,7 @@ def test_password_reset_route_limit_and_business_limit_both_apply(
         "email": "redis.reset.business@example.com",
         "password": "RedisResetBusiness123!",
         "name": "Redis Reset Business",
-        "phone": "555-9494",
+        "phone": "+13055559494",
     }
     business_register = redis_rate_limited_client.post("/api/v1/auth/register", json=business_payload)
     assert business_register.status_code == 201, business_register.text

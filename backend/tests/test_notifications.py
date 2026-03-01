@@ -124,6 +124,50 @@ def test_enqueue_lead_delivery_notifications_respects_advisor_opt_out(
 
 
 @pytest.mark.integration
+def test_enqueue_lead_delivery_notifications_normalizes_sms_recipient_to_plus_one(
+    db,
+    monkeypatch,
+    user_factory,
+    lead_factory,
+):
+    _enable_notifications(monkeypatch)
+    advisor = user_factory(
+        role="advisor",
+        email="notify.normalize.phone@example.com",
+        password="NotifyNormalizePhone123!",
+    )
+    advisor.phone = "(305) 495-9490"
+    db.add(advisor)
+    db.add(
+        AdvisorDeliverySettings(
+            user_id=advisor.id,
+            email_alerts_enabled=False,
+            sms_alerts_enabled=True,
+            version=1,
+        )
+    )
+    db.commit()
+
+    lead = lead_factory(state_code="CA", first_name="Taylor", last_name="Phone")
+    summary = NotificationService.enqueue_lead_delivery_notifications(
+        db=db,
+        user_id=advisor.id,
+        lead_ids=[lead.id],
+        purchase_id=None,
+        source_event="test_sms_normalization",
+    )
+    assert summary == {"enqueued_total": 1, "enqueued_email": 0, "enqueued_sms": 1}
+
+    sms_row = (
+        db.query(NotificationOutbox)
+        .filter(NotificationOutbox.user_id == advisor.id, NotificationOutbox.channel == "sms")
+        .first()
+    )
+    assert sms_row is not None
+    assert sms_row.recipient == "+13054959490"
+
+
+@pytest.mark.integration
 def test_enqueue_lead_delivery_notifications_handles_duplicate_conflict_without_rolling_back_outer_tx(
     db,
     monkeypatch,

@@ -51,7 +51,7 @@ def test_register_login_and_me_roundtrip(client):
         "email": "advisor.auth@example.com",
         "password": "StrongPass123!",
         "name": "Advisor Auth",
-        "phone": "555-1111",
+        "phone": "+13055551111",
     }
 
     register_response = client.post("/api/v1/auth/register", json=register_payload)
@@ -72,12 +72,36 @@ def test_register_login_and_me_roundtrip(client):
 
 
 @pytest.mark.integration
+def test_register_normalizes_us_phone_to_plus_one(client):
+    payload = {
+        "email": "advisor.phone.normalize@example.com",
+        "password": "StrongPass123!",
+        "name": "Phone Normalize",
+        "phone": "(305) 495-9490",
+    }
+
+    register_response = client.post("/api/v1/auth/register", json=payload)
+    assert register_response.status_code == 201, register_response.text
+    assert register_response.json()["phone"] == "+13054959490"
+
+    login_response = client.post(
+        "/api/v1/auth/login",
+        json={"email": payload["email"], "password": payload["password"]},
+    )
+    assert login_response.status_code == 204, login_response.text
+
+    me_response = client.get("/api/v1/auth/me")
+    assert me_response.status_code == 200, me_response.text
+    assert me_response.json()["phone"] == "+13054959490"
+
+
+@pytest.mark.integration
 def test_register_normalizes_email_and_rejects_case_variant_duplicate(client):
     first_payload = {
         "email": " Mixed.Case+Advisor@Example.COM ",
         "password": "StrongPass123!",
         "name": "Mixed Case Advisor",
-        "phone": "555-1112",
+        "phone": "+13055551112",
     }
 
     first = client.post("/api/v1/auth/register", json=first_payload)
@@ -90,7 +114,7 @@ def test_register_normalizes_email_and_rejects_case_variant_duplicate(client):
             "email": "mixed.case+advisor@example.com",
             "password": "StrongPass123!",
             "name": "Duplicate Mixed Case Advisor",
-            "phone": "555-1113",
+            "phone": "+13055551113",
         },
     )
     assert duplicate.status_code == 400
@@ -103,7 +127,7 @@ def test_register_duplicate_email_is_rejected(client):
         "email": "dupe@example.com",
         "password": "StrongPass123!",
         "name": "User One",
-        "phone": "555-2222",
+        "phone": "+13055552222",
     }
     first = client.post("/api/v1/auth/register", json=payload)
     assert first.status_code == 201, first.text
@@ -119,7 +143,7 @@ def test_register_duplicate_email_integrity_race_is_mapped_to_400(db, monkeypatc
         email="dupe.race@example.com",
         password="StrongPass123!",
         name="Race User",
-        phone="555-9090",
+        phone="+13055559090",
     )
     original_commit = db.commit
     commit_calls = {"count": 0}
@@ -141,6 +165,20 @@ def test_register_duplicate_email_integrity_race_is_mapped_to_400(db, monkeypatc
 
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == "Email already registered"
+
+
+@pytest.mark.integration
+def test_register_rejects_invalid_short_phone(client):
+    payload = {
+        "email": "advisor.invalid.phone@example.com",
+        "password": "StrongPass123!",
+        "name": "Invalid Phone",
+        "phone": "1111111",
+    }
+
+    response = client.post("/api/v1/auth/register", json=payload)
+    assert response.status_code == 422
+    assert "Phone must be a valid US number" in response.text
 
 
 @pytest.mark.integration
@@ -171,7 +209,7 @@ def test_login_with_invalid_password_returns_401(client):
         "email": "invalid.login@example.com",
         "password": "StrongPass123!",
         "name": "Login User",
-        "phone": "555-3333",
+        "phone": "+13055553333",
     }
     response = client.post("/api/v1/auth/register", json=payload)
     assert response.status_code == 201, response.text
@@ -249,7 +287,7 @@ def test_admin_only_endpoint_forbidden_for_advisor(client, auth_headers):
         "email": "advisor.only@example.com",
         "password": "StrongPass123!",
         "name": "Advisor Only",
-        "phone": "555-4444",
+        "phone": "+13055554444",
     }
     response = client.post("/api/v1/auth/register", json=advisor_payload)
     assert response.status_code == 201, response.text
@@ -266,7 +304,7 @@ def test_login_sets_auth_cookies(client):
         "email": "cookie.login@example.com",
         "password": "CookiePass123!",
         "name": "Cookie User",
-        "phone": "555-5555",
+        "phone": "+13055555555",
     }
     register = client.post("/api/v1/auth/register", json=payload)
     assert register.status_code == 201, register.text
@@ -288,7 +326,7 @@ def test_cookie_auth_me_roundtrip(client):
         "email": "cookie.me@example.com",
         "password": "CookieMe123!",
         "name": "Cookie Me",
-        "phone": "555-6666",
+        "phone": "+13055556666",
     }
     register = client.post("/api/v1/auth/register", json=payload)
     assert register.status_code == 201, register.text
@@ -310,7 +348,7 @@ def test_cookie_auth_requires_csrf_for_mutating_request(client, plan_factory):
         "email": "cookie.csrf@example.com",
         "password": "CookieCsrf123!",
         "name": "Cookie CSRF",
-        "phone": "555-7777",
+        "phone": "+13055557777",
     }
     register = client.post("/api/v1/auth/register", json=payload)
     assert register.status_code == 201, register.text
@@ -333,7 +371,7 @@ def test_cookie_auth_allows_mutating_request_with_csrf(client):
         "email": "bearer.compat@example.com",
         "password": "BearerCompat123!",
         "name": "Bearer Compat",
-        "phone": "555-7888",
+        "phone": "+13055557888",
     }
     register = client.post("/api/v1/auth/register", json=payload)
     assert register.status_code == 201, register.text
@@ -357,7 +395,7 @@ def test_refresh_rotates_token_and_detects_reuse(client):
         "email": "refresh.rotate@example.com",
         "password": "RefreshRotate123!",
         "name": "Refresh Rotate",
-        "phone": "555-8888",
+        "phone": "+13055558888",
     }
     register = client.post("/api/v1/auth/register", json=payload)
     assert register.status_code == 201, register.text
@@ -491,7 +529,7 @@ def test_refresh_guard_failure_is_treated_as_reuse(client, monkeypatch):
         "email": "refresh.guard.failure@example.com",
         "password": "RefreshGuardFailure123!",
         "name": "Refresh Guard Failure",
-        "phone": "555-1212",
+        "phone": "+13055551212",
     }
     register = client.post("/api/v1/auth/register", json=payload)
     assert register.status_code == 201, register.text
@@ -524,7 +562,7 @@ def test_logout_revokes_family_and_clears_auth_cookies(client):
         "email": "logout.cookie@example.com",
         "password": "LogoutCookie123!",
         "name": "Logout Cookie",
-        "phone": "555-9999",
+        "phone": "+13055559999",
     }
     register = client.post("/api/v1/auth/register", json=payload)
     assert register.status_code == 201, register.text
@@ -576,7 +614,7 @@ def test_access_token_missing_family_claim_is_rejected(client):
         "email": "claims.missing.fid@example.com",
         "password": "ClaimsMissingFid123!",
         "name": "Claims Missing FID",
-        "phone": "555-1313",
+        "phone": "+13055551313",
     }
     register = client.post("/api/v1/auth/register", json=payload)
     assert register.status_code == 201, register.text
@@ -599,7 +637,7 @@ def test_access_token_with_wrong_type_claim_is_rejected(client):
         "email": "claims.wrong.type@example.com",
         "password": "ClaimsWrongType123!",
         "name": "Claims Wrong Type",
-        "phone": "555-1414",
+        "phone": "+13055551414",
     }
     register = client.post("/api/v1/auth/register", json=payload)
     assert register.status_code == 201, register.text
@@ -630,7 +668,7 @@ def test_password_reset_request_response_is_generic_for_known_and_unknown_email(
         "email": "reset.generic@example.com",
         "password": "ResetGeneric123!",
         "name": "Reset Generic",
-        "phone": "555-1515",
+        "phone": "+13055551515",
     }
     register = client.post("/api/v1/auth/register", json=payload)
     assert register.status_code == 201, register.text
@@ -681,7 +719,7 @@ def test_password_reset_confirm_updates_password_revokes_old_family_and_marks_to
         "email": "reset.confirm@example.com",
         "password": "ResetOld123!",
         "name": "Reset Confirm",
-        "phone": "555-1616",
+        "phone": "+13055551616",
     }
     register = client.post("/api/v1/auth/register", json=payload)
     assert register.status_code == 201, register.text
@@ -739,7 +777,7 @@ def test_password_reset_request_invalidates_prior_active_tokens(client, db):
         "email": "reset.single-active@example.com",
         "password": "ResetSingleActive123!",
         "name": "Reset Single Active",
-        "phone": "555-1670",
+        "phone": "+13055551670",
     }
     register = client.post("/api/v1/auth/register", json=payload)
     assert register.status_code == 201, register.text
@@ -808,7 +846,7 @@ def test_password_reset_confirm_marks_other_active_tokens_used(client, db):
         "email": "reset.confirm.all@example.com",
         "password": "ResetConfirmAll123!",
         "name": "Reset Confirm All",
-        "phone": "555-1671",
+        "phone": "+13055551671",
     }
     register = client.post("/api/v1/auth/register", json=payload)
     assert register.status_code == 201, register.text
@@ -863,7 +901,7 @@ def test_password_reset_confirm_rejects_expired_token(client, db):
         "email": "reset.expired@example.com",
         "password": "ResetExpired123!",
         "name": "Reset Expired",
-        "phone": "555-1717",
+        "phone": "+13055551717",
     }
     register = client.post("/api/v1/auth/register", json=payload)
     assert register.status_code == 201, register.text
@@ -901,7 +939,7 @@ def test_password_reset_request_is_rate_limited_per_submitted_email_to_three_per
         "email": "reset.limit@example.com",
         "password": "ResetLimit123!",
         "name": "Reset Limit",
-        "phone": "555-1818",
+        "phone": "+13055551818",
     }
     register = client.post("/api/v1/auth/register", json=payload)
     assert register.status_code == 201, register.text
@@ -949,7 +987,7 @@ def test_password_reset_request_lookup_and_rate_limit_are_case_insensitive(
         "email": "reset.canonical@example.com",
         "password": "ResetCanonical123!",
         "name": "Reset Canonical",
-        "phone": "555-1819",
+        "phone": "+13055551819",
     }
     register = client.post("/api/v1/auth/register", json=payload)
     assert register.status_code == 201, register.text
@@ -1000,7 +1038,7 @@ def test_password_reset_request_rate_limit_has_known_unknown_response_parity_und
         "email": "reset.parity@example.com",
         "password": "ResetParity123!",
         "name": "Reset Parity",
-        "phone": "555-1919",
+        "phone": "+13055551919",
     }
     register = client.post("/api/v1/auth/register", json=known_payload)
     assert register.status_code == 201, register.text
@@ -1074,7 +1112,7 @@ def test_password_reset_request_enqueues_outbox_email_after_token_creation(clien
         "email": "reset.outbox@example.com",
         "password": "ResetOutbox123!",
         "name": "Reset Outbox",
-        "phone": "555-2020",
+        "phone": "+13055552020",
     }
     register = client.post("/api/v1/auth/register", json=payload)
     assert register.status_code == 201, register.text
@@ -1109,7 +1147,7 @@ def test_password_reset_outbox_email_retries_then_sends_when_worker_recovers(cli
         "email": "reset.outbox.retry@example.com",
         "password": "ResetOutboxRetry123!",
         "name": "Reset Outbox Retry",
-        "phone": "555-2121",
+        "phone": "+13055552121",
     }
     register = client.post("/api/v1/auth/register", json=payload)
     assert register.status_code == 201, register.text

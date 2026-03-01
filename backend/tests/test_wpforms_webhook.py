@@ -62,7 +62,7 @@ def test_wpforms_webhook_accepts_signed_request_and_creates_lead(client, db):
     assert lead.last_name == "Frazier"
     assert lead.state_code == "FL"
     assert lead.zip_code == "33415"
-    assert lead.mobile_phone == "3054959490"
+    assert lead.mobile_phone == "+13054959490"
     assert lead.current_investment_strategies == ["Active Trading", "Real Estate"]
     assert lead.best_time_to_reach == "AM"
 
