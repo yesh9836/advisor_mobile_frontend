@@ -1,6 +1,11 @@
+import re
 from typing import Optional
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
+
+from app.utils.phone import normalize_phone_number
+
+_US_E164_PHONE_PATTERN = re.compile(r"^\+1\d{10}$")
 
 
 def _normalize_email_value(value: object) -> object:
@@ -25,7 +30,7 @@ class UserRegister(BaseModel):
                     "email": "advisor@example.com",
                     "password": "securepassword123",
                     "name": "John Doe",
-                    "phone": "+1234567890",
+                    "phone": "+13055551234",
                     "role": "advisor"
                 }
             ]
@@ -36,6 +41,20 @@ class UserRegister(BaseModel):
     @classmethod
     def normalize_email(cls, value: object) -> object:
         return _normalize_email_value(value)
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def normalize_and_validate_phone(cls, value: object) -> object:
+        if value is None:
+            return None
+
+        normalized = normalize_phone_number(str(value))
+        if normalized is None:
+            return None
+
+        if not _US_E164_PHONE_PATTERN.fullmatch(normalized):
+            raise ValueError("Phone must be a valid US number")
+        return normalized
 
 
 class UserLogin(BaseModel):
