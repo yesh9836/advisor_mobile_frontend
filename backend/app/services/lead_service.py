@@ -19,6 +19,7 @@ from app.services.delivery_settings_service import DeliverySettingsService
 from app.services.metrics_service import MetricsService
 from app.services.notification_service import NotificationService
 from app.utils.csv_generator import LEAD_CSV_REQUIRED_VALUE_FIELDS, generate_leads_csv_stream
+from app.utils.phone import normalize_phone_number
 
 logger = logging.getLogger(__name__)
 
@@ -1145,6 +1146,8 @@ class LeadService:
 
         if "state_code" in lead_data and lead_data["state_code"]:
             lead_data["state_code"] = lead_data["state_code"].strip().upper()
+        if "mobile_phone" in lead_data:
+            lead_data["mobile_phone"] = normalize_phone_number(lead_data.get("mobile_phone"))
 
         lead = Lead(**lead_data)
 
@@ -1171,7 +1174,17 @@ class LeadService:
         if not csv_data:
             return {"success": 0, "failed": 0, "errors": []}
 
-        phones = {row.get("mobile_phone") for row in csv_data if row.get("mobile_phone")}
+        normalized_rows: List[dict] = []
+        for row in csv_data:
+            clean_row = dict(row)
+            clean_row["mobile_phone"] = normalize_phone_number(clean_row.get("mobile_phone"))
+            normalized_rows.append(clean_row)
+
+        phones = {
+            row.get("mobile_phone")
+            for row in normalized_rows
+            if row.get("mobile_phone")
+        }
         existing_phones = set()
         if phones:
             existing_rows = (
@@ -1184,7 +1197,7 @@ class LeadService:
         seen_phones = set()
         valid_rows: List[dict] = []
 
-        for idx, row in enumerate(csv_data):
+        for idx, row in enumerate(normalized_rows):
             row_num = idx + 2
             row_errors: List[str] = []
 
