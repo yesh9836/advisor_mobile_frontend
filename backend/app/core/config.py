@@ -1,5 +1,5 @@
 import json
-from ipaddress import ip_network
+from ipaddress import ip_address, ip_network
 from pathlib import Path
 from typing import Optional
 from urllib.parse import quote_plus
@@ -114,6 +114,11 @@ class Settings(BaseSettings):
     STRIPE_PLAN_CLEANUP_RETRY_BASE_SECONDS: int = 30
     STRIPE_PLAN_CLEANUP_RETRY_MAX_SECONDS: int = 1800
     STRIPE_PLAN_CLEANUP_STALE_LOCK_SECONDS: int = 900
+    STRIPE_PLAN_CLEANUP_HEALTH_HEARTBEAT_MAX_AGE_SECONDS: int = 600
+    STRIPE_PLAN_CLEANUP_HEALTH_MAX_DUE_PENDING_COUNT: int = 1000
+    STRIPE_PLAN_CLEANUP_HEALTH_MAX_OLDEST_DUE_PENDING_SECONDS: int = 600
+    STRIPE_PLAN_CLEANUP_HEALTH_MAX_FAILED_COUNT: int = 0
+    STRIPE_PLAN_CLEANUP_HEALTH_MAX_STALE_LOCK_COUNT: int = 0
 
     # Public website intake webhook (WPForms via relay)
     WPFORMS_WEBHOOK_HMAC_SECRET: str = ""
@@ -174,6 +179,13 @@ class Settings(BaseSettings):
     NOTIFICATION_OUTBOX_HEALTH_MAX_FAILED_COUNT: int = 0
     NOTIFICATION_OUTBOX_HEALTH_STALE_LOCK_SECONDS: int = 900
     NOTIFICATION_OUTBOX_HEALTH_MAX_STALE_LOCK_COUNT: int = 0
+
+    # Operational data retention
+    OPERATIONAL_RETENTION_BATCH_SIZE: int = 500
+    PASSWORD_RESET_REQUEST_ATTEMPT_RETENTION_DAYS: int = 30
+    PASSWORD_RESET_TOKEN_RETENTION_DAYS: int = 30
+    NOTIFICATION_OUTBOX_RETENTION_DAYS: int = 90
+    PROCESSED_STRIPE_EVENT_RETENTION_DAYS: int = 90
 
     # Twilio SMS
     TWILIO_ACCOUNT_SID: Optional[str] = None
@@ -352,6 +364,13 @@ class Settings(BaseSettings):
         "STRIPE_PLAN_CLEANUP_RETRY_BASE_SECONDS",
         "STRIPE_PLAN_CLEANUP_RETRY_MAX_SECONDS",
         "STRIPE_PLAN_CLEANUP_STALE_LOCK_SECONDS",
+        "STRIPE_PLAN_CLEANUP_HEALTH_HEARTBEAT_MAX_AGE_SECONDS",
+        "STRIPE_PLAN_CLEANUP_HEALTH_MAX_OLDEST_DUE_PENDING_SECONDS",
+        "OPERATIONAL_RETENTION_BATCH_SIZE",
+        "PASSWORD_RESET_REQUEST_ATTEMPT_RETENTION_DAYS",
+        "PASSWORD_RESET_TOKEN_RETENTION_DAYS",
+        "NOTIFICATION_OUTBOX_RETENTION_DAYS",
+        "PROCESSED_STRIPE_EVENT_RETENTION_DAYS",
         "WPFORMS_WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS",
         mode="after",
     )
@@ -368,6 +387,9 @@ class Settings(BaseSettings):
         "NOTIFICATION_OUTBOX_HEALTH_MAX_DUE_PENDING_COUNT",
         "NOTIFICATION_OUTBOX_HEALTH_MAX_FAILED_COUNT",
         "NOTIFICATION_OUTBOX_HEALTH_MAX_STALE_LOCK_COUNT",
+        "STRIPE_PLAN_CLEANUP_HEALTH_MAX_DUE_PENDING_COUNT",
+        "STRIPE_PLAN_CLEANUP_HEALTH_MAX_FAILED_COUNT",
+        "STRIPE_PLAN_CLEANUP_HEALTH_MAX_STALE_LOCK_COUNT",
         mode="after",
     )
     @classmethod
@@ -495,6 +517,23 @@ class Settings(BaseSettings):
                 raise ValueError("CORS origins must use HTTPS in production")
             if "localhost" in parsed.netloc or "127.0.0.1" in parsed.netloc:
                 raise ValueError("Localhost CORS origins are not allowed in production")
+
+        frontend_url = (self.FRONTEND_URL or "").strip()
+        parsed_frontend_url = urlparse(frontend_url)
+        if parsed_frontend_url.scheme != "https" or not parsed_frontend_url.netloc:
+            raise ValueError("FRONTEND_URL must be an absolute HTTPS URL in production")
+        frontend_host = (parsed_frontend_url.hostname or "").strip().lower()
+        if not frontend_host:
+            raise ValueError("FRONTEND_URL must include a valid hostname in production")
+        if frontend_host == "localhost" or frontend_host.endswith(".localhost"):
+            raise ValueError("FRONTEND_URL localhost hostnames are not allowed in production")
+        is_loopback_host = False
+        try:
+            is_loopback_host = ip_address(frontend_host).is_loopback
+        except ValueError:
+            pass
+        if is_loopback_host:
+            raise ValueError("FRONTEND_URL loopback hosts are not allowed in production")
 
         if "*" in self.CORS_ALLOW_METHODS or "*" in self.CORS_ALLOW_HEADERS or "*" in self.CORS_ORIGINS:
             raise ValueError("Wildcard CORS values are not allowed in production")
