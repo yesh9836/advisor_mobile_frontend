@@ -33,6 +33,7 @@ from app.models.password_reset import PasswordResetRequestAttempt, PasswordReset
 from app.models.user import User
 from app.schemas.auth import PasswordResetConfirm, PasswordResetRequest, UserRegister, UserLogin
 from app.services.notification_template_service import NotificationTemplateService
+from app.utils.phone import normalize_phone_number
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +121,7 @@ class AuthService:
             new_user = User(
                 email=normalized_email,
                 name=user_data.name,
-                phone=user_data.phone,
+                phone=normalize_phone_number(user_data.phone),
                 password_hash=password_hash,
                 role="advisor"
             )
