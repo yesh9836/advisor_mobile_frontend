@@ -42,11 +42,12 @@ def test_enqueue_lead_delivery_notifications_is_idempotent_and_channel_scoped(
     db.commit()
 
     lead = lead_factory(state_code="CA", first_name="Jordan", last_name="Miles")
+    second_lead = lead_factory(state_code="CA", first_name="Casey", last_name="Vale")
     first = NotificationService.enqueue_lead_delivery_notifications(
         db=db,
         user_id=advisor.id,
-        lead_ids=[lead.id],
-        purchase_id=None,
+        lead_ids=[lead.id, second_lead.id],
+        purchase_id=77,
         source_event="test_enqueue",
     )
     db.flush()
@@ -55,8 +56,8 @@ def test_enqueue_lead_delivery_notifications_is_idempotent_and_channel_scoped(
     second = NotificationService.enqueue_lead_delivery_notifications(
         db=db,
         user_id=advisor.id,
-        lead_ids=[lead.id],
-        purchase_id=None,
+        lead_ids=[lead.id, second_lead.id],
+        purchase_id=77,
         source_event="test_enqueue",
     )
     assert second == {"enqueued_total": 0, "enqueued_email": 0, "enqueued_sms": 0}
@@ -69,6 +70,16 @@ def test_enqueue_lead_delivery_notifications_is_idempotent_and_channel_scoped(
     )
     assert [row.channel for row in rows] == ["email", "sms"]
     assert all(row.status == "pending" for row in rows)
+    sms_row = next((row for row in rows if row.channel == "sms"), None)
+    assert sms_row is not None
+    expected_name = (advisor.name or "").strip() or "Advisor"
+    assert sms_row.message_body == (
+        f"{expected_name}, 2 leads purchased (2/2) delivered. Check your account for details"
+    )
+    assert isinstance(sms_row.payload, dict)
+    assert sms_row.payload.get("lead_ids") == sorted([lead.id, second_lead.id])
+    assert sms_row.payload.get("delivered_count") == 2
+    assert sms_row.payload.get("total_count") == 2
 
 
 @pytest.mark.integration
@@ -137,12 +148,13 @@ def test_enqueue_lead_delivery_notifications_handles_duplicate_conflict_without_
 
     lead = lead_factory(state_code="CA", first_name="Morgan", last_name="Reed")
     purchase_id = 42
-    email_key = NotificationService._build_idempotency_key(
+    email_key = NotificationService._build_delivery_progress_idempotency_key(
         channel="email",
         user_id=advisor.id,
-        lead_id=lead.id,
         purchase_id=purchase_id,
         event_type=NotificationService.LEAD_DELIVERED_EVENT,
+        delivered_count=1,
+        total_count=1,
     )
     db.add(
         NotificationOutbox(
