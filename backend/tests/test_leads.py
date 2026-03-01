@@ -896,32 +896,7 @@ def test_dashboard_summary_returns_expected_shape(
 
 
 @pytest.mark.integration
-def test_dashboard_summary_delivered_counts_only_downloaded_leads(
-    client,
-    user_factory,
-    lead_factory,
-    license_factory,
-    plan_factory,
-    purchase_factory,
-    auth_headers,
-):
-    _advisor, _plan, headers = _create_advisor_with_access(
-        user_factory,
-        license_factory,
-        plan_factory,
-        purchase_factory,
-        auth_headers,
-    )
-    lead_factory(state_code="CA", mobile_phone="555-CA-5101", first_name="Created", last_name="Only")
-
-    response = client.get("/api/v1/leads/dashboard/summary", headers=headers)
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["leads_delivered_7_days"] == 0
-
-
-@pytest.mark.integration
-def test_dashboard_summary_delivered_excludes_downloads_older_than_7_days(
+def test_dashboard_summary_delivered_counts_only_recent_assignments(
     client,
     db,
     user_factory,
@@ -931,22 +906,84 @@ def test_dashboard_summary_delivered_excludes_downloads_older_than_7_days(
     purchase_factory,
     auth_headers,
 ):
-    _advisor, _plan, headers = _create_advisor_with_access(
+    advisor, _plan, headers = _create_advisor_with_access(
         user_factory,
         license_factory,
         plan_factory,
         purchase_factory,
         auth_headers,
     )
-    lead_factory(state_code="CA", mobile_phone="555-CA-5201", first_name="Recent", last_name="Lead")
-    lead_factory(state_code="CA", mobile_phone="555-CA-5202", first_name="Old", last_name="Lead")
+    assigned_lead = lead_factory(
+        state_code="CA",
+        mobile_phone="555-CA-5101",
+        first_name="Assigned",
+        last_name="Lead",
+    )
+    lead_factory(
+        state_code="CA",
+        mobile_phone="555-CA-5102",
+        first_name="Unassigned",
+        last_name="Lead",
+    )
+    db.add(
+        LeadOwnership(
+            user_id=advisor.id,
+            lead_id=assigned_lead.id,
+            assigned_at=datetime.now(timezone.utc),
+        )
+    )
+    db.commit()
 
-    download_response = client.post("/api/v1/leads/download", headers=headers)
-    assert download_response.status_code == 200, download_response.text
+    response = client.get("/api/v1/leads/dashboard/summary", headers=headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["leads_delivered_7_days"] == 1
 
-    downloads = db.query(LeadDownload).order_by(LeadDownload.id.asc()).all()
-    assert len(downloads) == 2
-    downloads[0].downloaded_at = datetime.now(timezone.utc) - timedelta(days=8)
+
+@pytest.mark.integration
+def test_dashboard_summary_delivered_excludes_assignments_older_than_7_days(
+    client,
+    db,
+    user_factory,
+    lead_factory,
+    license_factory,
+    plan_factory,
+    purchase_factory,
+    auth_headers,
+):
+    advisor, _plan, headers = _create_advisor_with_access(
+        user_factory,
+        license_factory,
+        plan_factory,
+        purchase_factory,
+        auth_headers,
+    )
+    recent_lead = lead_factory(
+        state_code="CA",
+        mobile_phone="555-CA-5201",
+        first_name="Recent",
+        last_name="Lead",
+    )
+    old_lead = lead_factory(
+        state_code="CA",
+        mobile_phone="555-CA-5202",
+        first_name="Old",
+        last_name="Lead",
+    )
+    db.add(
+        LeadOwnership(
+            user_id=advisor.id,
+            lead_id=recent_lead.id,
+            assigned_at=datetime.now(timezone.utc),
+        )
+    )
+    db.add(
+        LeadOwnership(
+            user_id=advisor.id,
+            lead_id=old_lead.id,
+            assigned_at=datetime.now(timezone.utc) - timedelta(days=8),
+        )
+    )
     db.commit()
 
     summary_response = client.get("/api/v1/leads/dashboard/summary", headers=headers)
@@ -956,7 +993,7 @@ def test_dashboard_summary_delivered_excludes_downloads_older_than_7_days(
 
 
 @pytest.mark.integration
-def test_dashboard_summary_excludes_downloads_outside_allowed_states(
+def test_dashboard_summary_counts_recent_assignments_across_owned_states(
     client,
     db,
     user_factory,
@@ -978,19 +1015,17 @@ def test_dashboard_summary_excludes_downloads_outside_allowed_states(
     ny_lead = lead_factory(state_code="NY", mobile_phone="555-NY-5301", first_name="Blocked", last_name="Lead")
 
     db.add(
-        LeadDownload(
+        LeadOwnership(
             user_id=advisor.id,
             lead_id=ca_lead.id,
-            downloaded_at=datetime.now(timezone.utc),
-            csv_batch_id="batch_state_scope",
+            assigned_at=datetime.now(timezone.utc),
         )
     )
     db.add(
-        LeadDownload(
+        LeadOwnership(
             user_id=advisor.id,
             lead_id=ny_lead.id,
-            downloaded_at=datetime.now(timezone.utc),
-            csv_batch_id="batch_state_scope",
+            assigned_at=datetime.now(timezone.utc),
         )
     )
     db.commit()
@@ -1041,27 +1076,24 @@ def test_dashboard_summary_appointments_count_uses_recent_deliveries_not_outcome
     )
 
     db.add(
-        LeadDownload(
+        LeadOwnership(
             user_id=advisor.id,
             lead_id=recent_appt_lead.id,
-            downloaded_at=datetime.now(timezone.utc),
-            csv_batch_id="batch_appt_scope",
+            assigned_at=datetime.now(timezone.utc),
         )
     )
     db.add(
-        LeadDownload(
+        LeadOwnership(
             user_id=advisor.id,
             lead_id=recent_contacted_lead.id,
-            downloaded_at=datetime.now(timezone.utc),
-            csv_batch_id="batch_appt_scope",
+            assigned_at=datetime.now(timezone.utc),
         )
     )
     db.add(
-        LeadDownload(
+        LeadOwnership(
             user_id=advisor.id,
             lead_id=old_delivery_appt_lead.id,
-            downloaded_at=datetime.now(timezone.utc) - timedelta(days=8),
-            csv_batch_id="batch_appt_scope",
+            assigned_at=datetime.now(timezone.utc) - timedelta(days=8),
         )
     )
 
@@ -1102,6 +1134,95 @@ def test_dashboard_summary_appointments_count_uses_recent_deliveries_not_outcome
 
 
 @pytest.mark.integration
+def test_dashboard_summary_does_not_count_recent_exports_for_old_assignments(
+    client,
+    db,
+    user_factory,
+    lead_factory,
+    license_factory,
+    plan_factory,
+    purchase_factory,
+    auth_headers,
+):
+    advisor, _plan, headers = _create_advisor_with_access(
+        user_factory,
+        license_factory,
+        plan_factory,
+        purchase_factory,
+        auth_headers,
+    )
+
+    lead = lead_factory(
+        state_code="CA",
+        mobile_phone="555-CA-5451",
+        first_name="Old",
+        last_name="Assigned",
+    )
+    db.add(
+        LeadOwnership(
+            user_id=advisor.id,
+            lead_id=lead.id,
+            assigned_at=datetime.now(timezone.utc) - timedelta(days=8),
+        )
+    )
+    db.add(
+        LeadDownload(
+            user_id=advisor.id,
+            lead_id=lead.id,
+            downloaded_at=datetime.now(timezone.utc),
+            csv_batch_id="batch_old_assignment_export",
+        )
+    )
+    db.commit()
+
+    response = client.get("/api/v1/leads/dashboard/summary", headers=headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["leads_delivered_7_days"] == 0
+
+
+@pytest.mark.integration
+def test_dashboard_summary_keeps_legacy_download_fallback_when_no_ownership_exists(
+    client,
+    db,
+    user_factory,
+    lead_factory,
+    license_factory,
+    plan_factory,
+    purchase_factory,
+    auth_headers,
+):
+    advisor, _plan, headers = _create_advisor_with_access(
+        user_factory,
+        license_factory,
+        plan_factory,
+        purchase_factory,
+        auth_headers,
+    )
+
+    legacy_lead = lead_factory(
+        state_code="CA",
+        mobile_phone="555-CA-5452",
+        first_name="Legacy",
+        last_name="Download",
+    )
+    db.add(
+        LeadDownload(
+            user_id=advisor.id,
+            lead_id=legacy_lead.id,
+            downloaded_at=datetime.now(timezone.utc),
+            csv_batch_id="batch_legacy_download",
+        )
+    )
+    db.commit()
+
+    response = client.get("/api/v1/leads/dashboard/summary", headers=headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["leads_delivered_7_days"] == 1
+
+
+@pytest.mark.integration
 def test_dashboard_summary_cost_uses_latest_completed_purchase_amount(
     client,
     db,
@@ -1136,11 +1257,10 @@ def test_dashboard_summary_cost_uses_latest_completed_purchase_amount(
         last_name="Metric",
     )
     db.add(
-        LeadDownload(
+        LeadOwnership(
             user_id=advisor.id,
             lead_id=lead.id,
-            downloaded_at=datetime.now(timezone.utc),
-            csv_batch_id="batch_cost_scope",
+            assigned_at=datetime.now(timezone.utc),
         )
     )
     db.add(
