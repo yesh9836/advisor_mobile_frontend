@@ -43,8 +43,8 @@ export const resolveApiBaseUrl = ({
     return DEV_API_BASE_URL_FALLBACK;
   }
 
-  if (isProduction && !/^https?:\/\//i.test(normalizedConfiguredBaseUrl)) {
-    throw new Error("VITE_API_BASE_URL must be an absolute http(s) URL in production.");
+  if (isProduction && !/^https:\/\//i.test(normalizedConfiguredBaseUrl)) {
+    throw new Error("VITE_API_BASE_URL must be an absolute https URL in production.");
   }
 
   let parsedBaseUrl: URL;
