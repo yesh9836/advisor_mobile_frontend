@@ -7,7 +7,11 @@ import {
 } from "axios";
 import { afterEach, describe, expect, it } from "vitest";
 
-import apiClient, { classifyAuthEndpoint, isTerminalRefreshFailure } from "@/api/client";
+import apiClient, {
+  classifyAuthEndpoint,
+  isTerminalRefreshFailure,
+  resolveApiBaseUrl,
+} from "@/api/client";
 
 const originalAdapter = apiClient.defaults.adapter;
 
@@ -125,5 +129,51 @@ describe("apiClient auth transport", () => {
     expect(isTerminalRefreshFailure(buildAxiosError(500))).toBe(false);
     expect(isTerminalRefreshFailure(buildAxiosError())).toBe(false);
     expect(isTerminalRefreshFailure(new Error("plain error"))).toBe(false);
+  });
+
+  it("uses localhost fallback for missing API base URL outside production", () => {
+    expect(
+      resolveApiBaseUrl({
+        configuredBaseUrl: undefined,
+        isProduction: false,
+        parseBase: "http://localhost",
+      }),
+    ).toBe("http://localhost:8000/api/v1");
+  });
+
+  it("rejects missing or invalid production API base URL", () => {
+    expect(() =>
+      resolveApiBaseUrl({
+        configuredBaseUrl: undefined,
+        isProduction: true,
+        parseBase: "https://app.example.com",
+      }),
+    ).toThrow(/VITE_API_BASE_URL/);
+
+    expect(() =>
+      resolveApiBaseUrl({
+        configuredBaseUrl: "/api/v1",
+        isProduction: true,
+        parseBase: "https://app.example.com",
+      }),
+    ).toThrow(/absolute http\(s\) URL/i);
+
+    expect(() =>
+      resolveApiBaseUrl({
+        configuredBaseUrl: "https://localhost:8000/api/v1",
+        isProduction: true,
+        parseBase: "https://app.example.com",
+      }),
+    ).toThrow(/localhost\/loopback/i);
+  });
+
+  it("accepts valid production API base URL", () => {
+    expect(
+      resolveApiBaseUrl({
+        configuredBaseUrl: "https://api.example.com/api/v1",
+        isProduction: true,
+        parseBase: "https://app.example.com",
+      }),
+    ).toBe("https://api.example.com/api/v1");
   });
 });
