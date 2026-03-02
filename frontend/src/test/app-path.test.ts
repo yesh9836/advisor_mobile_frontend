@@ -16,9 +16,11 @@ describe("app path helpers", () => {
     expect(buildAppPath("/", "/portal")).toBe("/portal");
   });
 
-  it("detects login/register routes for the configured base path", () => {
+  it("detects auth routes for the configured base path", () => {
     expect(isAuthRoutePath("/portal/login", "/portal")).toBe(true);
     expect(isAuthRoutePath("/portal/register/", "/portal")).toBe(true);
+    expect(isAuthRoutePath("/portal/forgot-password", "/portal")).toBe(true);
+    expect(isAuthRoutePath("/portal/reset-password", "/portal")).toBe(true);
     expect(isAuthRoutePath("/login", "/portal")).toBe(false);
   });
 });

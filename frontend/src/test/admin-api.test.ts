@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import apiClient from "@/api/client";
+import * as adminApi from "@/api/admin";
 import {
   archiveAdminPlan,
   approveLicense,
@@ -29,7 +30,6 @@ import {
   getUsers,
   previewLicenseDocument,
   rejectLicense,
-  syncWordPress,
   unarchiveAdminPlan,
   updateAdminPlan,
 } from "@/api/admin";
@@ -99,6 +99,10 @@ describe("admin API contract", () => {
     mockedApiClient.get.mockReset();
     mockedApiClient.post.mockReset();
     mockedApiClient.put.mockReset();
+  });
+
+  it("does not expose removed WordPress sync endpoint", () => {
+    expect("syncWordPress" in adminApi).toBe(false);
   });
 
   it("getDashboardStats uses GET /admin/dashboard", async () => {
@@ -476,21 +480,6 @@ describe("admin API contract", () => {
     await deactivateUser(27, "   ");
 
     expect(mockedApiClient.post).toHaveBeenCalledWith("/admin/users/27/deactivate", {});
-  });
-
-  it("syncWordPress uses POST /admin/sync/wordpress", async () => {
-    const stats = {
-      scanned: 100,
-      inserted: 90,
-      skipped_duplicates: 8,
-      failed: 2,
-      errors: [{ row: 5, error: "invalid phone" }],
-    };
-    mockedApiClient.post.mockResolvedValueOnce({ data: stats });
-
-    await expect(syncWordPress()).resolves.toEqual(stats);
-
-    expect(mockedApiClient.post).toHaveBeenCalledWith("/admin/sync/wordpress");
   });
 
   it("getAuditLogs sends page/size + normalized filters", async () => {

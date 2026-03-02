@@ -156,7 +156,15 @@ describe("apiClient auth transport", () => {
         isProduction: true,
         parseBase: "https://app.example.com",
       }),
-    ).toThrow(/absolute http\(s\) URL/i);
+    ).toThrow(/absolute https URL/i);
+
+    expect(() =>
+      resolveApiBaseUrl({
+        configuredBaseUrl: "http://api.example.com/api/v1",
+        isProduction: true,
+        parseBase: "https://app.example.com",
+      }),
+    ).toThrow(/absolute https URL/i);
 
     expect(() =>
       resolveApiBaseUrl({
