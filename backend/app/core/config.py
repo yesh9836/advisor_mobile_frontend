@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-this-to-a-secure-random-key-in-production"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 10
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 14
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     PASSWORD_RESET_TOKEN_EXPIRE_MINUTES: int = 30
     PASSWORD_RESET_REQUESTS_PER_HOUR: int = 3
 
@@ -165,8 +165,8 @@ class Settings(BaseSettings):
     NOTIFICATIONS_ENABLED: bool = False
     NOTIFICATION_EMAIL_ENABLED: bool = True
     NOTIFICATION_SMS_ENABLED: bool = True
-    NOTIFICATION_EMAIL_PROVIDER: str = "smtp2go"  # smtp2go | smtp | sendgrid | noop
-    NOTIFICATION_SMS_PROVIDER: str = "twilio"  # twilio | noop
+    NOTIFICATION_EMAIL_PROVIDER: str = "smtp2go"  # smtp2go 
+    NOTIFICATION_SMS_PROVIDER: str = "twilio"  # twilio 
     NOTIFICATION_FROM_EMAIL: Optional[str] = None
     NOTIFICATION_FROM_NAME: Optional[str] = None
     NOTIFICATION_OUTBOX_BATCH_SIZE: int = 100
