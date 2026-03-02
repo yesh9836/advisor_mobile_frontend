@@ -42,6 +42,21 @@ class LeadService:
     _RECONCILIATION_MAX_ASSIGNMENTS_PER_ADVISOR_ROUND = 25
 
     @staticmethod
+    def _lead_not_downloaded_by_anyone_condition():
+        return ~select(LeadDownload.id).where(LeadDownload.lead_id == Lead.id).exists()
+
+    @staticmethod
+    def _lead_not_owned_condition():
+        return ~select(LeadOwnership.id).where(LeadOwnership.lead_id == Lead.id).exists()
+
+    @staticmethod
+    def _lead_not_downloaded_by_user_condition(user_id: int):
+        return ~select(LeadDownload.id).where(
+            LeadDownload.user_id == user_id,
+            LeadDownload.lead_id == Lead.id,
+        ).exists()
+
+    @staticmethod
     def _get_user_purchase_state_limit(db: Session, user_id: int) -> Optional[int]:
         rows = (
             db.query(LeadPackage.state_limit)
@@ -88,8 +103,8 @@ class LeadService:
         available_count = (
             db.query(func.count(Lead.id))
             .filter(Lead.state_code.in_(states))
-            .filter(~Lead.id.in_(select(LeadDownload.lead_id)))
-            .filter(~Lead.id.in_(select(LeadOwnership.lead_id)))
+            .filter(LeadService._lead_not_downloaded_by_anyone_condition())
+            .filter(LeadService._lead_not_owned_condition())
             .scalar()
         ) or 0
         return {
@@ -101,8 +116,8 @@ class LeadService:
     def get_global_unsold_inventory_count(db: Session) -> int:
         count = (
             db.query(func.count(Lead.id))
-            .filter(~Lead.id.in_(select(LeadDownload.lead_id)))
-            .filter(~Lead.id.in_(select(LeadOwnership.lead_id)))
+            .filter(LeadService._lead_not_downloaded_by_anyone_condition())
+            .filter(LeadService._lead_not_owned_condition())
             .scalar()
         ) or 0
         return int(count)
@@ -377,7 +392,7 @@ class LeadService:
         candidate_query = (
             db.query(Lead)
             .filter(Lead.state_code.in_(states))
-            .filter(~Lead.id.in_(select(LeadOwnership.lead_id)))
+            .filter(LeadService._lead_not_owned_condition())
             .order_by(Lead.created_at.desc(), Lead.id.desc())
         )
         if dialect_name == "mysql":
@@ -552,7 +567,7 @@ class LeadService:
         candidate_query = (
             db.query(Lead)
             .filter(Lead.state_code.in_(normalized_states))
-            .filter(~Lead.id.in_(select(LeadOwnership.lead_id)))
+            .filter(LeadService._lead_not_owned_condition())
             .order_by(Lead.created_at.desc(), Lead.id.desc())
         )
         if dialect_name == "mysql":
@@ -918,14 +933,12 @@ class LeadService:
         size: int,
         lock_rows: bool = False,
     ) -> List[Lead]:
-        user_downloaded_subquery = select(LeadDownload.lead_id).where(LeadDownload.user_id == user_id)
-
         query = (
             db.query(Lead)
             .filter(Lead.state_code.in_(states))
-            .filter(~Lead.id.in_(user_downloaded_subquery))
-            .filter(~Lead.id.in_(select(LeadDownload.lead_id)))
-            .filter(~Lead.id.in_(select(LeadOwnership.lead_id)))
+            .filter(LeadService._lead_not_downloaded_by_user_condition(user_id))
+            .filter(LeadService._lead_not_downloaded_by_anyone_condition())
+            .filter(LeadService._lead_not_owned_condition())
             .order_by(Lead.created_at.desc())
         )
 
@@ -1123,16 +1136,16 @@ class LeadService:
         if has_owned_leads:
             owned_subquery = select(LeadOwnership.lead_id).where(LeadOwnership.user_id == user.id)
             query = query.filter(Lead.id.in_(owned_subquery))
-            available_condition = ~Lead.id.in_(downloaded_subquery)
+            available_condition = LeadService._lead_not_downloaded_by_user_condition(user.id)
             delivered_condition = Lead.id.in_(downloaded_subquery)
         else:
             states = LeadService._get_user_allowed_states_for_new_leads(db, user.id)
             if LeadService._can_user_view_unsold_inventory(db=db, user_id=user.id, states=states):
                 available_condition = and_(
                     Lead.state_code.in_(states),
-                    ~Lead.id.in_(downloaded_subquery),
-                    ~Lead.id.in_(select(LeadDownload.lead_id)),
-                    ~Lead.id.in_(select(LeadOwnership.lead_id)),
+                    LeadService._lead_not_downloaded_by_user_condition(user.id),
+                    LeadService._lead_not_downloaded_by_anyone_condition(),
+                    LeadService._lead_not_owned_condition(),
                 )
             else:
                 available_condition = false()
