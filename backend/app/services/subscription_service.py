@@ -55,10 +55,18 @@ class SubscriptionService:
 
     _TERMINAL_PURCHASE_STATUSES = frozenset({"failed", "canceled", "refunded"})
     _IMMUTABLE_PURCHASE_STATUSES = frozenset({"canceled", "refunded"})
+    _MAX_INVOICE_RETRIEVALS_PER_SUMMARY = 3
 
     @staticmethod
     def _normalize_purchase_status(status: Optional[str]) -> str:
         return str(status or "").strip().lower()
+
+    @staticmethod
+    def _extract_invoice_payment_intent_id(invoice: Dict[str, Any]) -> str:
+        payment_intent = invoice.get("payment_intent")
+        if isinstance(payment_intent, dict):
+            return str(payment_intent.get("id") or "").strip()
+        return str(payment_intent or "").strip()
 
     @staticmethod
     def _resolve_purchase_status_transition(
@@ -570,13 +578,59 @@ class SubscriptionService:
                 invoice_id = str(inv.get("id") or "").strip()
                 if invoice_id:
                     invoice_by_id[invoice_id] = inv
-                payment_intent = inv.get("payment_intent")
-                if isinstance(payment_intent, dict):
-                    payment_intent_id = str(payment_intent.get("id") or "").strip()
-                else:
-                    payment_intent_id = str(payment_intent or "").strip()
+                payment_intent_id = SubscriptionService._extract_invoice_payment_intent_id(inv)
                 if payment_intent_id and payment_intent_id not in invoice_by_payment_intent:
                     invoice_by_payment_intent[payment_intent_id] = inv
+
+            missing_invoice_ids: List[str] = []
+            seen_missing_invoice_ids: set[str] = set()
+            for purchase, _package in purchase_rows:
+                purchase_invoice_id = str(purchase.stripe_invoice_id or "").strip()
+                if (
+                    purchase_invoice_id
+                    and purchase_invoice_id not in invoice_by_id
+                    and purchase_invoice_id not in seen_missing_invoice_ids
+                ):
+                    seen_missing_invoice_ids.add(purchase_invoice_id)
+                    missing_invoice_ids.append(purchase_invoice_id)
+
+            retrieval_cap = max(int(SubscriptionService._MAX_INVOICE_RETRIEVALS_PER_SUMMARY), 0)
+            retrieval_targets = missing_invoice_ids[:retrieval_cap]
+            skipped_retrievals = max(len(missing_invoice_ids) - len(retrieval_targets), 0)
+
+            for invoice_id in retrieval_targets:
+                try:
+                    retrieved_invoice = stripe.Invoice.retrieve(invoice_id)
+                except stripe.error.StripeError:
+                    logger.warning(
+                        "Unable to retrieve Stripe invoice_id=%s for user_id=%s",
+                        invoice_id,
+                        user.id,
+                    )
+                    continue
+
+                invoice_by_id[invoice_id] = retrieved_invoice
+                resolved_invoice_id = str(retrieved_invoice.get("id") or "").strip()
+                if resolved_invoice_id:
+                    invoice_by_id[resolved_invoice_id] = retrieved_invoice
+
+                payment_intent_id = SubscriptionService._extract_invoice_payment_intent_id(
+                    retrieved_invoice
+                )
+                if payment_intent_id and payment_intent_id not in invoice_by_payment_intent:
+                    invoice_by_payment_intent[payment_intent_id] = retrieved_invoice
+
+            if skipped_retrievals > 0:
+                logger.info(
+                    (
+                        "Skipping Stripe invoice retrievals beyond cap: user_id=%s missing=%s "
+                        "retrieval_cap=%s skipped=%s"
+                    ),
+                    user.id,
+                    len(missing_invoice_ids),
+                    retrieval_cap,
+                    skipped_retrievals,
+                )
 
             linked_invoice_ids: set[str] = set()
             did_backfill_purchase_invoice_id = False
@@ -588,16 +642,6 @@ class SubscriptionService:
 
                 if purchase_invoice_id:
                     matched_invoice = invoice_by_id.get(purchase_invoice_id)
-                    if matched_invoice is None:
-                        try:
-                            matched_invoice = stripe.Invoice.retrieve(purchase_invoice_id)
-                        except stripe.error.StripeError:
-                            logger.warning(
-                                "Unable to retrieve Stripe invoice_id=%s for user_id=%s",
-                                purchase_invoice_id,
-                                user.id,
-                            )
-                            matched_invoice = None
                 elif purchase_payment_intent_id:
                     matched_invoice = invoice_by_payment_intent.get(purchase_payment_intent_id)
 
