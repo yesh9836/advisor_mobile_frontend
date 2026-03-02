@@ -262,6 +262,46 @@ test.describe("critical auth and checkout browser journeys @mocked", () => {
     assertNoUnhandledApiRequests();
   });
 
+  test("forces logout redirect when refresh fails with terminal 401", async ({
+    page,
+  }) => {
+    let refreshCalls = 0;
+    let balanceCalls = 0;
+    let sessionActive = true;
+
+    const { assertNoUnhandledApiRequests } = await setupApiMockRouter(page, {
+      "GET /api/v1/auth/me": async (route) => {
+        if (!sessionActive) {
+          await fulfillJson(route, { detail: "Unauthenticated" }, 401);
+          return;
+        }
+        await fulfillJson(route, advisorUser);
+      },
+      "POST /api/v1/auth/refresh": async (route) => {
+        refreshCalls += 1;
+        sessionActive = false;
+        await fulfillJson(route, { detail: "Refresh session expired" }, 401);
+      },
+      "GET /api/v1/licenses": async (route) => fulfillJson(route, []),
+      "GET /api/v1/purchases/history": async (route) =>
+        fulfillJson(route, { items: [] }),
+      "GET /api/v1/purchases/balance": async (route) => {
+        balanceCalls += 1;
+        await fulfillJson(route, { detail: "expired access token" }, 401);
+      },
+    });
+
+    await page.goto("/profile");
+
+    await expect(page).toHaveURL(/\/login$/, { timeout: 20_000 });
+    await expect(page.getByRole("button", { name: "Sign In" })).toBeVisible({
+      timeout: 20_000,
+    });
+    expect(refreshCalls).toBeGreaterThanOrEqual(1);
+    expect(balanceCalls).toBeGreaterThanOrEqual(1);
+    assertNoUnhandledApiRequests();
+  });
+
   test("renders checkout return fulfillment summary after Stripe redirect", async ({
     page,
   }) => {
