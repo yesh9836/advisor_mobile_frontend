@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 import stripe
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func, or_
+from sqlalchemy import String, and_, cast, func, or_
 from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
@@ -270,8 +270,37 @@ class SubscriptionService:
     @staticmethod
     def get_available_packages(db: Session) -> List[LeadPackage]:
         """Return all available one-time lead packages."""
-        rows = db.query(LeadPackage).order_by(LeadPackage.price_cents.asc()).all()
-        return [row for row in rows if SubscriptionService._is_package_catalog_available(row)]
+        evaluation_time = datetime.now(timezone.utc)
+        catalog_visible_value = func.lower(
+            cast(func.json_extract(LeadPackage.features, "$.catalog_visible"), String)
+        )
+        hidden_catalog_values = ("false", "0", '"false"')
+
+        return (
+            db.query(LeadPackage)
+            .filter(LeadPackage.is_archived.is_(False))
+            .filter(
+                or_(
+                    LeadPackage.effective_from.is_(None),
+                    LeadPackage.effective_from <= evaluation_time,
+                )
+            )
+            .filter(
+                or_(
+                    LeadPackage.effective_to.is_(None),
+                    LeadPackage.effective_to >= evaluation_time,
+                )
+            )
+            .filter(
+                or_(
+                    LeadPackage.features.is_(None),
+                    catalog_visible_value.is_(None),
+                    ~catalog_visible_value.in_(hidden_catalog_values),
+                )
+            )
+            .order_by(LeadPackage.price_cents.asc())
+            .all()
+        )
 
     @staticmethod
     def create_purchase_checkout_session(
