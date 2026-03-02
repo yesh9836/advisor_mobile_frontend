@@ -18,7 +18,6 @@ from app.schemas.admin import (
     AuditLogFilters,
     DeactivateUserRequest,
     DashboardStats,
-    ImportStats,
     LeadInventoryFilters,
     LicenseStatusSummaryItem,
     PaginatedAuditLogs,
@@ -304,18 +303,6 @@ def unarchive_plan(
         plan_id=plan_id,
         payload=payload or AdminPlanArchiveRequest(),
     )
-
-
-@router.post(
-    "/sync/wordpress",
-    response_model=ImportStats,
-    summary="Trigger WordPress sync (placeholder)",
-)
-def sync_wordpress(
-    current_admin: User = Depends(require_admin),
-    db: Session = Depends(get_db),
-) -> ImportStats:
-    return AdminService.sync_wordpress(db=db, admin_id=current_admin.id)
 
 
 @router.get(
