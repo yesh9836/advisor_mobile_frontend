@@ -17,7 +17,6 @@ import type {
   AuditLogFilters,
   DashboardStats,
   DeactivateUserRequest,
-  ImportStats,
   LeadBulkImportSchema,
   LeadInventoryFilters,
   LeadBulkImportResult,
@@ -305,21 +304,6 @@ const paginatedAuditLogsSchema: z.ZodType<PaginatedAuditLogs> = z
     total: z.number(),
     page: z.number(),
     size: z.number(),
-  });
-
-const importStatsSchema: z.ZodType<ImportStats> = z
-  .looseObject({
-    scanned: z.number(),
-    inserted: z.number(),
-    skipped_duplicates: z.number(),
-    failed: z.number(),
-    errors: z.array(
-      z
-        .looseObject({
-          row: z.number().optional(),
-          error: z.string(),
-        }),
-    ),
   });
 
 const leadBulkImportResultSchema: z.ZodType<LeadBulkImportResult> = z
@@ -679,15 +663,6 @@ export const deactivateUser = async (
   const payload = normalizeQueryParams({ reason }) as DeactivateUserRequest;
 
   await apiClient.post(`/admin/users/${userId}/deactivate`, payload);
-};
-
-export const syncWordPress = async (): Promise<ImportStats> => {
-  const response = await apiClient.post<ImportStats>("/admin/sync/wordpress");
-  return parseApiContract(
-    importStatsSchema,
-    response.data,
-    "/admin/sync/wordpress",
-  );
 };
 
 export const getAuditLogs = async (
