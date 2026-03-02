@@ -390,6 +390,53 @@ def test_cookie_auth_allows_mutating_request_with_csrf(client):
 
 
 @pytest.mark.integration
+def test_refresh_requires_csrf_header(client):
+    payload = {
+        "email": "refresh.missing.csrf@example.com",
+        "password": "RefreshMissingCsrf123!",
+        "name": "Refresh Missing CSRF",
+        "phone": "+13055556789",
+    }
+    register = client.post("/api/v1/auth/register", json=payload)
+    assert register.status_code == 201, register.text
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": payload["email"], "password": payload["password"]},
+    )
+    assert login.status_code == 204, login.text
+
+    refresh = client.post("/api/v1/auth/refresh")
+    assert refresh.status_code == 403
+    assert refresh.json()["detail"] == "CSRF token validation failed"
+
+
+@pytest.mark.integration
+def test_refresh_rejects_mismatched_csrf_header(client):
+    payload = {
+        "email": "refresh.mismatch.csrf@example.com",
+        "password": "RefreshMismatchCsrf123!",
+        "name": "Refresh Mismatch CSRF",
+        "phone": "+13055557654",
+    }
+    register = client.post("/api/v1/auth/register", json=payload)
+    assert register.status_code == 201, register.text
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": payload["email"], "password": payload["password"]},
+    )
+    assert login.status_code == 204, login.text
+
+    refresh = client.post(
+        "/api/v1/auth/refresh",
+        headers={settings.AUTH_CSRF_HEADER_NAME: "wrong-token"},
+    )
+    assert refresh.status_code == 403
+    assert refresh.json()["detail"] == "CSRF token validation failed"
+
+
+@pytest.mark.integration
 def test_refresh_rotates_token_and_detects_reuse(client):
     payload = {
         "email": "refresh.rotate@example.com",

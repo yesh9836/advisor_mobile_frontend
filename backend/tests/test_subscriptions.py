@@ -2902,6 +2902,11 @@ def test_billing_summary_links_purchase_invoice_to_package_and_backfills_purchas
             ]
         },
     )
+    monkeypatch.setattr(
+        "app.services.subscription_service.stripe.Invoice.retrieve",
+        lambda invoice_id: pytest.fail("Invoice.retrieve should not be called when list payload already matches"),
+        raising=False,
+    )
 
     headers = auth_headers(advisor.email, "AdvisorBillingLinked123!")
     response = client.get("/api/v1/purchases/billing/summary", headers=headers)
@@ -2917,6 +2922,89 @@ def test_billing_summary_links_purchase_invoice_to_package_and_backfills_purchas
 
     db.refresh(purchase)
     assert purchase.stripe_invoice_id == "in_billing_linked_1"
+
+
+@pytest.mark.integration
+def test_billing_summary_caps_invoice_retrievals_per_request(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+    plan_factory,
+    purchase_factory,
+    monkeypatch,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="AdvisorBillingCap123!",
+        email="advisor.billing.cap@example.com",
+        name="Billing Cap Advisor",
+    )
+    advisor.stripe_customer_id = "cus_billing_cap_123"
+    db.add(advisor)
+    db.commit()
+
+    package = plan_factory(
+        name="Billing Cap Package",
+        stripe_price_id="price_billing_cap",
+        daily_download_limit=10,
+    )
+    for index in range(5):
+        purchase_factory(
+            user_id=advisor.id,
+            package_id=package.id,
+            status="completed",
+            stripe_checkout_session_id=f"cs_billing_cap_{index}",
+            stripe_payment_intent_id=f"pi_billing_cap_{index}",
+            stripe_invoice_id=f"in_billing_cap_{index}",
+        )
+
+    monkeypatch.setattr(
+        "app.services.subscription_service.settings.STRIPE_SECRET_KEY",
+        "sk_test_billing_cap",
+    )
+    monkeypatch.setattr(
+        "app.services.subscription_service.PaymentService._init_stripe",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "app.services.subscription_service.stripe.Customer.retrieve",
+        lambda customer_id, expand=None: {
+            "id": customer_id,
+            "invoice_settings": {"default_payment_method": None},
+        },
+    )
+    monkeypatch.setattr(
+        "app.services.subscription_service.stripe.Invoice.list",
+        lambda customer, limit=50: {"data": []},
+    )
+
+    retrieved_invoice_ids = []
+
+    def _retrieve_invoice(invoice_id):
+        retrieved_invoice_ids.append(invoice_id)
+        return {
+            "id": invoice_id,
+            "payment_intent": f"pi_{invoice_id}",
+            "amount_paid": 10000,
+            "currency": "usd",
+            "status": "paid",
+            "created": int(datetime.now(timezone.utc).timestamp()),
+            "hosted_invoice_url": f"https://stripe.test/hosted/{invoice_id}",
+            "invoice_pdf": f"https://stripe.test/pdf/{invoice_id}.pdf",
+            "description": "Capped retrieval fallback",
+        }
+
+    monkeypatch.setattr(
+        "app.services.subscription_service.stripe.Invoice.retrieve",
+        _retrieve_invoice,
+        raising=False,
+    )
+
+    headers = auth_headers(advisor.email, "AdvisorBillingCap123!")
+    response = client.get("/api/v1/purchases/billing/summary", headers=headers)
+    assert response.status_code == 200, response.text
+    assert len(retrieved_invoice_ids) == SubscriptionService._MAX_INVOICE_RETRIEVALS_PER_SUMMARY
 
 
 @pytest.mark.integration
