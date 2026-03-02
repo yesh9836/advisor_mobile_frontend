@@ -1,9 +1,12 @@
 import csv
 import io
-from typing import List, Optional, Generator, Union
+import re
+from pathlib import Path
+from typing import Generator, List, Optional
 
 from fastapi import HTTPException, UploadFile
 
+from app.core.config import settings
 from app.models.lead import Lead
 
 
@@ -37,12 +40,29 @@ LEAD_CSV_HEADERS = [
     "additional_notes",
 ]
 
+LEAD_CSV_REQUIRED_VALUE_FIELDS = [
+    "state_code",
+    "mobile_phone",
+]
+
 JSON_LIST_FIELDS = {
     "main_purpose_for_investing",
     "current_investment_strategies",
 }
 
 LIST_SEPARATOR = " | "
+
+
+def _canonicalize_csv_header(value: Optional[str]) -> str:
+    normalized = str(value or "").strip().lower()
+    normalized = re.sub(r"[\s\-]+", "_", normalized)
+    normalized = re.sub(r"_+", "_", normalized)
+    return normalized.strip("_")
+
+
+_CANONICAL_HEADER_TO_EXPECTED = {
+    _canonicalize_csv_header(header): header for header in LEAD_CSV_HEADERS
+}
 
 def _join_json_list(value: Optional[object]) -> str:
     if value is None:
@@ -102,9 +122,34 @@ def parse_leads_csv(file: UploadFile) -> List[dict]:
         raise HTTPException(status_code=400, detail="No filename provided")
 
     try:
+        file_ext = Path(file.filename).suffix.lower()
+        if file_ext != ".csv":
+            raise HTTPException(status_code=400, detail="Invalid file type. Expected .csv file")
+
+        content_type = (file.content_type or "").lower().strip()
+        media_type = content_type.split(";", 1)[0].strip()
+        allowed_mimes = {mime.lower() for mime in settings.ALLOWED_CSV_MIME_TYPES}
+        fallback_generic_mimes = {
+            "application/octet-stream",
+            "binary/octet-stream",
+            "text/plain",
+        }
+        if (
+            media_type
+            and media_type not in allowed_mimes
+            and media_type not in fallback_generic_mimes
+            and "csv" not in media_type
+        ):
+            raise HTTPException(status_code=400, detail="Invalid CSV content type")
+
         raw = file.file.read()
         if not raw:
             raise HTTPException(status_code=400, detail="CSV file is empty")
+        if len(raw) > settings.MAX_CSV_UPLOAD_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"CSV file too large. Limit: {settings.MAX_CSV_UPLOAD_SIZE / 1024 / 1024}MB",
+            )
 
         text = raw.decode("utf-8-sig")
         reader = csv.DictReader(io.StringIO(text))
@@ -112,11 +157,24 @@ def parse_leads_csv(file: UploadFile) -> List[dict]:
         if reader.fieldnames is None:
             raise HTTPException(status_code=400, detail="CSV file missing header row")
 
-        fieldnames = [name.strip() for name in reader.fieldnames]
-        if fieldnames != LEAD_CSV_HEADERS:
+        expected_headers = set(LEAD_CSV_HEADERS)
+        observed_headers: set[str] = set()
+        header_aliases: dict[str, str] = {}
+        for header_name in reader.fieldnames:
+            canonical_header = _canonicalize_csv_header(header_name)
+            expected_header = _CANONICAL_HEADER_TO_EXPECTED.get(canonical_header)
+            if not expected_header or expected_header in observed_headers:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid CSV headers.",
+                )
+            observed_headers.add(expected_header)
+            header_aliases[expected_header] = str(header_name)
+
+        if observed_headers != expected_headers:
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid CSV headers.",
+                detail="Invalid CSV headers.",
             )
 
         rows: List[dict] = []
@@ -125,7 +183,7 @@ def parse_leads_csv(file: UploadFile) -> List[dict]:
                 continue
             parsed = {}
             for field in LEAD_CSV_HEADERS:
-                raw_value = row.get(field, "")
+                raw_value = row.get(header_aliases[field], "")
                 if raw_value is None:
                     raw_value = ""
 
