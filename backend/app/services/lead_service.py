@@ -39,6 +39,8 @@ SEARCH_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")
 class LeadService:
     """Service for lead distribution and downloads."""
 
+    _RECONCILIATION_MAX_ASSIGNMENTS_PER_ADVISOR_ROUND = 25
+
     @staticmethod
     def _get_user_purchase_state_limit(db: Session, user_id: int) -> Optional[int]:
         rows = (
@@ -473,6 +475,171 @@ class LeadService:
         return query.limit(sanitized_limit).all()
 
     @staticmethod
+    def _advance_purchase_queue_index(
+        purchase_queue: List[int],
+        queue_index: int,
+        purchase_unfulfilled: Dict[int, int],
+    ) -> int:
+        cursor = max(int(queue_index), 0)
+        while (
+            cursor < len(purchase_queue)
+            and max(int(purchase_unfulfilled.get(purchase_queue[cursor], 0) or 0), 0) <= 0
+        ):
+            cursor += 1
+        return cursor
+
+    @staticmethod
+    def _allocate_unsold_leads_for_advisor_round(
+        db: Session,
+        *,
+        advisor_id: int,
+        advisor_states: List[str],
+        purchase_queue: List[int],
+        queue_index: int,
+        purchase_by_id: Dict[int, LeadPurchase],
+        purchase_unfulfilled: Dict[int, int],
+        max_assignments: int,
+        dialect_name: str,
+    ) -> Dict[str, object]:
+        next_queue_index = LeadService._advance_purchase_queue_index(
+            purchase_queue,
+            queue_index,
+            purchase_unfulfilled,
+        )
+        if next_queue_index >= len(purchase_queue) or max(int(max_assignments), 0) <= 0:
+            return {
+                "next_queue_index": next_queue_index,
+                "assigned_count": 0,
+                "per_purchase_assigned_ids": {},
+            }
+
+        normalized_states = [state for state in advisor_states if state]
+        if not normalized_states:
+            return {
+                "next_queue_index": next_queue_index,
+                "assigned_count": 0,
+                "per_purchase_assigned_ids": {},
+            }
+
+        purchase_batch_plan: List[Tuple[int, int]] = []
+        remaining_capacity = max(int(max_assignments), 0)
+        purchase_cursor = next_queue_index
+        while purchase_cursor < len(purchase_queue) and remaining_capacity > 0:
+            purchase_id = purchase_queue[purchase_cursor]
+            unfulfilled_count = max(int(purchase_unfulfilled.get(purchase_id, 0) or 0), 0)
+            if unfulfilled_count <= 0:
+                purchase_cursor += 1
+                continue
+            purchase = purchase_by_id[purchase_id]
+            available_credit_capacity = max(int(purchase.credits_remaining or 0), 0)
+            assignable_for_purchase = min(unfulfilled_count, available_credit_capacity)
+            if assignable_for_purchase <= 0:
+                purchase_cursor += 1
+                continue
+            assigned_for_purchase = min(assignable_for_purchase, remaining_capacity)
+            purchase_batch_plan.append((purchase_id, assigned_for_purchase))
+            remaining_capacity -= assigned_for_purchase
+            purchase_cursor += 1
+
+        total_requested = sum(assigned_count for _purchase_id, assigned_count in purchase_batch_plan)
+        if total_requested <= 0:
+            return {
+                "next_queue_index": next_queue_index,
+                "assigned_count": 0,
+                "per_purchase_assigned_ids": {},
+            }
+
+        candidate_query = (
+            db.query(Lead)
+            .filter(Lead.state_code.in_(normalized_states))
+            .filter(~Lead.id.in_(select(LeadOwnership.lead_id)))
+            .order_by(Lead.created_at.desc(), Lead.id.desc())
+        )
+        if dialect_name == "mysql":
+            candidate_query = candidate_query.with_for_update(skip_locked=True)
+
+        candidate_rows = candidate_query.limit(total_requested).all()
+        if not candidate_rows:
+            return {
+                "next_queue_index": next_queue_index,
+                "assigned_count": 0,
+                "per_purchase_assigned_ids": {},
+            }
+
+        per_purchase_assigned_ids: Dict[int, List[int]] = {}
+        planned_purchase_index = 0
+        planned_remaining = purchase_batch_plan[planned_purchase_index][1]
+        for lead in candidate_rows:
+            while planned_purchase_index < len(purchase_batch_plan) and planned_remaining <= 0:
+                planned_purchase_index += 1
+                if planned_purchase_index < len(purchase_batch_plan):
+                    planned_remaining = purchase_batch_plan[planned_purchase_index][1]
+            if planned_purchase_index >= len(purchase_batch_plan):
+                break
+
+            purchase_id = purchase_batch_plan[planned_purchase_index][0]
+            db.add(
+                LeadOwnership(
+                    user_id=advisor_id,
+                    lead_id=lead.id,
+                    purchase_id=purchase_id,
+                )
+            )
+            per_purchase_assigned_ids.setdefault(purchase_id, []).append(int(lead.id))
+            planned_remaining -= 1
+
+        assigned_count = sum(len(lead_ids) for lead_ids in per_purchase_assigned_ids.values())
+        if assigned_count <= 0:
+            return {
+                "next_queue_index": next_queue_index,
+                "assigned_count": 0,
+                "per_purchase_assigned_ids": {},
+            }
+
+        for purchase_id, lead_ids in per_purchase_assigned_ids.items():
+            assigned_for_purchase = len(lead_ids)
+            purchase_unfulfilled[purchase_id] = max(
+                int(purchase_unfulfilled.get(purchase_id, 0) or 0) - assigned_for_purchase,
+                0,
+            )
+
+            purchase = purchase_by_id[purchase_id]
+            consumed_credits = min(
+                assigned_for_purchase,
+                max(int(purchase.credits_remaining or 0), 0),
+            )
+            if consumed_credits > 0:
+                for lead_id in lead_ids[:consumed_credits]:
+                    db.add(
+                        LeadCreditLedger(
+                            user_id=purchase.user_id,
+                            purchase_id=purchase.id,
+                            movement_type="lead_consumed",
+                            credits_delta=-1,
+                            note=f"Lead {lead_id} assigned",
+                        )
+                    )
+                purchase.credits_remaining = max(
+                    int(purchase.credits_remaining or 0) - consumed_credits,
+                    0,
+                )
+                db.add(purchase)
+
+        # Flush per advisor to make new ownership rows visible to subsequent candidate scans.
+        db.flush()
+
+        next_queue_index = LeadService._advance_purchase_queue_index(
+            purchase_queue,
+            next_queue_index,
+            purchase_unfulfilled,
+        )
+        return {
+            "next_queue_index": next_queue_index,
+            "assigned_count": assigned_count,
+            "per_purchase_assigned_ids": per_purchase_assigned_ids,
+        }
+
+    @staticmethod
     def reconcile_pending_purchase_assignments(
         db: Session,
         *,
@@ -551,62 +718,85 @@ class LeadService:
                 advisor_order.append(advisor_id)
             advisor_purchase_queues[advisor_id].append(purchase_id)
 
+        bind = db.get_bind()
+        dialect_name = bind.dialect.name if bind is not None else ""
+        if purchase_ids and dialect_name == "mysql":
+            # Keep purchase credit mutations serialized across concurrent reconciliation workers.
+            db.query(LeadPurchase.id).filter(LeadPurchase.id.in_(purchase_ids)).with_for_update().all()
+
+        advisor_states_by_id: Dict[int, List[str]] = {
+            advisor_id: LeadService._get_user_allowed_states_for_new_leads(db, advisor_id)
+            for advisor_id in advisor_order
+        }
+
         total_newly_assigned = 0
         per_purchase_newly_assigned: Dict[int, int] = {}
         per_purchase_newly_assigned_ids: Dict[int, List[int]] = {}
 
         while True:
-            assigned_in_round = 0
-            active_advisors = 0
-
+            round_active_advisors: List[int] = []
             for advisor_id in advisor_order:
                 purchase_queue = advisor_purchase_queues.get(advisor_id, [])
-                queue_index = advisor_queue_index.get(advisor_id, 0)
-                while (
-                    queue_index < len(purchase_queue)
-                    and purchase_unfulfilled.get(purchase_queue[queue_index], 0) <= 0
-                ):
-                    queue_index += 1
+                queue_index = LeadService._advance_purchase_queue_index(
+                    purchase_queue,
+                    advisor_queue_index.get(advisor_id, 0),
+                    purchase_unfulfilled,
+                )
                 advisor_queue_index[advisor_id] = queue_index
-
                 if queue_index >= len(purchase_queue):
                     continue
+                if not advisor_states_by_id.get(advisor_id):
+                    continue
+                round_active_advisors.append(advisor_id)
 
-                active_advisors += 1
-                purchase_id = purchase_queue[queue_index]
-                purchase = purchase_by_id[purchase_id]
+            if not round_active_advisors:
+                break
 
-                allocation_summary = LeadService.allocate_unsold_leads_for_purchase(
+            assignments_per_advisor = 1
+            if len(round_active_advisors) == 1:
+                assignments_per_advisor = LeadService._RECONCILIATION_MAX_ASSIGNMENTS_PER_ADVISOR_ROUND
+
+            assigned_in_round = 0
+            for advisor_id in round_active_advisors:
+                allocation_summary = LeadService._allocate_unsold_leads_for_advisor_round(
                     db=db,
-                    purchase=purchase,
-                    max_assignments=1,
-                    assignment_target=assignment_targets_by_purchase.get(purchase_id),
+                    advisor_id=advisor_id,
+                    advisor_states=advisor_states_by_id.get(advisor_id, []),
+                    purchase_queue=advisor_purchase_queues.get(advisor_id, []),
+                    queue_index=advisor_queue_index.get(advisor_id, 0),
+                    purchase_by_id=purchase_by_id,
+                    purchase_unfulfilled=purchase_unfulfilled,
+                    max_assignments=assignments_per_advisor,
+                    dialect_name=dialect_name,
                 )
-                newly_assigned_ids = [
-                    int(lead_id)
-                    for lead_id in (allocation_summary.get("newly_assigned_lead_ids") or [])
-                ]
-                newly_assigned_count = int(allocation_summary.get("newly_assigned_count", 0) or 0)
-                if not newly_assigned_count and newly_assigned_ids:
-                    newly_assigned_count = len(newly_assigned_ids)
-                unfulfilled_count = int(allocation_summary.get("unfulfilled_count", 0) or 0)
-                purchase_unfulfilled[purchase_id] = max(unfulfilled_count, 0)
+                advisor_queue_index[advisor_id] = int(
+                    allocation_summary.get("next_queue_index", advisor_queue_index.get(advisor_id, 0))
+                )
+                newly_assigned_count = int(allocation_summary.get("assigned_count", 0) or 0)
 
                 if newly_assigned_count <= 0:
                     continue
 
                 assigned_in_round += newly_assigned_count
-                per_purchase_newly_assigned[purchase_id] = (
-                    per_purchase_newly_assigned.get(purchase_id, 0) + newly_assigned_count
-                )
-                if newly_assigned_ids:
-                    per_purchase_newly_assigned_ids.setdefault(purchase_id, []).extend(newly_assigned_ids)
-
-                if purchase_unfulfilled[purchase_id] <= 0:
-                    advisor_queue_index[advisor_id] = queue_index + 1
+                per_purchase_assigned_ids = allocation_summary.get("per_purchase_assigned_ids", {})
+                if not isinstance(per_purchase_assigned_ids, dict):
+                    continue
+                for purchase_id, lead_ids in per_purchase_assigned_ids.items():
+                    normalized_purchase_id = int(purchase_id)
+                    normalized_lead_ids = [int(lead_id) for lead_id in lead_ids]
+                    if not normalized_lead_ids:
+                        continue
+                    per_purchase_newly_assigned[normalized_purchase_id] = (
+                        per_purchase_newly_assigned.get(normalized_purchase_id, 0)
+                        + len(normalized_lead_ids)
+                    )
+                    per_purchase_newly_assigned_ids.setdefault(
+                        normalized_purchase_id,
+                        [],
+                    ).extend(normalized_lead_ids)
 
             total_newly_assigned += assigned_in_round
-            if active_advisors == 0 or assigned_in_round <= 0:
+            if assigned_in_round <= 0:
                 break
 
         updated_purchases = len(per_purchase_newly_assigned)
