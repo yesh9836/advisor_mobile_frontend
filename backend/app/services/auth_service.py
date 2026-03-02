@@ -32,6 +32,7 @@ from app.models.notification import NotificationOutbox
 from app.models.password_reset import PasswordResetRequestAttempt, PasswordResetToken
 from app.models.user import User
 from app.schemas.auth import PasswordResetConfirm, PasswordResetRequest, UserRegister, UserLogin
+from app.services.metrics_service import MetricsService
 from app.services.notification_template_service import NotificationTemplateService
 from app.utils.phone import normalize_phone_number
 
@@ -695,6 +696,10 @@ class AuthService:
             raise
         except Exception:
             db.rollback()
+            MetricsService.increment(
+                "auth_password_reset_request_failed_total",
+                tags={"flow": "password_reset_request"},
+            )
             logger.exception(
                 "Password reset request flow failed for email=%s",
                 payload.email,
