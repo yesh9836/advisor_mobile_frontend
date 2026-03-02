@@ -1,5 +1,6 @@
 import apiClient from "@/api/client";
 import { parseApiContract } from "@/api/contract";
+import { normalizeQueryParams } from "@/api/query-params";
 import type {
   Lead,
   LeadDashboardSummary,
@@ -88,25 +89,6 @@ const leadDashboardSummarySchema: z.ZodType<LeadDashboardSummary> = z
       }),
   });
 
-const normalizeFilters = (filters: LeadFilters): Record<string, string> => {
-  const params: Record<string, string> = {};
-
-  Object.entries(filters).forEach(([key, value]) => {
-    if (value === undefined || value === null) {
-      return;
-    }
-
-    const normalized = String(value).trim();
-    if (!normalized) {
-      return;
-    }
-
-    params[key] = normalized;
-  });
-
-  return params;
-};
-
 export const getLeads = async (
   page: number,
   size: number,
@@ -116,7 +98,7 @@ export const getLeads = async (
     params: {
       page,
       size,
-      ...normalizeFilters(filters),
+      ...normalizeQueryParams(filters),
     },
   });
 

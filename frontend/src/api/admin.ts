@@ -6,6 +6,7 @@ import {
   licenseWithUserSchema,
 } from "@/api/license-contract";
 import { leadSchema } from "@/api/leads";
+import { normalizeQueryParams } from "@/api/query-params";
 import type {
   AdminPlanCreatePayload,
   AdminPlanFilters,
@@ -59,32 +60,6 @@ interface OrdersExportDownload {
   blob: Blob;
   filename: string;
 }
-
-type QueryParamValue = string | number | boolean | null | undefined;
-
-const normalizeParams = <T extends Record<string, QueryParamValue>>(
-  params: T,
-): Partial<Record<keyof T, string | number | boolean>> => {
-  const cleanedEntries = Object.entries(params).flatMap(([key, value]) => {
-    if (value === undefined || value === null) {
-      return [];
-    }
-
-    if (typeof value === "string") {
-      const trimmed = value.trim();
-      if (!trimmed) {
-        return [];
-      }
-      return [[key, trimmed]];
-    }
-
-    return [[key, value]];
-  });
-
-  return Object.fromEntries(cleanedEntries) as Partial<
-    Record<keyof T, string | number | boolean>
-  >;
-};
 
 const parseFilename = (
   contentDisposition: string | undefined,
@@ -452,7 +427,7 @@ export const getAdminPlans = async (
   size: number,
   filters: AdminPlanFilters = {},
 ): Promise<PaginatedAdminPlans> => {
-  const params = normalizeParams({
+  const params = normalizeQueryParams({
     page,
     size,
     search: filters.search,
@@ -542,7 +517,7 @@ export const archiveAdminPlan = async (
   planId: number,
   reason?: string,
 ): Promise<AdminPlanItem> => {
-  const payload = normalizeParams({ reason });
+  const payload = normalizeQueryParams({ reason });
   const response = await apiClient.post<AdminPlanItem>(
     `/admin/plans/${planId}/archive`,
     payload,
@@ -558,7 +533,7 @@ export const unarchiveAdminPlan = async (
   planId: number,
   reason?: string,
 ): Promise<AdminPlanItem> => {
-  const payload = normalizeParams({ reason });
+  const payload = normalizeQueryParams({ reason });
   const response = await apiClient.post<AdminPlanItem>(
     `/admin/plans/${planId}/unarchive`,
     payload,
@@ -575,7 +550,7 @@ export const getUsers = async (
   size: number,
   filters?: UserListFilters,
 ): Promise<PaginatedUsers> => {
-  const params = normalizeParams({
+  const params = normalizeQueryParams({
     page,
     size,
     search: filters?.search,
@@ -598,7 +573,7 @@ export const getOrders = async (
   size: number,
   status?: string,
 ): Promise<PaginatedOrders> => {
-  const params = normalizeParams({
+  const params = normalizeQueryParams({
     page,
     size,
     status,
@@ -617,7 +592,7 @@ export const getOrders = async (
 export const downloadOrdersExport = async (
   status?: string,
 ): Promise<OrdersExportDownload> => {
-  const params = normalizeParams({ status });
+  const params = normalizeQueryParams({ status });
   const response = await apiClient.get<Blob>("/admin/orders/export", {
     params,
     responseType: "blob",
@@ -641,7 +616,7 @@ export const getLeadInventory = async (
   size: number,
   filters: LeadInventoryFilters = {},
 ): Promise<PaginatedLeadInventory> => {
-  const params = normalizeParams({
+  const params = normalizeQueryParams({
     page,
     size,
     search: filters.search,
@@ -676,7 +651,7 @@ export const getLicenseStatusSummary = async (): Promise<LicenseStatusSummaryIte
 export const createLeadAsAdmin = async (
   payload: AdminLeadCreatePayload,
 ): Promise<Lead> => {
-  const requestPayload = normalizeParams({
+  const requestPayload = normalizeQueryParams({
     state_code: payload.state_code.trim().toUpperCase(),
     mobile_phone: payload.mobile_phone,
     first_name: payload.first_name,
@@ -701,7 +676,7 @@ export const deactivateUser = async (
   userId: number,
   reason?: string,
 ): Promise<void> => {
-  const payload = normalizeParams({ reason }) as DeactivateUserRequest;
+  const payload = normalizeQueryParams({ reason }) as DeactivateUserRequest;
 
   await apiClient.post(`/admin/users/${userId}/deactivate`, payload);
 };
@@ -720,7 +695,7 @@ export const getAuditLogs = async (
   page: number,
   size: number,
 ): Promise<PaginatedAuditLogs> => {
-  const params = normalizeParams({
+  const params = normalizeQueryParams({
     page,
     size,
     action: filters.action,
@@ -797,7 +772,7 @@ export const deactivateAdminUser = async (
   userId: number,
   payload: DeactivateUserRequest,
 ): Promise<{ detail: string }> => {
-  const normalizedPayload = normalizeParams({
+  const normalizedPayload = normalizeQueryParams({
     reason: payload.reason,
   }) as DeactivateUserRequest;
 
