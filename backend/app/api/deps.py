@@ -19,10 +19,15 @@ from app.models.user import User
 from app.schemas.auth import TokenData
 
 logger = logging.getLogger(__name__)
+_CSRF_PROTECTED_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
-def _validate_csrf_for_cookie_auth(request: Request) -> None:
-    if request.method.upper() not in {"POST", "PUT", "PATCH", "DELETE"}:
+def validate_csrf_for_cookie_auth(
+    request: Request,
+    *,
+    enforce_method_check: bool = True,
+) -> None:
+    if enforce_method_check and request.method.upper() not in _CSRF_PROTECTED_METHODS:
         return
 
     csrf_cookie = request.cookies.get(settings.AUTH_CSRF_COOKIE_NAME)
@@ -76,7 +81,7 @@ def get_current_user(
         if not token:
             raise credentials_exception
 
-        _validate_csrf_for_cookie_auth(request)
+        validate_csrf_for_cookie_auth(request)
         
         # Decode JWT token
         payload = decode_access_token(token)

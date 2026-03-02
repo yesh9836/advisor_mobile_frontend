@@ -8,7 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_active_user, get_db
+from app.api.deps import get_current_active_user, get_db, validate_csrf_for_cookie_auth
 from app.core.config import settings
 from app.core.rate_limit import (
     login_rate_limit_dependency,
@@ -87,16 +87,6 @@ def _clear_auth_cookies(response: Response) -> None:
         path=settings.AUTH_CSRF_COOKIE_PATH,
         domain=settings.AUTH_COOKIE_DOMAIN,
     )
-
-
-def _require_csrf_header(request: Request) -> None:
-    csrf_cookie = request.cookies.get(settings.AUTH_CSRF_COOKIE_NAME)
-    csrf_header = request.headers.get(settings.AUTH_CSRF_HEADER_NAME)
-    if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="CSRF token validation failed",
-        )
 
 
 @router.post(
@@ -220,7 +210,7 @@ def refresh(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing refresh token",
         )
-    _require_csrf_header(request)
+    validate_csrf_for_cookie_auth(request)
     issued_tokens = AuthService.refresh_tokens(
         db,
         refresh_token=refresh_token,
@@ -245,7 +235,7 @@ def logout(
 ) -> Response:
     refresh_token = request.cookies.get(settings.AUTH_REFRESH_COOKIE_NAME)
     if refresh_token:
-        _require_csrf_header(request)
+        validate_csrf_for_cookie_auth(request)
     AuthService.logout_user(db, refresh_token=refresh_token)
     _clear_auth_cookies(response)
     response.status_code = status.HTTP_204_NO_CONTENT
