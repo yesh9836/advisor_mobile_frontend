@@ -19,9 +19,56 @@ const MUTATING_METHODS = new Set(["post", "put", "patch", "delete"]);
 const REFRESH_TRANSIENT_FAILURE_COOLDOWN_MS = 3000;
 const URL_PARSE_BASE =
   typeof window !== "undefined" ? window.location.origin : "http://localhost";
+const DEV_API_BASE_URL_FALLBACK = "http://localhost:8000/api/v1";
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
+const isLoopbackHost = (hostname: string): boolean => {
+  const normalizedHost = hostname.trim().toLowerCase();
+  return normalizedHost === "localhost" || normalizedHost === "127.0.0.1" || normalizedHost === "::1";
+};
+
+export const resolveApiBaseUrl = ({
+  configuredBaseUrl,
+  isProduction,
+  parseBase,
+}: {
+  configuredBaseUrl?: string;
+  isProduction: boolean;
+  parseBase: string;
+}): string => {
+  const normalizedConfiguredBaseUrl = configuredBaseUrl?.trim();
+  if (!normalizedConfiguredBaseUrl) {
+    if (isProduction) {
+      throw new Error("VITE_API_BASE_URL must be set to an absolute URL in production.");
+    }
+    return DEV_API_BASE_URL_FALLBACK;
+  }
+
+  if (isProduction && !/^https?:\/\//i.test(normalizedConfiguredBaseUrl)) {
+    throw new Error("VITE_API_BASE_URL must be an absolute http(s) URL in production.");
+  }
+
+  let parsedBaseUrl: URL;
+  try {
+    parsedBaseUrl = new URL(normalizedConfiguredBaseUrl, parseBase);
+  } catch {
+    if (isProduction) {
+      throw new Error("VITE_API_BASE_URL is invalid and cannot be parsed.");
+    }
+    return DEV_API_BASE_URL_FALLBACK;
+  }
+
+  if (isProduction && isLoopbackHost(parsedBaseUrl.hostname)) {
+    throw new Error("VITE_API_BASE_URL cannot point to localhost/loopback in production.");
+  }
+
+  return normalizedConfiguredBaseUrl;
+};
+
+const API_BASE_URL = resolveApiBaseUrl({
+  configuredBaseUrl: import.meta.env.VITE_API_BASE_URL,
+  isProduction: import.meta.env.PROD,
+  parseBase: URL_PARSE_BASE,
+});
 const CSRF_COOKIE_NAME = import.meta.env.VITE_AUTH_CSRF_COOKIE_NAME ?? "csrf_token";
 const CSRF_HEADER_NAME = import.meta.env.VITE_AUTH_CSRF_HEADER_NAME ?? "X-CSRF-Token";
 
