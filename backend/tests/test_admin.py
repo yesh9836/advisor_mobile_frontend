@@ -151,10 +151,7 @@ def test_admin_endpoints_require_admin(client, user_factory, auth_headers, plan_
         "/api/v1/admin/sync/wordpress",
         headers=admin_headers,
     )
-    assert wordpress_placeholder.status_code == 501
-    assert wordpress_placeholder.json() == {
-        "detail": "WordPress sync not implemented yet"
-    }
+    assert wordpress_placeholder.status_code == 404
 
     forbidden_paths = [
         ("GET", "/api/v1/admin/dashboard"),
@@ -170,7 +167,6 @@ def test_admin_endpoints_require_admin(client, user_factory, auth_headers, plan_
         ("GET", "/api/v1/admin/plans"),
         ("GET", "/api/v1/admin/first-purchase-offer"),
         ("PUT", "/api/v1/admin/first-purchase-offer"),
-        ("POST", "/api/v1/admin/sync/wordpress"),
     ]
 
     for method, path in forbidden_paths:

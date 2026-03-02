@@ -1272,6 +1272,62 @@ def test_reconcile_pending_purchase_assignments_uses_user_id_tiebreak_for_same_r
 
 
 @pytest.mark.unit
+def test_reconcile_pending_purchase_assignments_uses_batched_allocator_not_single_purchase_loop(
+    db,
+    monkeypatch,
+    user_factory,
+    plan_factory,
+    license_factory,
+    purchase_factory,
+    lead_factory,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LeadUnitBatchAllocator123!",
+        email="lead.unit.batch.allocator@example.com",
+    )
+    plan = plan_factory(
+        daily_download_limit=20,
+        state_limit=1,
+        stripe_price_id="price_batch_allocator",
+    )
+    license_factory(user_id=advisor.id, state="CA", status="verified")
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=6,
+        credits_remaining=6,
+        status="completed",
+    )
+    for index in range(6):
+        lead_factory(state_code="CA", mobile_phone=f"555-RECON-BATCH-{index:04d}")
+
+    def _raise_if_called(*_args, **_kwargs):
+        raise AssertionError("reconcile should not call allocate_unsold_leads_for_purchase in hot path")
+
+    monkeypatch.setattr(
+        LeadService,
+        "allocate_unsold_leads_for_purchase",
+        staticmethod(_raise_if_called),
+    )
+
+    summary = LeadService.reconcile_pending_purchase_assignments(
+        db=db,
+        state_codes=["CA"],
+        source_event="test_reconcile_batched_allocator",
+    )
+
+    assert summary["newly_assigned_count"] == 6
+    assert summary["updated_purchases"] == 1
+    assert (
+        db.query(LeadOwnership)
+        .filter(LeadOwnership.purchase_id == purchase.id)
+        .count()
+        == 6
+    )
+
+
+@pytest.mark.unit
 def test_allocate_unsold_leads_for_purchase_ignores_legacy_refund_adjustments_for_entitlement(
     db,
     user_factory,

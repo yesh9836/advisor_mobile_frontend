@@ -95,6 +95,30 @@ def test_purchase_packages_exclude_archived_and_out_of_window(client, db, plan_f
 
 
 @pytest.mark.integration
+def test_purchase_packages_exclude_catalog_hidden_plans(client, db, plan_factory):
+    visible_plan = plan_factory(
+        name="VisibleCatalogPlan",
+        price_cents=9000,
+        stripe_price_id="price_visible_catalog_plan",
+    )
+    hidden_plan = plan_factory(
+        name="HiddenCatalogPlan",
+        price_cents=9500,
+        stripe_price_id="price_hidden_catalog_plan",
+    )
+    visible_plan.features = {"credits_total": 10, "catalog_visible": True}
+    hidden_plan.features = {"credits_total": 10, "catalog_visible": False}
+    db.commit()
+
+    purchases_response = client.get("/api/v1/purchases/packages")
+    assert purchases_response.status_code == 200, purchases_response.text
+
+    package_ids = {int(item["id"]) for item in purchases_response.json()}
+    assert visible_plan.id in package_ids
+    assert hidden_plan.id not in package_ids
+
+
+@pytest.mark.integration
 def test_purchase_packages_include_plan_again_after_admin_unarchive_when_catalog_visible(
     client,
     db,

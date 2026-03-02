@@ -1142,6 +1142,69 @@ def test_password_reset_request_enqueues_outbox_email_after_token_creation(clien
 
 
 @pytest.mark.integration
+def test_password_reset_request_internal_failure_is_generic_and_emits_metric(
+    client,
+    db,
+    monkeypatch,
+):
+    payload = {
+        "email": "reset.metric.failure@example.com",
+        "password": "ResetMetricFailure123!",
+        "name": "Reset Metric Failure",
+        "phone": "+13055552021",
+    }
+    register = client.post("/api/v1/auth/register", json=payload)
+    assert register.status_code == 201, register.text
+    user_id = register.json()["id"]
+
+    metric_events = []
+
+    def _capture_metric(name, value=1, tags=None):
+        metric_events.append((name, int(value), tags or {}))
+
+    def _raise_outbox_failure(*_args, **_kwargs):
+        raise RuntimeError("email backend unavailable")
+
+    monkeypatch.setattr(
+        "app.services.auth_service.MetricsService.increment",
+        _capture_metric,
+    )
+    monkeypatch.setattr(
+        AuthService,
+        "_enqueue_password_reset_email_outbox",
+        staticmethod(_raise_outbox_failure),
+    )
+
+    response = client.post("/api/v1/auth/password-reset/request", json={"email": payload["email"]})
+    assert response.status_code == 202, response.text
+    assert "If an account exists for that email" in response.json()["message"]
+    assert metric_events == [
+        (
+            "auth_password_reset_request_failed_total",
+            1,
+            {"flow": "password_reset_request"},
+        )
+    ]
+
+    issued_tokens = (
+        db.query(PasswordResetToken)
+        .filter(PasswordResetToken.user_id == user_id)
+        .count()
+    )
+    assert issued_tokens == 0
+    queued_reset_emails = (
+        db.query(NotificationOutbox)
+        .filter(
+            NotificationOutbox.user_id == user_id,
+            NotificationOutbox.event_type == "password_reset_requested",
+            NotificationOutbox.channel == "email",
+        )
+        .count()
+    )
+    assert queued_reset_emails == 0
+
+
+@pytest.mark.integration
 def test_password_reset_outbox_email_retries_then_sends_when_worker_recovers(client, db, monkeypatch):
     payload = {
         "email": "reset.outbox.retry@example.com",
