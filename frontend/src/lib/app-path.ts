@@ -27,11 +27,15 @@ export const buildAppPath = (routePath: string, basePath: string): string => {
 export const APP_BASE_PATH = normalizeAppBasePath(import.meta.env.VITE_APP_BASE_PATH);
 export const APP_LOGIN_PATH = buildAppPath("/login", APP_BASE_PATH);
 export const APP_REGISTER_PATH = buildAppPath("/register", APP_BASE_PATH);
+export const APP_FORGOT_PASSWORD_PATH = buildAppPath("/forgot-password", APP_BASE_PATH);
+export const APP_RESET_PASSWORD_PATH = buildAppPath("/reset-password", APP_BASE_PATH);
 
 export const isAuthRoutePath = (pathname: string, basePath: string = APP_BASE_PATH): boolean => {
   const normalizedPath = normalizePathname(pathname);
   return (
     normalizedPath === buildAppPath("/login", basePath) ||
-    normalizedPath === buildAppPath("/register", basePath)
+    normalizedPath === buildAppPath("/register", basePath) ||
+    normalizedPath === buildAppPath("/forgot-password", basePath) ||
+    normalizedPath === buildAppPath("/reset-password", basePath)
   );
 };
