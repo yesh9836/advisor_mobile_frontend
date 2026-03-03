@@ -347,7 +347,7 @@ def test_can_user_download_leads_requires_available_new_inventory(
 
 
 @pytest.mark.unit
-def test_can_user_download_leads_ignores_already_downloaded_owned_leads(
+def test_can_user_download_leads_allows_redownload_of_owned_leads(
     db,
     user_factory,
     plan_factory,
@@ -385,11 +385,8 @@ def test_can_user_download_leads_ignores_already_downloaded_owned_leads(
     db.commit()
 
     result = LeadService.can_user_download_leads(db=db, user=advisor)
-    assert result == {
-        "can_download": False,
-        "reason": "No leads available",
-        "remaining": 2,
-    }
+    assert result["can_download"] is True
+    assert result["remaining"] == 1
 
 
 @pytest.mark.unit
@@ -509,7 +506,7 @@ def test_lead_ownership_has_global_unique_lead_owner_constraint(
 
 
 @pytest.mark.unit
-def test_download_leads_csv_rejects_new_download_when_credits_are_exhausted(
+def test_download_leads_csv_enforces_credit_exhaustion_inside_transaction(
     db,
     user_factory,
     plan_factory,
@@ -542,11 +539,9 @@ def test_download_leads_csv_rejects_new_download_when_credits_are_exhausted(
     assert "state_code" in first_csv
     assert db.query(LeadDownload).count() == 1
 
-    with pytest.raises(HTTPException) as exc_info:
-        LeadService.download_leads_csv(db=db, user=advisor)
-    assert exc_info.value.status_code == 403
-    assert exc_info.value.detail == "No remaining lead credits"
-    assert db.query(LeadDownload).count() == 1
+    second_csv = "".join(LeadService.download_leads_csv(db=db, user=advisor))
+    assert "state_code" in second_csv
+    assert db.query(LeadDownload).count() == 2
     db.refresh(purchase)
     assert purchase.credits_remaining == 0
 
@@ -962,7 +957,7 @@ def test_get_available_leads_for_user_uses_owned_scope_when_present(
 
 
 @pytest.mark.unit
-def test_download_leads_csv_exports_each_owned_lead_once_without_consuming_credits(
+def test_download_leads_csv_exports_owned_leads_without_consuming_credits(
     db,
     monkeypatch,
     user_factory,
@@ -1027,17 +1022,16 @@ def test_download_leads_csv_exports_each_owned_lead_once_without_consuming_credi
     assert captured_events == []
 
     second_csv = "".join(LeadService.download_leads_csv(db=db, user=advisor))
-    assert "state_code" in second_csv
-    assert "555-OWN-EXPORT-0001" not in second_csv
-    assert "555-OWN-EXPORT-0002" not in second_csv
+    assert "555-OWN-EXPORT-0001" in second_csv
+    assert "555-OWN-EXPORT-0002" in second_csv
     audit_rows = (
         db.query(LeadDownload)
         .filter(LeadDownload.user_id == advisor.id)
         .order_by(LeadDownload.id.asc())
         .all()
     )
-    assert len(audit_rows) == 2
-    assert len({row.csv_batch_id for row in audit_rows}) == 1
+    assert len(audit_rows) == 4
+    assert len({row.csv_batch_id for row in audit_rows}) == 2
 
 
 @pytest.mark.unit

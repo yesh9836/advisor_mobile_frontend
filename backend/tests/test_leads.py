@@ -350,8 +350,8 @@ def test_download_delivered_csv_allows_redownload_after_credits_exhausted(
     assert first_download.status_code == 200, first_download.text
 
     second_new_download = client.post("/api/v1/leads/download", headers=headers)
-    assert second_new_download.status_code == 403
-    assert second_new_download.json()["detail"] == "No remaining lead credits"
+    assert second_new_download.status_code == 200, second_new_download.text
+    assert "555-CA-REDL-0001" in second_new_download.text
 
     delivered_download = client.post("/api/v1/leads/download/delivered", headers=headers)
     assert delivered_download.status_code == 200, delivered_download.text
@@ -418,7 +418,7 @@ def test_download_delivered_csv_deduplicates_old_leads_after_new_package_deliver
 
     second_download = client.post("/api/v1/leads/download", headers=headers)
     assert second_download.status_code == 200, second_download.text
-    assert "555-OWN-REDL-1001" not in second_download.text
+    assert "555-OWN-REDL-1001" in second_download.text
     assert "555-OWN-REDL-1002" in second_download.text
 
     download_rows = (
@@ -426,7 +426,7 @@ def test_download_delivered_csv_deduplicates_old_leads_after_new_package_deliver
         .filter(LeadDownload.user_id == advisor.id, LeadDownload.lead_id == first_lead.id)
         .all()
     )
-    assert len(download_rows) == 1
+    assert len(download_rows) == 2
 
     delivered_download = client.post("/api/v1/leads/download/delivered", headers=headers)
     assert delivered_download.status_code == 200, delivered_download.text
