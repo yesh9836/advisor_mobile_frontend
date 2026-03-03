@@ -94,7 +94,7 @@ export const getLeads = async (
   size: number,
   filters: LeadFilters = {},
 ): Promise<PaginatedLeads> => {
-  const response = await apiClient.get<PaginatedLeads>("/leads", {
+  const response = await apiClient.get<PaginatedLeads>("/leads/", {
     params: {
       page,
       size,
@@ -102,7 +102,7 @@ export const getLeads = async (
     },
   });
 
-  return parseApiContract(paginatedLeadsSchema, response.data, "/leads");
+  return parseApiContract(paginatedLeadsSchema, response.data, "/leads/");
 };
 
 export const downloadLeads = async (): Promise<Blob> => {
