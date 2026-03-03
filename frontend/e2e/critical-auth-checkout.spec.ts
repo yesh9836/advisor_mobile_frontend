@@ -115,6 +115,13 @@ const setupApiMockRouter = async (
       fulfillJson(route, packagePayload),
     "GET /api/v1/purchases/history": async (route) =>
       fulfillJson(route, { items: [] }),
+    "GET /api/v1/purchases/billing/summary": async (route) =>
+      fulfillJson(route, {
+        payment_method: null,
+        invoices: [],
+        provider_status: "healthy",
+        degradation_reason: null,
+      }),
     "GET /api/v1/purchases/first-purchase-offer": async (route) =>
       fulfillJson(route, { eligible: false, offer: null }),
     "GET /api/v1/purchases/balance": async (route) =>
@@ -347,6 +354,39 @@ test.describe("critical auth and checkout browser journeys @mocked", () => {
     await expect(
       page.getByText("Checkout completed. Delivered now: 6/10. Pending auto-delivery: 4."),
     ).toBeVisible({ timeout: 20_000 });
+    assertNoUnhandledApiRequests();
+  });
+
+  test("renders billing fallback notice when provider is degraded", async ({ page }) => {
+    const { assertNoUnhandledApiRequests } = await setupApiMockRouter(page, {
+      "GET /api/v1/purchases/billing/summary": async (route) => {
+        await fulfillJson(route, {
+          payment_method: null,
+          invoices: [
+            {
+              stripe_invoice_id: "in_degraded_1",
+              amount_paid_cents: 18000,
+              currency: "USD",
+              status: "paid",
+              created_at: "2026-02-28T00:00:00Z",
+              package_name: "Starter",
+              hosted_invoice_url: null,
+              invoice_pdf: null,
+              description: null,
+            },
+          ],
+          provider_status: "degraded",
+          degradation_reason: "stripe_unavailable",
+        });
+      },
+    });
+
+    await page.goto("/billing");
+
+    await expect(
+      page.getByText("Stripe billing details are temporarily unavailable. Showing purchase history."),
+    ).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText("Starter")).toBeVisible({ timeout: 20_000 });
     assertNoUnhandledApiRequests();
   });
 });

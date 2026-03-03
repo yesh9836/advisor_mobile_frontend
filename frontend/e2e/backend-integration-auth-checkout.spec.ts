@@ -4,6 +4,7 @@ const backendBaseUrl = (process.env.PLAYWRIGHT_E2E_BACKEND_URL ?? "").replace(/\
 const advisorEmail = process.env.PLAYWRIGHT_E2E_ADVISOR_EMAIL ?? "advisor.demo@example.com";
 const advisorPassword = process.env.PLAYWRIGHT_E2E_ADVISOR_PASSWORD ?? "Password123!";
 const canRunBackendIntegratedSuite = backendBaseUrl.length > 0;
+const isCi = Boolean(process.env.CI);
 
 const loginAsAdvisor = async (page: Page): Promise<void> => {
   await page.goto("/login");
@@ -15,9 +16,16 @@ const loginAsAdvisor = async (page: Page): Promise<void> => {
 
 test.describe("backend-integrated auth and checkout smoke @integration", () => {
   test.skip(
-    !canRunBackendIntegratedSuite,
+    !canRunBackendIntegratedSuite && !isCi,
     "Set PLAYWRIGHT_E2E_BACKEND_URL to run backend-integrated browser smoke tests.",
   );
+  test.beforeAll(() => {
+    if (!canRunBackendIntegratedSuite && isCi) {
+      throw new Error(
+        "Missing PLAYWRIGHT_E2E_BACKEND_URL in CI. Backend-integrated e2e must run in CI and cannot be skipped.",
+      );
+    }
+  });
 
   test("refreshes session after replacing access cookie with an invalid value", async ({
     page,
