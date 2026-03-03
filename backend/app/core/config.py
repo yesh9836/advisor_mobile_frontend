@@ -27,7 +27,7 @@ class Settings(BaseSettings):
 
     # Application
     APP_ENV: str = "development"  # development | test | staging | production
-    APP_NAME: str = "Lead Management System"
+    APP_NAME: str = "Spectaculeads"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
     API_DOCS_ENABLED: bool = True
@@ -620,5 +620,4 @@ class Settings(BaseSettings):
         )
 
 
-# Global settings instance
 settings = Settings()
