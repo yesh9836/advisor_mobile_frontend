@@ -6,7 +6,7 @@ import stripe
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import String, and_, cast, func, or_
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.core.config import settings
 from app.core.currency import USD_CURRENCY, require_usd_currency
@@ -67,6 +67,31 @@ class SubscriptionService:
         if isinstance(payment_intent, dict):
             return str(payment_intent.get("id") or "").strip()
         return str(payment_intent or "").strip()
+
+    @staticmethod
+    def _build_persisted_billing_invoice(
+        *,
+        purchase: LeadPurchase,
+        package: Optional[LeadPackage],
+        fallback_now: datetime,
+    ) -> Dict[str, Any]:
+        invoice_reference = (
+            str(purchase.stripe_invoice_id or "").strip()
+            or str(purchase.stripe_payment_intent_id or "").strip()
+            or str(purchase.stripe_checkout_session_id or "").strip()
+            or f"purchase-{int(purchase.id)}"
+        )
+        return {
+            "stripe_invoice_id": invoice_reference,
+            "amount_paid_cents": max(int(purchase.amount_cents or 0), 0),
+            "currency": str(purchase.currency or "usd").upper(),
+            "status": str(purchase.status or "unknown"),
+            "created_at": purchase.purchased_at or fallback_now,
+            "package_name": package.name if package else None,
+            "hosted_invoice_url": None,
+            "invoice_pdf": None,
+            "description": None,
+        }
 
     @staticmethod
     def _resolve_purchase_status_transition(
@@ -517,16 +542,6 @@ class SubscriptionService:
 
     @staticmethod
     def get_billing_summary(db: Session, user: User) -> Dict[str, Any]:
-        if not settings.STRIPE_SECRET_KEY or not user.stripe_customer_id:
-            return {
-                "payment_method": None,
-                "invoices": [],
-            }
-
-        PaymentService._init_stripe()
-
-        payment_method: Optional[Dict[str, Any]] = None
-        invoices: List[Dict[str, Any]] = []
         now = datetime.now(timezone.utc)
         purchase_rows = (
             db.query(LeadPurchase, LeadPackage)
@@ -539,6 +554,27 @@ class SubscriptionService:
             .limit(50)
             .all()
         )
+        fallback_invoices: List[Dict[str, Any]] = [
+            SubscriptionService._build_persisted_billing_invoice(
+                purchase=purchase,
+                package=package,
+                fallback_now=now,
+            )
+            for purchase, package in purchase_rows
+        ]
+
+        if not settings.STRIPE_SECRET_KEY or not user.stripe_customer_id:
+            return {
+                "payment_method": None,
+                "invoices": fallback_invoices,
+                "provider_status": "unavailable",
+                "degradation_reason": "stripe_not_configured_or_customer_missing",
+            }
+
+        PaymentService._init_stripe()
+
+        payment_method: Optional[Dict[str, Any]] = None
+        invoices: List[Dict[str, Any]] = []
 
         try:
             customer = stripe.Customer.retrieve(
@@ -646,10 +682,24 @@ class SubscriptionService:
                     matched_invoice = invoice_by_payment_intent.get(purchase_payment_intent_id)
 
                 if not matched_invoice:
+                    invoices.append(
+                        SubscriptionService._build_persisted_billing_invoice(
+                            purchase=purchase,
+                            package=package,
+                            fallback_now=now,
+                        )
+                    )
                     continue
 
                 matched_invoice_id = str(matched_invoice.get("id") or "").strip()
                 if not matched_invoice_id:
+                    invoices.append(
+                        SubscriptionService._build_persisted_billing_invoice(
+                            purchase=purchase,
+                            package=package,
+                            fallback_now=now,
+                        )
+                    )
                     continue
 
                 if not purchase_invoice_id:
@@ -707,19 +757,39 @@ class SubscriptionService:
             )
 
             if did_backfill_purchase_invoice_id:
-                db.commit()
+                try:
+                    db.commit()
+                except SQLAlchemyError as exc:
+                    db.rollback()
+                    logger.exception(
+                        "Billing summary invoice-id backfill commit failed for user_id=%s: %s",
+                        user.id,
+                        exc,
+                    )
+                    MetricsService.increment(
+                        "billing_summary_backfill_commit_failed_total",
+                        tags={"provider": "stripe"},
+                    )
 
         except stripe.error.StripeError as exc:
             logger.error("Failed to fetch billing summary from Stripe for user_id=%s: %s", user.id, exc)
             db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Stripe billing provider unavailable",
+            MetricsService.increment(
+                "billing_summary_provider_degraded_total",
+                tags={"provider": "stripe", "error_type": type(exc).__name__},
             )
+            return {
+                "payment_method": payment_method,
+                "invoices": fallback_invoices,
+                "provider_status": "degraded",
+                "degradation_reason": "stripe_unavailable",
+            }
 
         return {
             "payment_method": payment_method,
             "invoices": invoices,
+            "provider_status": "healthy",
+            "degradation_reason": None,
         }
 
     @staticmethod
