@@ -50,6 +50,13 @@ class LeadService:
         return ~select(LeadOwnership.id).where(LeadOwnership.lead_id == Lead.id).exists()
 
     @staticmethod
+    def _lead_not_delivered_condition():
+        return and_(
+            LeadService._lead_not_downloaded_by_anyone_condition(),
+            LeadService._lead_not_owned_condition(),
+        )
+
+    @staticmethod
     def _lead_not_downloaded_by_user_condition(user_id: int):
         return ~select(LeadDownload.id).where(
             LeadDownload.user_id == user_id,
@@ -103,8 +110,7 @@ class LeadService:
         available_count = (
             db.query(func.count(Lead.id))
             .filter(Lead.state_code.in_(states))
-            .filter(LeadService._lead_not_downloaded_by_anyone_condition())
-            .filter(LeadService._lead_not_owned_condition())
+            .filter(LeadService._lead_not_delivered_condition())
             .scalar()
         ) or 0
         return {
@@ -116,8 +122,7 @@ class LeadService:
     def get_global_unsold_inventory_count(db: Session) -> int:
         count = (
             db.query(func.count(Lead.id))
-            .filter(LeadService._lead_not_downloaded_by_anyone_condition())
-            .filter(LeadService._lead_not_owned_condition())
+            .filter(LeadService._lead_not_delivered_condition())
             .scalar()
         ) or 0
         return int(count)
@@ -392,7 +397,7 @@ class LeadService:
         candidate_query = (
             db.query(Lead)
             .filter(Lead.state_code.in_(states))
-            .filter(LeadService._lead_not_owned_condition())
+            .filter(LeadService._lead_not_delivered_condition())
             .order_by(Lead.created_at.desc(), Lead.id.desc())
         )
         if dialect_name == "mysql":
@@ -567,7 +572,7 @@ class LeadService:
         candidate_query = (
             db.query(Lead)
             .filter(Lead.state_code.in_(normalized_states))
-            .filter(LeadService._lead_not_owned_condition())
+            .filter(LeadService._lead_not_delivered_condition())
             .order_by(Lead.created_at.desc(), Lead.id.desc())
         )
         if dialect_name == "mysql":
@@ -937,8 +942,7 @@ class LeadService:
             db.query(Lead)
             .filter(Lead.state_code.in_(states))
             .filter(LeadService._lead_not_downloaded_by_user_condition(user_id))
-            .filter(LeadService._lead_not_downloaded_by_anyone_condition())
-            .filter(LeadService._lead_not_owned_condition())
+            .filter(LeadService._lead_not_delivered_condition())
             .order_by(Lead.created_at.desc())
         )
 
@@ -990,6 +994,29 @@ class LeadService:
         # before commit and can trigger a safe retry path.
         db.flush()
         return batch_id
+
+    @staticmethod
+    def _record_ownership_batch(
+        db: Session,
+        user_id: int,
+        leads: List[Lead],
+        purchase_ids_by_lead_id: Optional[Dict[int, int]] = None,
+    ) -> None:
+        if not leads:
+            return
+
+        for lead in leads:
+            purchase_id = None
+            if purchase_ids_by_lead_id:
+                purchase_id = purchase_ids_by_lead_id.get(lead.id)
+            db.add(
+                LeadOwnership(
+                    user_id=user_id,
+                    lead_id=lead.id,
+                    purchase_id=purchase_id,
+                )
+            )
+        db.flush()
 
     @staticmethod
     def _consume_credits_for_leads(
@@ -1094,6 +1121,12 @@ class LeadService:
             leads=leads,
         )
 
+        LeadService._record_ownership_batch(
+            db=db,
+            user_id=user.id,
+            leads=leads,
+            purchase_ids_by_lead_id=purchase_ids_by_lead_id,
+        )
         LeadService._record_download_batch(
             db=db,
             user_id=user.id,
@@ -1119,6 +1152,29 @@ class LeadService:
         )
         return any(marker in error_text for marker in duplicate_markers)
 
+    @staticmethod
+    def _is_duplicate_ownership_integrity_error(exc: IntegrityError) -> bool:
+        error_text = str(getattr(exc, "orig", exc)).lower()
+        if (
+            "lead_ownerships" not in error_text
+            and "uq_lead_ownerships_user_lead" not in error_text
+            and "uq_lead_ownerships_global_lead" not in error_text
+        ):
+            return False
+        duplicate_markers = (
+            "uq_lead_ownerships_user_lead",
+            "uq_lead_ownerships_global_lead",
+            "duplicate entry",
+            "unique constraint",
+        )
+        return any(marker in error_text for marker in duplicate_markers)
+
+    @staticmethod
+    def _is_retryable_delivery_integrity_error(exc: IntegrityError) -> bool:
+        return (
+            LeadService._is_duplicate_download_integrity_error(exc)
+            or LeadService._is_duplicate_ownership_integrity_error(exc)
+        )
 
     @staticmethod
     def get_available_leads_for_user(
@@ -1144,8 +1200,7 @@ class LeadService:
                 available_condition = and_(
                     Lead.state_code.in_(states),
                     LeadService._lead_not_downloaded_by_user_condition(user.id),
-                    LeadService._lead_not_downloaded_by_anyone_condition(),
-                    LeadService._lead_not_owned_condition(),
+                    LeadService._lead_not_delivered_condition(),
                 )
             else:
                 available_condition = false()
@@ -1294,9 +1349,12 @@ class LeadService:
                 raise
             except IntegrityError as exc:
                 db.rollback()
-                if LeadService._is_duplicate_download_integrity_error(exc) and attempt < max_attempts:
+                if LeadService._is_retryable_delivery_integrity_error(exc) and attempt < max_attempts:
                     logger.warning(
-                        "Retrying lead download allocation after unique conflict for user_id=%s (attempt %s/%s)",
+                        (
+                            "Retrying lead download allocation after delivery unique conflict "
+                            "for user_id=%s (attempt %s/%s)"
+                        ),
                         user.id,
                         attempt,
                         max_attempts,
