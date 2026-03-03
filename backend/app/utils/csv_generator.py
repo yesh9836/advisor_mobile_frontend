@@ -8,6 +8,7 @@ from fastapi import HTTPException, UploadFile
 
 from app.core.config import settings
 from app.models.lead import Lead
+from app.utils.csv_safety import neutralize_csv_row
 
 
 LEAD_CSV_HEADERS = [
@@ -105,8 +106,8 @@ def generate_leads_csv_stream(leads: List[Lead], prepend_message: str = "") -> G
                 row[field] = _join_json_list(value)
             else:
                 row[field] = "" if value is None else str(value)
-        
-        writer.writerow(row)
+
+        writer.writerow(neutralize_csv_row(row))
         yield buffer.getvalue()
         
         # Clear buffer for next row
