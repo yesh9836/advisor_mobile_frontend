@@ -9,7 +9,7 @@ const userSchema: z.ZodType<User> = z
     email: z.string(),
     name: z.string(),
     phone: z.string().nullable(),
-    role: z.string(),
+    role: z.enum(["admin", "advisor"]),
     stripe_customer_id: z.string().nullable(),
     created_at: z.string(),
   });
