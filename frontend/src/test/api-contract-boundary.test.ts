@@ -80,6 +80,24 @@ describe("API contract boundary guards", () => {
     );
   });
 
+  it("rejects auth payloads with unsupported role values", async () => {
+    mockedApiClient.get.mockResolvedValueOnce({
+      data: {
+        id: 1,
+        email: "advisor@example.com",
+        name: "Advisor",
+        phone: null,
+        role: "manager",
+        stripe_customer_id: null,
+        created_at: "2026-02-20T00:00:00Z",
+      },
+    });
+
+    await expect(getCurrentUser()).rejects.toThrow(
+      "Unexpected response format from /auth/me",
+    );
+  });
+
   it("rejects malformed admin dashboard payloads", async () => {
     mockedApiClient.get.mockResolvedValueOnce({
       data: {

@@ -11,8 +11,7 @@ describe("getHomeRouteByRole", () => {
     expect(getHomeRouteByRole("advisor")).toBe("/dashboard");
   });
 
-  it("defaults to advisor dashboard route for unknown roles", () => {
-    expect(getHomeRouteByRole("manager")).toBe("/dashboard");
+  it("defaults to advisor dashboard route for empty auth state", () => {
     expect(getHomeRouteByRole(undefined)).toBe("/dashboard");
     expect(getHomeRouteByRole(null)).toBe("/dashboard");
   });

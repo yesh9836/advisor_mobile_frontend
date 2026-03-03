@@ -202,6 +202,23 @@ describe("AuthContext cookie session behavior", () => {
     });
   });
 
+  it("does not authenticate when /auth/me contract validation fails", async () => {
+    mockGetCurrentUser.mockRejectedValueOnce(
+      new Error("Unexpected response format from /auth/me"),
+    );
+
+    render(
+      <AuthProvider>
+        <ContextProbe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("loading-state")).toHaveTextContent("ready");
+      expect(screen.getByTestId("user-email")).toHaveTextContent("guest");
+    });
+  });
+
   it("prefers backend detail over login/register fallback copy", async () => {
     mockGetCurrentUser.mockRejectedValueOnce(new Error("Unauthenticated"));
     mockLogin.mockRejectedValueOnce({
