@@ -43,17 +43,14 @@ jobs:
       - name: Run lint
         run: npm run lint
 
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
       - name: Run tests
         run: npm run test
 
       - name: Run build
         run: npm run build
-
-      - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
-
-      - name: Run e2e mocked critical flows
-        run: npm run test:e2e:mocked
 
       - name: Setup Python
         uses: actions/setup-python@v5
