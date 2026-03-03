@@ -52,6 +52,7 @@ from app.services.admin_audit_service import AdminAuditService
 from app.services.auth_service import AuthService
 from app.services.payment_service import PaymentService
 from app.services.stripe_plan_cleanup_outbox_service import StripePlanCleanupOutboxService
+from app.utils.csv_safety import neutralize_csv_row
 
 logger = logging.getLogger(__name__)
 
@@ -1162,22 +1163,24 @@ class AdminService:
             amount_cents = int(purchase.amount_cents or 0)
             amount_dollars = (Decimal(amount_cents) / Decimal("100")).quantize(Decimal("0.01"))
             writer.writerow(
-                {
-                    "order_reference": (
-                        purchase.stripe_checkout_session_id
-                        or purchase.stripe_payment_intent_id
-                        or f"purchase-{purchase.id}"
-                    ),
-                    "advisor_name": user.name,
-                    "advisor_email": user.email,
-                    "package_name": plan.name if plan else "",
-                    "quantity": int(purchase.credits_total or 0),
-                    "remaining_credits": int(purchase.credits_remaining or 0),
-                    "status": purchase.status,
-                    "created_at": purchase.purchased_at.isoformat() if purchase.purchased_at else "",
-                    "amount_dollars": f"{amount_dollars:.2f}",
-                    "currency": str(purchase.currency or "USD").upper(),
-                }
+                neutralize_csv_row(
+                    {
+                        "order_reference": (
+                            purchase.stripe_checkout_session_id
+                            or purchase.stripe_payment_intent_id
+                            or f"purchase-{purchase.id}"
+                        ),
+                        "advisor_name": user.name,
+                        "advisor_email": user.email,
+                        "package_name": plan.name if plan else "",
+                        "quantity": int(purchase.credits_total or 0),
+                        "remaining_credits": int(purchase.credits_remaining or 0),
+                        "status": purchase.status,
+                        "created_at": purchase.purchased_at.isoformat() if purchase.purchased_at else "",
+                        "amount_dollars": f"{amount_dollars:.2f}",
+                        "currency": str(purchase.currency or "USD").upper(),
+                    }
+                )
             )
             yield csv_buffer.getvalue()
             csv_buffer.seek(0)
