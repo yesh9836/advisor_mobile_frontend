@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -100,6 +100,8 @@ class BillingInvoiceResponse(BaseModel):
 class BillingSummaryResponse(BaseModel):
     payment_method: Optional[BillingPaymentMethodResponse] = None
     invoices: List[BillingInvoiceResponse]
+    provider_status: Literal["healthy", "degraded", "unavailable"] = "healthy"
+    degradation_reason: Optional[str] = None
 
 
 class FirstPurchaseAddonOfferUpdateRequest(BaseModel):
