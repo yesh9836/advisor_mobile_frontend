@@ -1,9 +1,15 @@
 export type QueryParamValue = string | number | boolean | null | undefined;
 
-export const normalizeQueryParams = <T extends Record<string, QueryParamValue>>(
-  params: T,
+type QueryParamInput<T extends object> = {
+  [K in keyof T]: T[K] extends QueryParamValue ? T[K] : never;
+};
+
+export const normalizeQueryParams = <T extends object>(
+  params: QueryParamInput<T>,
 ): Partial<Record<keyof T, string | number | boolean>> => {
-  const cleanedEntries = Object.entries(params).flatMap(([key, value]) => {
+  const cleanedEntries = Object.entries(
+    params as Record<string, QueryParamValue>,
+  ).flatMap(([key, value]) => {
     if (value === undefined || value === null) {
       return [];
     }
