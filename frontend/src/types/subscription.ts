@@ -63,4 +63,6 @@ export interface BillingInvoice {
 export interface BillingSummary {
   payment_method: BillingPaymentMethod | null;
   invoices: BillingInvoice[];
+  provider_status?: "healthy" | "degraded" | "unavailable";
+  degradation_reason?: string | null;
 }
