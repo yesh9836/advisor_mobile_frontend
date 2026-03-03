@@ -418,7 +418,7 @@ def test_download_delivered_csv_deduplicates_old_leads_after_new_package_deliver
 
     second_download = client.post("/api/v1/leads/download", headers=headers)
     assert second_download.status_code == 200, second_download.text
-    assert "555-OWN-REDL-1001" in second_download.text
+    assert "555-OWN-REDL-1001" not in second_download.text
     assert "555-OWN-REDL-1002" in second_download.text
 
     download_rows = (
@@ -426,7 +426,7 @@ def test_download_delivered_csv_deduplicates_old_leads_after_new_package_deliver
         .filter(LeadDownload.user_id == advisor.id, LeadDownload.lead_id == first_lead.id)
         .all()
     )
-    assert len(download_rows) == 2
+    assert len(download_rows) == 1
 
     delivered_download = client.post("/api/v1/leads/download/delivered", headers=headers)
     assert delivered_download.status_code == 200, delivered_download.text
@@ -635,7 +635,7 @@ def test_list_leads_delivery_status_filter_returns_expected_records(
     purchase_factory,
     auth_headers,
 ):
-    _advisor, _, headers = _create_advisor_with_access(
+    advisor, _, headers = _create_advisor_with_access(
         user_factory,
         license_factory,
         plan_factory,
@@ -649,7 +649,23 @@ def test_list_leads_delivery_status_filter_returns_expected_records(
     download_response = client.post("/api/v1/leads/download", headers=headers)
     assert download_response.status_code == 200, download_response.text
 
-    lead_factory(state_code="CA", mobile_phone="555-CA-3503", first_name="Available", last_name="One")
+    purchase = (
+        db.query(LeadPurchase)
+        .filter(LeadPurchase.user_id == advisor.id)
+        .order_by(LeadPurchase.id.desc())
+        .first()
+    )
+    assert purchase is not None
+
+    newly_received = lead_factory(state_code="CA", mobile_phone="555-CA-3503", first_name="Available", last_name="One")
+    db.add(
+        LeadOwnership(
+            user_id=advisor.id,
+            lead_id=newly_received.id,
+            purchase_id=purchase.id,
+        )
+    )
+    db.commit()
 
     all_response = client.get("/api/v1/leads/?delivery_status=all", headers=headers)
     assert all_response.status_code == 200, all_response.text
