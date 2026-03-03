@@ -482,7 +482,7 @@ def test_download_leads_csv_enforces_credit_exhaustion_inside_transaction(
         stripe_price_id="price_download_credit_1",
     )
     license_factory(user_id=advisor.id, state="CA", status="verified")
-    purchase_factory(
+    purchase = purchase_factory(
         user_id=advisor.id,
         package_id=plan.id,
         credits_total=1,
@@ -496,10 +496,59 @@ def test_download_leads_csv_enforces_credit_exhaustion_inside_transaction(
     assert "state_code" in first_csv
     assert db.query(LeadDownload).count() == 1
 
-    with pytest.raises(HTTPException) as exc_info:
-        LeadService.download_leads_csv(db=db, user=advisor)
-    assert exc_info.value.status_code == 403
-    assert exc_info.value.detail == "No remaining lead credits"
+    second_csv = "".join(LeadService.download_leads_csv(db=db, user=advisor))
+    assert "state_code" in second_csv
+    assert db.query(LeadDownload).count() == 2
+    db.refresh(purchase)
+    assert purchase.credits_remaining == 0
+
+
+@pytest.mark.unit
+def test_download_leads_csv_creates_matching_ownership_for_fallback_delivery(
+    db,
+    user_factory,
+    plan_factory,
+    license_factory,
+    purchase_factory,
+    lead_factory,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LeadUnitFallbackOwner123!",
+        email="lead.unit.fallback.owner@example.com",
+    )
+    plan = plan_factory(
+        daily_download_limit=5,
+        state_limit=1,
+        stripe_price_id="price_fallback_owner",
+    )
+    license_factory(user_id=advisor.id, state="CA", status="verified")
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=1,
+        credits_remaining=1,
+        status="completed",
+    )
+    lead = lead_factory(state_code="CA", mobile_phone="555-FALLBACK-OWNER-0001")
+
+    csv_text = "".join(LeadService.download_leads_csv(db=db, user=advisor))
+
+    assert "state_code" in csv_text
+    download_row = (
+        db.query(LeadDownload)
+        .filter(LeadDownload.user_id == advisor.id, LeadDownload.lead_id == lead.id)
+        .first()
+    )
+    assert download_row is not None
+    ownership_row = (
+        db.query(LeadOwnership)
+        .filter(LeadOwnership.user_id == advisor.id, LeadOwnership.lead_id == lead.id)
+        .first()
+    )
+    assert ownership_row is not None
+    assert ownership_row.purchase_id == purchase.id
+    assert download_row.purchase_id == purchase.id
 
 
 @pytest.mark.unit
@@ -589,6 +638,7 @@ def test_download_leads_csv_retries_once_on_unique_conflict(
     assert "state_code" in csv_text
     assert state["raised"] is True
     assert db.query(LeadDownload).count() == 1
+    assert db.query(LeadOwnership).count() == 1
 
 
 @pytest.mark.unit
@@ -1387,6 +1437,66 @@ def test_allocate_unsold_leads_for_purchase_ignores_legacy_refund_adjustments_fo
 
 
 @pytest.mark.unit
+def test_allocate_unsold_leads_for_purchase_excludes_globally_downloaded_legacy_rows(
+    db,
+    user_factory,
+    plan_factory,
+    license_factory,
+    purchase_factory,
+    lead_factory,
+):
+    downloader = user_factory(
+        role="advisor",
+        password="LeadUnitLegacyDownloadedByOther123!",
+        email="lead.unit.legacy.downloaded.by.other@example.com",
+    )
+    target_advisor = user_factory(
+        role="advisor",
+        password="LeadUnitLegacyAllocatorTarget123!",
+        email="lead.unit.legacy.allocator.target@example.com",
+    )
+    plan = plan_factory(
+        daily_download_limit=5,
+        state_limit=1,
+        stripe_price_id="price_allocate_exclude_downloaded",
+    )
+    license_factory(user_id=downloader.id, state="CA", status="verified")
+    license_factory(user_id=target_advisor.id, state="CA", status="verified")
+    target_purchase = purchase_factory(
+        user_id=target_advisor.id,
+        package_id=plan.id,
+        credits_total=1,
+        credits_remaining=1,
+        status="completed",
+    )
+    legacy_downloaded = lead_factory(state_code="CA", mobile_phone="555-ALLOC-LEGACY-0001")
+    db.add(
+        LeadDownload(
+            user_id=downloader.id,
+            lead_id=legacy_downloaded.id,
+            csv_batch_id="batch_allocate_legacy_download",
+        )
+    )
+    db.commit()
+
+    summary = LeadService.allocate_unsold_leads_for_purchase(
+        db=db,
+        purchase=target_purchase,
+    )
+
+    assert summary["requested_count"] == 1
+    assert summary["assigned_count"] == 0
+    assert summary["newly_assigned_count"] == 0
+    assert summary["unfulfilled_count"] == 1
+    assert (
+        db.query(LeadOwnership)
+        .filter(LeadOwnership.purchase_id == target_purchase.id)
+        .count()
+        == 0
+    )
+
+
+@pytest.mark.unit
 def test_reconcile_pending_purchase_assignments_ignores_legacy_refund_adjustments(
     db,
     user_factory,
@@ -1443,6 +1553,67 @@ def test_reconcile_pending_purchase_assignments_ignores_legacy_refund_adjustment
         .filter(LeadOwnership.purchase_id == purchase.id)
         .count()
         == 3
+    )
+
+
+@pytest.mark.unit
+def test_reconcile_pending_purchase_assignments_excludes_globally_downloaded_legacy_rows(
+    db,
+    user_factory,
+    plan_factory,
+    license_factory,
+    purchase_factory,
+    lead_factory,
+):
+    downloader = user_factory(
+        role="advisor",
+        password="LeadUnitLegacyReconDownloader123!",
+        email="lead.unit.legacy.recon.downloader@example.com",
+    )
+    target_advisor = user_factory(
+        role="advisor",
+        password="LeadUnitLegacyReconTarget123!",
+        email="lead.unit.legacy.recon.target@example.com",
+    )
+    plan = plan_factory(
+        daily_download_limit=5,
+        state_limit=1,
+        stripe_price_id="price_reconcile_exclude_downloaded",
+    )
+    license_factory(user_id=downloader.id, state="CA", status="verified")
+    license_factory(user_id=target_advisor.id, state="CA", status="verified")
+    target_purchase = purchase_factory(
+        user_id=target_advisor.id,
+        package_id=plan.id,
+        credits_total=1,
+        credits_remaining=1,
+        status="completed",
+    )
+    legacy_downloaded = lead_factory(state_code="CA", mobile_phone="555-RECON-LEGACY-0001")
+    db.add(
+        LeadDownload(
+            user_id=downloader.id,
+            lead_id=legacy_downloaded.id,
+            csv_batch_id="batch_reconcile_legacy_download",
+        )
+    )
+    db.commit()
+
+    summary = LeadService.reconcile_pending_purchase_assignments(
+        db=db,
+        state_codes=["CA"],
+        source_event="test_reconcile_excludes_legacy_downloaded",
+    )
+
+    assert summary["scanned_purchases"] == 1
+    assert summary["updated_purchases"] == 0
+    assert summary["newly_assigned_count"] == 0
+    assert summary["remaining_unfulfilled_count"] == 1
+    assert (
+        db.query(LeadOwnership)
+        .filter(LeadOwnership.purchase_id == target_purchase.id)
+        .count()
+        == 0
     )
 
 

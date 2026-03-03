@@ -179,6 +179,101 @@ def test_f6_lead_download_audit_upgrade_is_rerunnable_and_allows_duplicate_audit
 
 
 @pytest.mark.unit
+def test_c4_backfill_missing_lead_ownerships_upgrade_is_deterministic_and_rerunnable():
+    migration = _load_migration_module("c4d5e6f7a8b9_backfill_missing_lead_ownerships_from_downloads.py")
+    engine = sa.create_engine("sqlite+pysqlite:///:memory:")
+
+    metadata = sa.MetaData()
+    lead_downloads = sa.Table(
+        "lead_downloads",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+        sa.Column("user_id", sa.Integer, nullable=False),
+        sa.Column("lead_id", sa.Integer, nullable=False),
+        sa.Column("purchase_id", sa.Integer, nullable=True),
+        sa.Column("downloaded_at", sa.DateTime, nullable=False),
+    )
+    lead_ownerships = sa.Table(
+        "lead_ownerships",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+        sa.Column("user_id", sa.Integer, nullable=False),
+        sa.Column("lead_id", sa.Integer, nullable=False),
+        sa.Column("purchase_id", sa.Integer, nullable=True),
+        sa.Column("assigned_at", sa.DateTime, nullable=False),
+        sa.UniqueConstraint("lead_id", name="uq_lead_ownerships_global_lead"),
+    )
+
+    with engine.begin() as connection:
+        metadata.create_all(connection)
+        connection.execute(
+            lead_downloads.insert(),
+            [
+                # lead_id=100 winner should be user_id=101 (earliest downloaded_at)
+                {
+                    "id": 1,
+                    "user_id": 101,
+                    "lead_id": 100,
+                    "purchase_id": 11,
+                    "downloaded_at": datetime(2026, 2, 10, 12, 0, tzinfo=timezone.utc),
+                },
+                {
+                    "id": 2,
+                    "user_id": 102,
+                    "lead_id": 100,
+                    "purchase_id": 12,
+                    "downloaded_at": datetime(2026, 2, 10, 12, 10, tzinfo=timezone.utc),
+                },
+                {
+                    "id": 3,
+                    "user_id": 201,
+                    "lead_id": 101,
+                    "purchase_id": 21,
+                    "downloaded_at": datetime(2026, 2, 11, 13, 0, tzinfo=timezone.utc),
+                },
+                {
+                    "id": 4,
+                    "user_id": 202,
+                    "lead_id": 102,
+                    "purchase_id": 22,
+                    "downloaded_at": datetime(2026, 2, 12, 14, 0, tzinfo=timezone.utc),
+                },
+            ],
+        )
+        connection.execute(
+            lead_ownerships.insert(),
+            [
+                {
+                    "id": 10,
+                    "user_id": 999,
+                    "lead_id": 102,
+                    "purchase_id": 99,
+                    "assigned_at": datetime(2026, 2, 9, 9, 0, tzinfo=timezone.utc),
+                },
+            ],
+        )
+
+        _run_migration(migration, "upgrade", connection)
+        _run_migration(migration, "upgrade", connection)
+
+        ownership_rows = connection.execute(
+            sa.text(
+                "SELECT user_id, lead_id, purchase_id FROM lead_ownerships ORDER BY lead_id ASC"
+            )
+        ).mappings().all()
+        assert ownership_rows == [
+            {"user_id": 101, "lead_id": 100, "purchase_id": 11},
+            {"user_id": 201, "lead_id": 101, "purchase_id": 21},
+            {"user_id": 999, "lead_id": 102, "purchase_id": 99},
+        ]
+
+        ownership_count = connection.execute(
+            sa.text("SELECT COUNT(*) AS total FROM lead_ownerships")
+        ).mappings().one()
+        assert ownership_count["total"] == 3
+
+
+@pytest.mark.unit
 def test_d4_lead_packages_upgrade_rerun_preserves_backfill_and_fk_integrity():
     migration = _load_migration_module("d4e5f6a7b8c9_add_lead_packages_catalog.py")
     engine = sa.create_engine("sqlite+pysqlite:///:memory:")
