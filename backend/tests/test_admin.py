@@ -2,6 +2,8 @@ import csv
 import io
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.config import settings
 from app.models.audit_log import AuditLog
 from app.models.auth_session import RefreshTokenSession
@@ -903,7 +905,7 @@ def test_admin_plan_create_commit_failure_enqueues_stripe_cleanup_outbox_when_in
         },
     )
     assert response.status_code == 500, response.text
-    assert response.json() == {"detail": "Failed to create plan"}
+    assert response.json() == {"detail": "Failed to persist plan creation"}
 
     outbox_row = (
         db.query(StripePlanCleanupOutbox)
@@ -956,7 +958,7 @@ def test_admin_plan_update_commit_failure_enqueues_stripe_cleanup_outbox_when_in
         },
     )
     assert response.status_code == 500, response.text
-    assert response.json() == {"detail": "Failed to update plan"}
+    assert response.json() == {"detail": "Failed to persist plan update"}
 
     outbox_row = (
         db.query(StripePlanCleanupOutbox)
@@ -1045,6 +1047,103 @@ def test_admin_plan_unarchive_rejects_when_stripe_activation_fails(
     )
     assert response.status_code == 502, response.text
     assert response.json() == {"detail": "Failed to reactivate Stripe plan artifacts"}
+
+    db.refresh(plan)
+    assert plan.is_archived is True
+    assert plan.archived_at is not None
+
+
+def test_admin_plan_archive_commit_failure_returns_persistence_error(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+    plan_factory,
+    monkeypatch,
+):
+    from sqlalchemy.orm.session import Session as SQLAlchemySession
+
+    _admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+    plan = plan_factory(name="Archive Commit Failure Plan", stripe_price_id="price_archive_commit_fail")
+    db.add(plan)
+    db.commit()
+
+    original_commit = SQLAlchemySession.commit
+    commit_calls = {"count": 0}
+
+    def _fail_first_commit(self, *args, **kwargs):
+        if commit_calls["count"] == 0:
+            commit_calls["count"] += 1
+            raise SQLAlchemyError("forced archive commit failure")
+        return original_commit(self, *args, **kwargs)
+
+    monkeypatch.setattr(SQLAlchemySession, "commit", _fail_first_commit)
+
+    response = client.post(
+        f"/api/v1/admin/plans/{plan.id}/archive",
+        headers=admin_headers,
+        json={"reason": "retire"},
+    )
+    assert response.status_code == 500, response.text
+    assert response.json() == {"detail": "Failed to persist plan archive"}
+
+    db.refresh(plan)
+    assert plan.is_archived is False
+    assert plan.archived_at is None
+
+
+def test_admin_plan_unarchive_commit_failure_returns_persistence_error(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+    plan_factory,
+    monkeypatch,
+):
+    from sqlalchemy.orm.session import Session as SQLAlchemySession
+
+    _admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+    plan = plan_factory(name="Unarchive Commit Failure Plan", stripe_price_id="price_unarchive_commit_fail")
+    plan.stripe_product_id = "prod_unarchive_commit_fail"
+    plan.is_archived = True
+    plan.archived_at = datetime.now(timezone.utc)
+    db.add(plan)
+    db.commit()
+
+    monkeypatch.setattr(
+        "app.services.payment_service.PaymentService.activate_stripe_plan_artifacts",
+        lambda **_kwargs: {"price_activated": True, "product_activated": True},
+    )
+    deactivate_calls = {"count": 0}
+
+    def _deactivate_artifacts(**_kwargs):
+        deactivate_calls["count"] += 1
+        return {"price_deactivated": True, "product_deactivated": True}
+
+    monkeypatch.setattr(
+        "app.services.payment_service.PaymentService.deactivate_stripe_plan_artifacts",
+        _deactivate_artifacts,
+    )
+
+    original_commit = SQLAlchemySession.commit
+    commit_calls = {"count": 0}
+
+    def _fail_first_commit(self, *args, **kwargs):
+        if commit_calls["count"] == 0:
+            commit_calls["count"] += 1
+            raise SQLAlchemyError("forced unarchive commit failure")
+        return original_commit(self, *args, **kwargs)
+
+    monkeypatch.setattr(SQLAlchemySession, "commit", _fail_first_commit)
+
+    response = client.post(
+        f"/api/v1/admin/plans/{plan.id}/unarchive",
+        headers=admin_headers,
+        json={"reason": "restore"},
+    )
+    assert response.status_code == 500, response.text
+    assert response.json() == {"detail": "Failed to persist plan unarchive"}
+    assert deactivate_calls["count"] == 1
 
     db.refresh(plan)
     assert plan.is_archived is True
