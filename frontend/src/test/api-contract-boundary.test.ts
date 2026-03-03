@@ -153,7 +153,7 @@ describe("API contract boundary guards", () => {
     });
 
     await expect(getLeads(1, 25)).rejects.toThrow(
-      "Unexpected response format from /leads",
+      "Unexpected response format from /leads/",
     );
   });
 
@@ -174,6 +174,35 @@ describe("API contract boundary guards", () => {
     });
 
     await expect(getLeads(1, 25)).rejects.toThrow(/source/);
+  });
+
+  it("requests the canonical /leads/ path and normalized filters", async () => {
+    mockedApiClient.get.mockResolvedValueOnce({
+      data: {
+        items: [buildValidLeadItem()],
+        total: 1,
+        page: 2,
+        size: 25,
+      },
+    });
+
+    await expect(
+      getLeads(2, 25, {
+        search: "  alex  ",
+        state_code: " NY ",
+        delivery_status: "all",
+      }),
+    ).resolves.toBeDefined();
+
+    expect(mockedApiClient.get).toHaveBeenCalledWith("/leads/", {
+      params: {
+        page: 2,
+        size: 25,
+        search: "alex",
+        state_code: "NY",
+        delivery_status: "all",
+      },
+    });
   });
 
   it("rejects malformed licenses payloads", async () => {
