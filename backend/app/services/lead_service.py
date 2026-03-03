@@ -266,34 +266,6 @@ class LeadService:
         )
         return [lead for _ownership, lead in rows]
 
-    @staticmethod
-    def _get_undownloaded_owned_leads_for_user(db: Session, user_id: int) -> List[Lead]:
-        rows = (
-            db.query(LeadOwnership, Lead)
-            .join(Lead, Lead.id == LeadOwnership.lead_id)
-            .filter(LeadOwnership.user_id == user_id)
-            .filter(LeadService._lead_not_downloaded_by_user_condition(user_id))
-            .order_by(LeadOwnership.assigned_at.desc(), LeadOwnership.id.desc())
-            .all()
-        )
-        return [lead for _ownership, lead in rows]
-
-    @staticmethod
-    def _count_undownloaded_owned_leads_for_user(db: Session, user_id: int) -> int:
-        count = (
-            db.query(func.count(LeadOwnership.id))
-            .filter(LeadOwnership.user_id == user_id)
-            .filter(
-                ~select(LeadDownload.id).where(
-                    LeadDownload.user_id == user_id,
-                    LeadDownload.lead_id == LeadOwnership.lead_id,
-                ).exists()
-            )
-            .scalar()
-        ) or 0
-        return int(count)
-
-    @staticmethod
     def _normalize_state_codes(state_codes: Optional[List[str]]) -> List[str]:
         if not state_codes:
             return []
@@ -1286,9 +1258,14 @@ class LeadService:
     @staticmethod
     def can_user_download_leads(db: Session, user: User) -> Dict[str, object]:
         if LeadService._user_has_owned_leads(db, user.id):
-            owned_available_count = LeadService._count_undownloaded_owned_leads_for_user(db=db, user_id=user.id)
-            if owned_available_count > 0:
-                return {"can_download": True, "remaining": int(owned_available_count)}
+            owned_count = (
+                db.query(func.count(LeadOwnership.id))
+                .filter(LeadOwnership.user_id == user.id)
+                .scalar()
+            ) or 0
+            if owned_count <= 0:
+                return {"can_download": False, "reason": "No leads available", "remaining": 0}
+            return {"can_download": True, "remaining": int(owned_count)}
 
         remaining_credits = LeadService._get_user_remaining_credits(db, user.id)
         if remaining_credits <= 0:
@@ -1311,9 +1288,9 @@ class LeadService:
 
     @staticmethod
     def download_leads_csv(db: Session, user: User) -> str:
-        owned_available_leads = LeadService._get_undownloaded_owned_leads_for_user(db=db, user_id=user.id)
-        if owned_available_leads:
-            lead_ids = [lead.id for lead in owned_available_leads]
+        owned_leads = LeadService._get_owned_leads_for_user(db=db, user_id=user.id)
+        if owned_leads:
+            lead_ids = [lead.id for lead in owned_leads]
             ownership_rows = (
                 db.query(LeadOwnership)
                 .filter(
@@ -1331,7 +1308,7 @@ class LeadService:
                 LeadService._record_download_batch(
                     db=db,
                     user_id=user.id,
-                    leads=owned_available_leads,
+                    leads=owned_leads,
                     purchase_ids_by_lead_id=purchase_ids_by_lead_id,
                 )
                 db.commit()
@@ -1339,7 +1316,7 @@ class LeadService:
                 db.rollback()
                 logger.error("Failed to record owned lead download batch for user_id=%s: %s", user.id, exc)
                 raise HTTPException(status_code=500, detail="Failed to record lead downloads")
-            return generate_leads_csv_stream(owned_available_leads)
+            return generate_leads_csv_stream(owned_leads)
 
         prepend_msg = ""
         max_attempts = 2
