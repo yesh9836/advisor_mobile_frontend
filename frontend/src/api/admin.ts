@@ -656,13 +656,30 @@ export const getUser = async (userId: number): Promise<UserDetails> => {
   );
 };
 
+const postUserDeactivation = async (
+  userId: number,
+  payload: DeactivateUserRequest,
+): Promise<{ detail: string }> => {
+  const normalizedPayload = normalizeQueryParams({
+    reason: payload.reason,
+  }) as DeactivateUserRequest;
+
+  const response = await apiClient.post<{ detail: string }>(
+    `/admin/users/${userId}/deactivate`,
+    normalizedPayload,
+  );
+  return parseApiContract(
+    deactivateAdminUserResponseSchema,
+    response.data,
+    `/admin/users/${userId}/deactivate`,
+  );
+};
+
 export const deactivateUser = async (
   userId: number,
   reason?: string,
 ): Promise<void> => {
-  const payload = normalizeQueryParams({ reason }) as DeactivateUserRequest;
-
-  await apiClient.post(`/admin/users/${userId}/deactivate`, payload);
+  await postUserDeactivation(userId, { reason });
 };
 
 export const getAuditLogs = async (
@@ -747,19 +764,7 @@ export const deactivateAdminUser = async (
   userId: number,
   payload: DeactivateUserRequest,
 ): Promise<{ detail: string }> => {
-  const normalizedPayload = normalizeQueryParams({
-    reason: payload.reason,
-  }) as DeactivateUserRequest;
-
-  const response = await apiClient.post<{ detail: string }>(
-    `/admin/users/${userId}/deactivate`,
-    normalizedPayload,
-  );
-  return parseApiContract(
-    deactivateAdminUserResponseSchema,
-    response.data,
-    `/admin/users/${userId}/deactivate`,
-  );
+  return postUserDeactivation(userId, payload);
 };
 
 interface GetAuditLogsParams {
