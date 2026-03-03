@@ -110,6 +110,8 @@ const billingSummarySchema: z.ZodType<BillingSummary> = z
           description: z.string().nullable(),
         }),
     ),
+    provider_status: z.enum(["healthy", "degraded", "unavailable"]).optional(),
+    degradation_reason: z.string().nullable().optional(),
   });
 
 const firstPurchaseOfferSchema: z.ZodType<FirstPurchaseAddonOfferAdvisor> = z
