@@ -4,6 +4,7 @@ import time
 import pytest
 import stripe
 from fastapi import HTTPException
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
 from app.models.audit_log import AuditLog
@@ -2795,15 +2796,22 @@ def test_billing_summary_without_customer_returns_empty(
     headers = auth_headers(advisor.email, "AdvisorBilling123!")
     response = client.get("/api/v1/purchases/billing/summary", headers=headers)
     assert response.status_code == 200, response.text
-    assert response.json() == {"payment_method": None, "invoices": []}
+    assert response.json() == {
+        "payment_method": None,
+        "invoices": [],
+        "provider_status": "unavailable",
+        "degradation_reason": "stripe_not_configured_or_customer_missing",
+    }
 
 
 @pytest.mark.integration
-def test_billing_summary_stripe_error_returns_502(
+def test_billing_summary_stripe_error_returns_degraded_purchase_history(
     client,
     db,
     user_factory,
     auth_headers,
+    plan_factory,
+    purchase_factory,
     monkeypatch,
 ):
     advisor = user_factory(
@@ -2815,6 +2823,20 @@ def test_billing_summary_stripe_error_returns_502(
     advisor.stripe_customer_id = "cus_billing_fail_123"
     db.add(advisor)
     db.commit()
+
+    package = plan_factory(
+        name="Stripe Degraded Package",
+        stripe_price_id="price_billing_degraded",
+        daily_download_limit=12,
+    )
+    purchase_factory(
+        user_id=advisor.id,
+        package_id=package.id,
+        status="completed",
+        stripe_checkout_session_id="cs_billing_degraded_1",
+        stripe_payment_intent_id="pi_billing_degraded_1",
+        stripe_invoice_id=None,
+    )
 
     monkeypatch.setattr(
         "app.services.subscription_service.settings.STRIPE_SECRET_KEY",
@@ -2831,8 +2853,15 @@ def test_billing_summary_stripe_error_returns_502(
 
     headers = auth_headers(advisor.email, "AdvisorBillingFail123!")
     response = client.get("/api/v1/purchases/billing/summary", headers=headers)
-    assert response.status_code == 502
-    assert response.json()["detail"] == "Stripe billing provider unavailable"
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["provider_status"] == "degraded"
+    assert payload["degradation_reason"] == "stripe_unavailable"
+    assert len(payload["invoices"]) == 1
+    assert payload["invoices"][0]["stripe_invoice_id"] == "pi_billing_degraded_1"
+    assert payload["invoices"][0]["package_name"].startswith("Stripe Degraded Package")
+    assert payload["invoices"][0]["invoice_pdf"] is None
+    assert payload["invoices"][0]["hosted_invoice_url"] is None
 
 
 @pytest.mark.integration
@@ -3005,6 +3034,100 @@ def test_billing_summary_caps_invoice_retrievals_per_request(
     response = client.get("/api/v1/purchases/billing/summary", headers=headers)
     assert response.status_code == 200, response.text
     assert len(retrieved_invoice_ids) == SubscriptionService._MAX_INVOICE_RETRIEVALS_PER_SUMMARY
+
+
+def test_billing_summary_backfill_commit_failure_rolls_back_and_returns_payload(
+    db,
+    user_factory,
+    plan_factory,
+    purchase_factory,
+    monkeypatch,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="AdvisorBillingCommitFail123!",
+        email="advisor.billing.commit.fail@example.com",
+        name="Billing Commit Fail Advisor",
+    )
+    advisor.stripe_customer_id = "cus_billing_commit_fail_123"
+    db.add(advisor)
+    db.commit()
+
+    package = plan_factory(
+        name="Backfill Commit Fail Package",
+        stripe_price_id="price_billing_commit_fail",
+        daily_download_limit=9,
+    )
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=package.id,
+        status="completed",
+        stripe_checkout_session_id="cs_billing_commit_fail_1",
+        stripe_payment_intent_id="pi_billing_commit_fail_1",
+        stripe_invoice_id=None,
+    )
+
+    monkeypatch.setattr(
+        "app.services.subscription_service.settings.STRIPE_SECRET_KEY",
+        "sk_test_billing_commit_fail",
+    )
+    monkeypatch.setattr(
+        "app.services.subscription_service.PaymentService._init_stripe",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "app.services.subscription_service.stripe.Customer.retrieve",
+        lambda customer_id, expand=None: {
+            "id": customer_id,
+            "invoice_settings": {"default_payment_method": None},
+        },
+    )
+    monkeypatch.setattr(
+        "app.services.subscription_service.stripe.Invoice.list",
+        lambda customer, limit=50: {
+            "data": [
+                {
+                    "id": "in_billing_commit_fail_1",
+                    "payment_intent": "pi_billing_commit_fail_1",
+                    "amount_paid": 9000,
+                    "currency": "usd",
+                    "status": "paid",
+                    "created": int(datetime.now(timezone.utc).timestamp()),
+                    "hosted_invoice_url": "https://stripe.test/hosted/in_billing_commit_fail_1",
+                    "invoice_pdf": "https://stripe.test/pdf/in_billing_commit_fail_1.pdf",
+                }
+            ]
+        },
+    )
+
+    metric_calls = []
+    monkeypatch.setattr(
+        "app.services.subscription_service.MetricsService.increment",
+        lambda name, value=1, tags=None: metric_calls.append((name, value, tags or {})),
+    )
+
+    original_commit = db.commit
+    commit_attempts = {"count": 0}
+
+    def _commit_with_first_failure():
+        commit_attempts["count"] += 1
+        if commit_attempts["count"] == 1:
+            raise SQLAlchemyError("forced commit failure")
+        return original_commit()
+
+    monkeypatch.setattr(db, "commit", _commit_with_first_failure)
+
+    payload = SubscriptionService.get_billing_summary(db=db, user=advisor)
+    assert payload["provider_status"] == "healthy"
+    assert payload["degradation_reason"] is None
+    assert payload["invoices"][0]["stripe_invoice_id"] == "in_billing_commit_fail_1"
+    assert any(
+        metric_name == "billing_summary_backfill_commit_failed_total"
+        for metric_name, _metric_value, _tags in metric_calls
+    )
+
+    db.refresh(purchase)
+    assert purchase.stripe_invoice_id is None
 
 
 @pytest.mark.integration
