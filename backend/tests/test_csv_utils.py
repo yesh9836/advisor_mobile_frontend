@@ -7,6 +7,7 @@ from starlette.datastructures import UploadFile
 
 from app.core.config import settings
 from app.models.lead import Lead
+from app.utils.csv_safety import neutralize_csv_cell
 from app.utils.csv_generator import LEAD_CSV_HEADERS, generate_leads_csv_stream, parse_leads_csv
 
 
@@ -199,3 +200,45 @@ def test_generate_leads_csv_stream_includes_header_and_rows():
     assert "state_code" in content
     assert "Generator" in content
     assert "income | stability" in content
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("raw_value", "expected"),
+    [
+        ("=1+1", "'=1+1"),
+        ("+SUM(A1:A2)", "'+SUM(A1:A2)"),
+        ("-2+3", "'-2+3"),
+        ("@cmd", "'@cmd"),
+        ("\t=1+1", "'\t=1+1"),
+        ("\r=1+1", "'\r=1+1"),
+        ("   =1+1", "'   =1+1"),
+        ("safe value", "safe value"),
+        ("'=-already-neutralized", "'=-already-neutralized"),
+        ("", ""),
+        (None, ""),
+    ],
+)
+def test_neutralize_csv_cell_formula_injection_guards(raw_value, expected):
+    assert neutralize_csv_cell(raw_value) == expected
+
+
+@pytest.mark.unit
+def test_generate_leads_csv_stream_neutralizes_formula_like_cells():
+    lead = Lead(
+        state_code="CA",
+        mobile_phone="555-CSV-INJECT-0001",
+        first_name="=HYPERLINK(\"http://attacker\")",
+        additional_notes="   +SUM(1,1)",
+        main_purpose_for_investing=["=CMD()", "income"],
+        source="manual_entry",
+    )
+
+    content = "".join(generate_leads_csv_stream([lead]))
+    rows = list(csv.DictReader(io.StringIO(content)))
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["first_name"] == "'=HYPERLINK(\"http://attacker\")"
+    assert row["additional_notes"] == "'   +SUM(1,1)"
+    assert row["main_purpose_for_investing"] == "'=CMD() | income"

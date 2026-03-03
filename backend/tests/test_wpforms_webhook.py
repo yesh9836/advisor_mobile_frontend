@@ -1,5 +1,7 @@
+import csv
 import hashlib
 import hmac
+import io
 import json
 from datetime import datetime, timezone
 
@@ -65,6 +67,59 @@ def test_wpforms_webhook_accepts_signed_request_and_creates_lead(client, db):
     assert lead.mobile_phone == "+13054959490"
     assert lead.current_investment_strategies == ["Active Trading", "Real Estate"]
     assert lead.best_time_to_reach == "AM"
+
+
+@pytest.mark.integration
+def test_wpforms_payload_with_formula_text_is_neutralized_in_leads_download_csv(
+    client,
+    db,
+    user_factory,
+    license_factory,
+    plan_factory,
+    purchase_factory,
+    auth_headers,
+):
+    payload = _build_payload(entry_id="entry-formula-1001")
+    payload["fields"].append(
+        {
+            "name": "Is there anything else you'd like us to know?",
+            "value": "=HYPERLINK(\"http://attacker\")",
+        }
+    )
+    raw_body = json.dumps(payload).encode("utf-8")
+    headers = _signed_headers(raw_body)
+
+    webhook_response = client.post("/api/v1/webhooks/wpforms/survey", data=raw_body, headers=headers)
+    assert webhook_response.status_code == 200, webhook_response.text
+    lead_id = webhook_response.json()["lead_id"]
+
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    assert lead is not None
+    assert lead.additional_notes == "=HYPERLINK(\"http://attacker\")"
+
+    advisor = user_factory(
+        role="advisor",
+        password="WebhookCsv123!",
+        email="webhook.csv@example.com",
+        name="Webhook CSV Advisor",
+    )
+    plan = plan_factory(state_limit=1, daily_download_limit=10)
+    license_factory(user_id=advisor.id, state="FL", status="verified")
+    purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=10,
+        credits_remaining=10,
+        status="completed",
+    )
+    advisor_headers = auth_headers(advisor.email, "WebhookCsv123!")
+
+    download_response = client.post("/api/v1/leads/download", headers=advisor_headers)
+    assert download_response.status_code == 200, download_response.text
+
+    rows = list(csv.DictReader(io.StringIO(download_response.text)))
+    assert len(rows) == 1
+    assert rows[0]["additional_notes"] == "'=HYPERLINK(\"http://attacker\")"
 
 
 @pytest.mark.integration

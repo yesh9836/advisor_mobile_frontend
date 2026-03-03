@@ -1534,6 +1534,51 @@ def test_admin_orders_export_returns_csv_with_dollar_amounts(
     assert row["currency"] == "USD"
     assert row["created_at"] == completed_purchase.purchased_at.isoformat()
 
+
+def test_admin_orders_export_neutralizes_formula_like_advisor_identity_cells(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+    plan_factory,
+    purchase_factory,
+):
+    _admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+    advisor = user_factory(
+        role="advisor",
+        password="OrdersExportInject123!",
+        email="+orders.inject@example.com",
+        name="=Orders Export Advisor",
+    )
+    plan = plan_factory(name="OrderExportInjectPlan", price_cents=18000, daily_download_limit=12)
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        status="completed",
+        credits_total=12,
+        credits_remaining=10,
+        stripe_checkout_session_id="cs_orders_export_inject_1",
+    )
+    purchase.amount_cents = 18000
+    purchase.currency = "USD"
+    db.add(purchase)
+    db.commit()
+    db.refresh(purchase)
+
+    export_response = client.get(
+        "/api/v1/admin/orders/export?status=completed",
+        headers=admin_headers,
+    )
+    assert export_response.status_code == 200, export_response.text
+
+    reader = csv.DictReader(io.StringIO(export_response.text))
+    rows = list(reader)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["advisor_name"] == "'=Orders Export Advisor"
+    assert row["advisor_email"] == "'+orders.inject@example.com"
+
+
 def test_admin_lead_inventory_filters_and_license_status_summary(
     client,
     db,
