@@ -6,6 +6,7 @@ from typing import Any, Dict, Generator, Optional
 
 from fastapi import HTTPException
 from sqlalchemy import case, func, or_
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.db.timezone import utcnow
@@ -94,6 +95,74 @@ class AdminService:
                 status_code=400,
                 detail="effective_to must be greater than or equal to effective_from",
             )
+
+    @staticmethod
+    def _raise_plan_lifecycle_write_error(
+        *,
+        operation: str,
+        exc: Exception,
+        plan_id: Optional[int],
+        request_id: Optional[str],
+        db_error_detail: str,
+        unknown_error_detail: str,
+    ) -> None:
+        if isinstance(exc, SQLAlchemyError):
+            logger.error(
+                "Admin plan lifecycle write failed failure_class=db_write_error operation=%s plan_id=%s request_id=%s error=%s",
+                operation,
+                plan_id,
+                request_id,
+                exc,
+            )
+            raise HTTPException(status_code=500, detail=db_error_detail)
+
+        logger.exception(
+            "Admin plan lifecycle write failed failure_class=unexpected_error operation=%s plan_id=%s request_id=%s",
+            operation,
+            plan_id,
+            request_id,
+        )
+        raise HTTPException(status_code=500, detail=unknown_error_detail)
+
+    @staticmethod
+    def _rollback_unarchive_after_db_failure(
+        db: Session,
+        *,
+        plan_id: int,
+        stripe_price_id: Optional[str],
+        stripe_product_id: Optional[str],
+        reason: Optional[str],
+    ) -> None:
+        db.rollback()
+        try:
+            PaymentService.deactivate_stripe_plan_artifacts(
+                stripe_price_id=stripe_price_id,
+                stripe_product_id=stripe_product_id,
+            )
+        except Exception as cleanup_exc:
+            logger.warning(
+                "Failed rollback Stripe deactivation after unarchive DB failure plan_id=%s: %s",
+                plan_id,
+                cleanup_exc,
+            )
+            try:
+                StripePlanCleanupOutboxService.enqueue_cleanup(
+                    db=db,
+                    source="admin_plan_unarchive_rollback",
+                    stripe_price_id=stripe_price_id,
+                    stripe_product_id=stripe_product_id,
+                    payload={
+                        "plan_id": int(plan_id),
+                        "reason": reason,
+                        "rollback": True,
+                    },
+                )
+            except Exception as outbox_exc:
+                logger.error(
+                    "Failed to enqueue rollback cleanup after unarchive DB failure plan_id=%s: %s",
+                    plan_id,
+                    outbox_exc,
+                )
 
     @staticmethod
     def _schedule_stripe_cleanup_after_plan_write_failure(
@@ -355,6 +424,25 @@ class AdminService:
         try:
             db.commit()
             db.refresh(package)
+        except SQLAlchemyError as exc:
+            db.rollback()
+            AdminService._schedule_stripe_cleanup_after_plan_write_failure(
+                db,
+                source="admin_plan_create",
+                stripe_refs=stripe_refs,
+                payload={
+                    "plan_name": payload.name,
+                    "request_id": payload.request_id,
+                },
+            )
+            AdminService._raise_plan_lifecycle_write_error(
+                operation="create",
+                exc=exc,
+                plan_id=None,
+                request_id=payload.request_id,
+                db_error_detail="Failed to persist plan creation",
+                unknown_error_detail="Failed to create plan",
+            )
         except Exception as exc:
             db.rollback()
             AdminService._schedule_stripe_cleanup_after_plan_write_failure(
@@ -366,8 +454,14 @@ class AdminService:
                     "request_id": payload.request_id,
                 },
             )
-            logger.error("Failed to create admin plan name=%s: %s", payload.name, exc)
-            raise HTTPException(status_code=500, detail="Failed to create plan")
+            AdminService._raise_plan_lifecycle_write_error(
+                operation="create",
+                exc=exc,
+                plan_id=None,
+                request_id=payload.request_id,
+                db_error_detail="Failed to persist plan creation",
+                unknown_error_detail="Failed to create plan",
+            )
 
         snapshot = AdminService._serialize_plan_snapshot(package, has_purchases=False)
         AuditService.log_event(
@@ -502,6 +596,25 @@ class AdminService:
         try:
             db.commit()
             db.refresh(package)
+        except SQLAlchemyError as exc:
+            db.rollback()
+            AdminService._schedule_stripe_cleanup_after_plan_write_failure(
+                db,
+                source="admin_plan_update",
+                stripe_refs=stripe_refs,
+                payload={
+                    "plan_id": int(package.id),
+                    "request_id": payload.request_id,
+                },
+            )
+            AdminService._raise_plan_lifecycle_write_error(
+                operation="update",
+                exc=exc,
+                plan_id=int(package.id),
+                request_id=payload.request_id,
+                db_error_detail="Failed to persist plan update",
+                unknown_error_detail="Failed to update plan",
+            )
         except Exception as exc:
             db.rollback()
             AdminService._schedule_stripe_cleanup_after_plan_write_failure(
@@ -513,8 +626,14 @@ class AdminService:
                     "request_id": payload.request_id,
                 },
             )
-            logger.error("Failed to update admin plan id=%s: %s", package.id, exc)
-            raise HTTPException(status_code=500, detail="Failed to update plan")
+            AdminService._raise_plan_lifecycle_write_error(
+                operation="update",
+                exc=exc,
+                plan_id=int(package.id),
+                request_id=payload.request_id,
+                db_error_detail="Failed to persist plan update",
+                unknown_error_detail="Failed to update plan",
+            )
 
         has_purchases_after = AdminService._plan_has_purchases(db, plan_id=int(package.id))
         after_snapshot = AdminService._serialize_plan_snapshot(package, has_purchases=has_purchases_after)
@@ -552,10 +671,26 @@ class AdminService:
             try:
                 db.commit()
                 db.refresh(package)
+            except SQLAlchemyError as exc:
+                db.rollback()
+                AdminService._raise_plan_lifecycle_write_error(
+                    operation="archive",
+                    exc=exc,
+                    plan_id=int(package.id),
+                    request_id=None,
+                    db_error_detail="Failed to persist plan archive",
+                    unknown_error_detail="Failed to archive plan",
+                )
             except Exception as exc:
                 db.rollback()
-                logger.error("Failed to archive plan id=%s: %s", package.id, exc)
-                raise HTTPException(status_code=500, detail="Failed to archive plan")
+                AdminService._raise_plan_lifecycle_write_error(
+                    operation="archive",
+                    exc=exc,
+                    plan_id=int(package.id),
+                    request_id=None,
+                    db_error_detail="Failed to persist plan archive",
+                    unknown_error_detail="Failed to archive plan",
+                )
 
             stripe_refs = {
                 "stripe_price_id": package.stripe_price_id,
@@ -633,39 +768,38 @@ class AdminService:
             try:
                 db.commit()
                 db.refresh(package)
+            except SQLAlchemyError as exc:
+                AdminService._rollback_unarchive_after_db_failure(
+                    db,
+                    plan_id=int(package.id),
+                    stripe_price_id=stripe_price_id,
+                    stripe_product_id=stripe_product_id,
+                    reason=payload.reason,
+                )
+                AdminService._raise_plan_lifecycle_write_error(
+                    operation="unarchive",
+                    exc=exc,
+                    plan_id=int(package.id),
+                    request_id=None,
+                    db_error_detail="Failed to persist plan unarchive",
+                    unknown_error_detail="Failed to unarchive plan",
+                )
             except Exception as exc:
-                db.rollback()
-                try:
-                    PaymentService.deactivate_stripe_plan_artifacts(
-                        stripe_price_id=stripe_price_id,
-                        stripe_product_id=stripe_product_id,
-                    )
-                except Exception as cleanup_exc:
-                    logger.warning(
-                        "Failed rollback Stripe deactivation after unarchive DB failure plan_id=%s: %s",
-                        package.id,
-                        cleanup_exc,
-                    )
-                    try:
-                        StripePlanCleanupOutboxService.enqueue_cleanup(
-                            db=db,
-                            source="admin_plan_unarchive_rollback",
-                            stripe_price_id=stripe_price_id,
-                            stripe_product_id=stripe_product_id,
-                            payload={
-                                "plan_id": int(package.id),
-                                "reason": payload.reason,
-                                "rollback": True,
-                            },
-                        )
-                    except Exception as outbox_exc:
-                        logger.error(
-                            "Failed to enqueue rollback cleanup after unarchive DB failure plan_id=%s: %s",
-                            package.id,
-                            outbox_exc,
-                        )
-                logger.error("Failed to unarchive plan id=%s: %s", package.id, exc)
-                raise HTTPException(status_code=500, detail="Failed to unarchive plan")
+                AdminService._rollback_unarchive_after_db_failure(
+                    db,
+                    plan_id=int(package.id),
+                    stripe_price_id=stripe_price_id,
+                    stripe_product_id=stripe_product_id,
+                    reason=payload.reason,
+                )
+                AdminService._raise_plan_lifecycle_write_error(
+                    operation="unarchive",
+                    exc=exc,
+                    plan_id=int(package.id),
+                    request_id=None,
+                    db_error_detail="Failed to persist plan unarchive",
+                    unknown_error_detail="Failed to unarchive plan",
+                )
 
         after_snapshot = AdminService._serialize_plan_snapshot(package, has_purchases=has_purchases)
         if before_snapshot != after_snapshot:
