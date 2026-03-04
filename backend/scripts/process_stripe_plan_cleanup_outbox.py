@@ -10,6 +10,7 @@ Usage:
 import json
 import logging
 
+from app.core.sentry import init_sentry
 from app.db.session import SessionLocal
 from app.db.timezone import utcnow
 from app.services.stripe_plan_cleanup_outbox_service import StripePlanCleanupOutboxService
@@ -66,6 +67,7 @@ def process_cleanup_batch_with_heartbeat() -> dict:
 
 
 def main() -> int:
+    init_sentry(service_name="stripe-cleanup-outbox-worker")
     summary = process_cleanup_batch_with_heartbeat()
     print(json.dumps(summary, sort_keys=True))
     return 0

@@ -15,6 +15,7 @@ import logging
 import time
 from typing import Dict
 
+from app.core.sentry import capture_exception, init_sentry
 from app.db.session import SessionLocal
 from app.services.operational_retention_service import OperationalRetentionService
 
@@ -65,6 +66,7 @@ def _purge_once() -> Dict[str, int]:
 
 
 def main() -> int:
+    init_sentry(service_name="operational-retention-worker")
     args = _parse_args()
     logging.basicConfig(
         level=getattr(logging, args.log_level.upper(), logging.INFO),
@@ -77,8 +79,12 @@ def main() -> int:
     if interval_seconds <= 0:
         try:
             summary = _purge_once()
-        except Exception:
+        except Exception as exc:
             logger.exception("Operational retention cleanup failed")
+            capture_exception(
+                exc,
+                tags={"worker": "operational-retention", "operation": "one_shot_purge"},
+            )
             return 1
         print(json.dumps(summary, sort_keys=True))
         return 0
@@ -94,8 +100,12 @@ def main() -> int:
         while True:
             try:
                 summary = _purge_once()
-            except Exception:
+            except Exception as exc:
                 logger.exception("Operational retention cleanup cycle failed")
+                capture_exception(
+                    exc,
+                    tags={"worker": "operational-retention", "operation": "loop_purge"},
+                )
             else:
                 logger.info(
                     "Operational retention cleanup summary: %s",

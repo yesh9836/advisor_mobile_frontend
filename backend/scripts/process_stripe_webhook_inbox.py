@@ -10,6 +10,7 @@ Usage:
 import json
 import logging
 
+from app.core.sentry import init_sentry
 from app.db.session import SessionLocal
 from app.db.timezone import utcnow
 from app.services.stripe_webhook_health_service import StripeWebhookHealthService
@@ -19,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> int:
+    init_sentry(service_name="stripe-webhook-inbox-worker")
     started_at = utcnow()
     heartbeat_db = SessionLocal()
     try:

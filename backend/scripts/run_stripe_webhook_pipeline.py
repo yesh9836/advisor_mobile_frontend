@@ -15,6 +15,7 @@ import logging
 import time
 from typing import Dict, Optional
 
+from app.core.sentry import capture_exception, init_sentry
 from app.db.session import SessionLocal
 from app.db.timezone import utcnow
 from app.services.stripe_reconciliation_service import StripeReconciliationService
@@ -116,14 +117,19 @@ def _process_inbox_batch_with_heartbeat() -> Dict[str, int]:
 def _run_reconciliation_once() -> Optional[Dict[str, int]]:
     try:
         summary = StripeReconciliationService.run_once_threadsafe()
-    except Exception:
+    except Exception as exc:
         logger.exception("Stripe reconciliation cycle failed")
+        capture_exception(
+            exc,
+            tags={"worker": "stripe-webhook-pipeline", "operation": "reconcile"},
+        )
         return None
     logger.info("Stripe reconciliation summary: %s", json.dumps(summary, sort_keys=True))
     return summary
 
 
 def main() -> int:
+    init_sentry(service_name="stripe-webhook-pipeline-worker")
     args = _parse_args()
     logging.basicConfig(
         level=getattr(logging, args.log_level.upper(), logging.INFO),
@@ -160,8 +166,12 @@ def main() -> int:
             batch_summary = None
             try:
                 batch_summary = _process_inbox_batch_with_heartbeat()
-            except Exception:
+            except Exception as exc:
                 logger.exception("Stripe webhook inbox processing cycle failed")
+                capture_exception(
+                    exc,
+                    tags={"worker": "stripe-webhook-pipeline", "operation": "inbox_batch"},
+                )
             else:
                 logger.info("Stripe inbox batch summary: %s", json.dumps(batch_summary, sort_keys=True))
 
@@ -170,8 +180,12 @@ def main() -> int:
             if now_monotonic >= next_cleanup_at:
                 try:
                     cleanup_summary = process_cleanup_batch_with_heartbeat()
-                except Exception:
+                except Exception as exc:
                     logger.exception("Stripe cleanup outbox processing cycle failed")
+                    capture_exception(
+                        exc,
+                        tags={"worker": "stripe-webhook-pipeline", "operation": "cleanup_batch"},
+                    )
                 else:
                     logger.info("Stripe cleanup batch summary: %s", json.dumps(cleanup_summary, sort_keys=True))
                 next_cleanup_at = now_monotonic + cleanup_interval_seconds
