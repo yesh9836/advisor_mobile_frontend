@@ -7,8 +7,8 @@ ENV PYTHONPATH=/app
 
 WORKDIR /app
 
-COPY backend/requirements.txt /app/requirements.txt
-RUN pip install --upgrade pip && pip install -r /app/requirements.txt
+COPY backend/requirements.lock /app/requirements.lock
+RUN pip install --upgrade pip==24.2 && pip install -r /app/requirements.lock
 
 COPY backend/ /app/
 
