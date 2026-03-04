@@ -20,6 +20,7 @@ from app.core.rate_limit import (
     is_rate_limiter_critical_unavailable,
     shutdown_rate_limiter,
 )
+from app.core.sentry import init_sentry
 from app.db.session import SessionLocal
 from app.services.notification_outbox_health_service import NotificationOutboxHealthService
 from app.services.stripe_webhook_health_service import StripeWebhookHealthService
@@ -102,6 +103,7 @@ app = FastAPI(
     redoc_url=redoc_url,
     lifespan=app_lifespan,
 )
+init_sentry(service_name="backend-api", with_fastapi_integration=True)
 
 app.add_middleware(
     CORSMiddleware,
