@@ -145,6 +145,20 @@ def test_production_settings_reject_loopback_frontend_url():
         Settings(**_production_settings_kwargs(FRONTEND_URL="https://127.0.0.1"))
 
 
+@pytest.mark.unit
+def test_sentry_sample_rates_must_be_between_zero_and_one():
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, SENTRY_TRACES_SAMPLE_RATE=1.2)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, SENTRY_PROFILES_SAMPLE_RATE=-0.1)
+
+
+@pytest.mark.unit
+def test_sentry_max_breadcrumbs_cannot_be_negative():
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, SENTRY_MAX_BREADCRUMBS=-1)
+
+
 @pytest.mark.integration
 def test_cors_allows_configured_origin(client):
     origin = settings.CORS_ORIGINS[0]

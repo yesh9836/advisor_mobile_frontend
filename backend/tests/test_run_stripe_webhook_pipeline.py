@@ -42,6 +42,7 @@ def test_run_stripe_webhook_pipeline_continues_after_cleanup_failure(monkeypatch
     from scripts import run_stripe_webhook_pipeline as pipeline_script
 
     counters = {"inbox": 0, "cleanup": 0}
+    captured = []
     monotonic_values = iter([0.0, 0.0, 1.0, 1.0])
 
     monkeypatch.setattr(
@@ -57,6 +58,13 @@ def test_run_stripe_webhook_pipeline_continues_after_cleanup_failure(monkeypatch
     )
     monkeypatch.setattr(pipeline_script.time, "monotonic", lambda: next(monotonic_values))
     monkeypatch.setattr(pipeline_script, "_run_reconciliation_once", lambda: {})
+    monkeypatch.setattr(
+        pipeline_script,
+        "capture_exception",
+        lambda exc, tags=None, context=None: captured.append(
+            {"exc": str(exc), "tags": tags or {}, "context": context}
+        ),
+    )
     monkeypatch.setattr(
         pipeline_script,
         "_process_inbox_batch_with_heartbeat",
@@ -77,3 +85,5 @@ def test_run_stripe_webhook_pipeline_continues_after_cleanup_failure(monkeypatch
     assert exit_code == 0
     assert counters["inbox"] == 2
     assert counters["cleanup"] == 2
+    assert len(captured) == 1
+    assert captured[0]["tags"]["operation"] == "cleanup_batch"

@@ -30,6 +30,7 @@ def test_purge_operational_data_script_runs_one_shot_by_default(monkeypatch, cap
 def test_purge_operational_data_script_one_shot_returns_failure_on_exception(monkeypatch):
     from scripts import purge_operational_data as script
 
+    captured = []
     monkeypatch.setattr(
         script,
         "_parse_args",
@@ -44,10 +45,19 @@ def test_purge_operational_data_script_one_shot_returns_failure_on_exception(mon
         raise RuntimeError("forced retention failure")
 
     monkeypatch.setattr(script, "_purge_once", _raise)
+    monkeypatch.setattr(
+        script,
+        "capture_exception",
+        lambda exc, tags=None, context=None: captured.append(
+            {"exc": str(exc), "tags": tags or {}, "context": context}
+        ),
+    )
 
     exit_code = script.main()
 
     assert exit_code == 1
+    assert len(captured) == 1
+    assert captured[0]["tags"]["operation"] == "one_shot_purge"
 
 
 def test_purge_operational_data_script_continuous_mode_runs_max_cycles(monkeypatch):
@@ -85,6 +95,7 @@ def test_purge_operational_data_script_continuous_mode_continues_after_cycle_fai
 
     attempts = {"count": 0}
     sleep_calls = []
+    captured = []
 
     monkeypatch.setattr(
         script,
@@ -104,9 +115,18 @@ def test_purge_operational_data_script_continuous_mode_continues_after_cycle_fai
 
     monkeypatch.setattr(script, "_purge_once", _purge_once)
     monkeypatch.setattr(script.time, "sleep", lambda seconds: sleep_calls.append(seconds))
+    monkeypatch.setattr(
+        script,
+        "capture_exception",
+        lambda exc, tags=None, context=None: captured.append(
+            {"exc": str(exc), "tags": tags or {}, "context": context}
+        ),
+    )
 
     exit_code = script.main()
 
     assert exit_code == 0
     assert attempts["count"] == 2
     assert sleep_calls == [30.0]
+    assert len(captured) == 1
+    assert captured[0]["tags"]["operation"] == "loop_purge"
