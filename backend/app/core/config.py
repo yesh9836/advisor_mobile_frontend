@@ -32,6 +32,14 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     API_DOCS_ENABLED: bool = True
     API_DOCS_IN_PRODUCTION: bool = False
+    SENTRY_DSN: Optional[str] = None
+    SENTRY_ENVIRONMENT: Optional[str] = None
+    SENTRY_RELEASE: Optional[str] = None
+    SENTRY_SEND_DEFAULT_PII: bool = False
+    SENTRY_ATTACH_STACKTRACE: bool = True
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.0
+    SENTRY_PROFILES_SAMPLE_RATE: float = 0.0
+    SENTRY_MAX_BREADCRUMBS: int = 100
 
     # Server
     HOST: str = "0.0.0.0"
@@ -396,6 +404,20 @@ class Settings(BaseSettings):
     def validate_non_negative_bounds(cls, value: int) -> int:
         if value < 0:
             raise ValueError("Configuration values must be greater than or equal to 0")
+        return value
+
+    @field_validator("SENTRY_TRACES_SAMPLE_RATE", "SENTRY_PROFILES_SAMPLE_RATE", mode="after")
+    @classmethod
+    def validate_sentry_sample_rate(cls, value: float) -> float:
+        if value < 0 or value > 1:
+            raise ValueError("Sentry sample rates must be between 0 and 1")
+        return value
+
+    @field_validator("SENTRY_MAX_BREADCRUMBS", mode="after")
+    @classmethod
+    def validate_sentry_max_breadcrumbs(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("SENTRY_MAX_BREADCRUMBS must be greater than or equal to 0")
         return value
 
     @field_validator("STRIPE_CHECKOUT_SESSION_EXPIRES_MINUTES", mode="after")
