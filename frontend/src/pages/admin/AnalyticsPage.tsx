@@ -23,15 +23,29 @@ const formatMonthLabel = (value: string): string => {
     return value;
   }
 
-  const date = new Date(Date.UTC(yearNumber, monthNumber - 1, 1));
-  return date.toLocaleString("en-US", { month: "short", year: "numeric" });
+  const monthNames = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+  return `${monthNames[monthNumber - 1]} ${yearNumber}`;
 };
 
 const formatCurrency = (amountCents: number): string =>
   (amountCents / 100).toLocaleString("en-US", {
     style: "currency",
     currency: "USD",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   });
 
 const EmptyChart = ({ message }: { message: string }) => (

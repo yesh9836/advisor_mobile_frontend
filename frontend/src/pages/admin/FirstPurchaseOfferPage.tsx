@@ -46,7 +46,8 @@ const formatMoney = (value: number, currency: string): string => {
   return (value / 100).toLocaleString("en-US", {
     style: "currency",
     currency: (currency || "USD").toUpperCase(),
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   });
 };
 

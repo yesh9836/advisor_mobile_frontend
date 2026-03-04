@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { downloadOrdersExport, getOrders } from "@/api/admin";
 import type { AdminOrderListItem } from "@/types/admin";
@@ -60,11 +60,19 @@ const badgeStyle = (status: string): CSSProperties => {
   };
 };
 
+const ORDERS_PAGE_SIZE = 10;
+
 const OrdersPage = () => {
   const [orders, setOrders] = useState<AdminOrderListItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(total / ORDERS_PAGE_SIZE)),
+    [total],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -74,12 +82,14 @@ const OrdersPage = () => {
       setError(null);
 
       try {
-        const response = await getOrders(1, 20);
+        const response = await getOrders(page, ORDERS_PAGE_SIZE);
         if (cancelled) return;
         setOrders(response.items);
+        setTotal(response.total);
       } catch (loadError) {
         if (cancelled) return;
         setOrders([]);
+        setTotal(0);
         setError(getApiErrorMessage(loadError, "Unable to load recent orders."));
       } finally {
         if (!cancelled) {
@@ -93,7 +103,7 @@ const OrdersPage = () => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [page]);
 
   const handleExport = async () => {
     setExporting(true);
@@ -143,7 +153,7 @@ const OrdersPage = () => {
             type="button"
             className="btn btn-secondary"
             onClick={() => void handleExport()}
-            disabled={loading || exporting || orders.length === 0}
+            disabled={loading || exporting || total === 0}
           >
             {exporting ? "Exporting..." : "Export"}
           </button>
@@ -203,6 +213,39 @@ const OrdersPage = () => {
             </span>
           </div>
         ))}
+
+        {!loading && total > 0 && (
+          <div
+            className="row"
+            style={{
+              justifyContent: "space-between",
+              alignItems: "center",
+              padding: 16,
+            }}
+          >
+            <span style={{ color: "#475569", fontSize: 14 }}>
+              Page {page} of {totalPages} • {total} total orders
+            </span>
+            <div className="row">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={loading || page <= 1}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={loading || page >= totalPages}
+                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </section>
     </div>
   );

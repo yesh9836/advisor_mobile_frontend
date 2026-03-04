@@ -9,8 +9,8 @@ const formatCurrency = (amountCents: number, currency: string): string => {
   return (amountCents / 100).toLocaleString("en-US", {
     style: "currency",
     currency: (currency || "USD").toUpperCase(),
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   });
 };
 
