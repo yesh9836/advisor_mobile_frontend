@@ -1,0 +1,198 @@
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-lead_management}
+      MYSQL_USER: ${DB_USER:-lead_app}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-lead_app_password}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_password}
+    command: --default-authentication-plugin=mysql_native_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$$MYSQL_USER -p$$MYSQL_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    image: lead-management-backend:local
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - .env.docker
+    environment:
+      APP_ENV: ${APP_ENV:-staging}
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-lead_app}
+      DB_PASSWORD: ${DB_PASSWORD:-lead_app_password}
+      DB_NAME: ${DB_NAME:-lead_management}
+      RATE_LIMIT_BACKEND: redis
+      REDIS_URL: redis://redis:6379/0
+      UPLOAD_DIR: /app/uploads
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  backend:
+    image: lead-management-backend:local
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      APP_ENV: ${APP_ENV:-staging}
+      HOST: 0.0.0.0
+      PORT: 8000
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-lead_app}
+      DB_PASSWORD: ${DB_PASSWORD:-lead_app_password}
+      DB_NAME: ${DB_NAME:-lead_management}
+      RATE_LIMIT_BACKEND: redis
+      REDIS_URL: redis://redis:6379/0
+      UPLOAD_DIR: /app/uploads
+      CORS_ORIGINS: ${CORS_ORIGINS:-["https://app.example.com"]}
+      FRONTEND_URL: ${FRONTEND_URL:-https://app.example.com}
+    volumes:
+      - uploads_data:/app/uploads
+    ports:
+      - ${BACKEND_PORT:-8000}:8000
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  stripe-worker:
+    image: lead-management-backend:local
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      APP_ENV: ${APP_ENV:-staging}
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-lead_app}
+      DB_PASSWORD: ${DB_PASSWORD:-lead_app_password}
+      DB_NAME: ${DB_NAME:-lead_management}
+      RATE_LIMIT_BACKEND: redis
+      REDIS_URL: redis://redis:6379/0
+      UPLOAD_DIR: /app/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    command:
+      - python
+      - scripts/run_stripe_webhook_pipeline.py
+      - --poll-interval-seconds
+      - ${STRIPE_POLL_INTERVAL_SECONDS:-5}
+      - --reconcile-interval-seconds
+      - ${STRIPE_RECONCILE_INTERVAL_SECONDS:-60}
+      - --cleanup-interval-seconds
+      - ${STRIPE_CLEANUP_INTERVAL_SECONDS:-15}
+
+  notification-worker:
+    image: lead-management-backend:local
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      APP_ENV: ${APP_ENV:-staging}
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-lead_app}
+      DB_PASSWORD: ${DB_PASSWORD:-lead_app_password}
+      DB_NAME: ${DB_NAME:-lead_management}
+      RATE_LIMIT_BACKEND: redis
+      REDIS_URL: redis://redis:6379/0
+      UPLOAD_DIR: /app/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    command:
+      - sh
+      - -c
+      - while true; do python scripts/process_notification_outbox.py || true; sleep ${NOTIFICATION_WORKER_SLEEP_SECONDS:-5}; done
+
+  retention-worker:
+    image: lead-management-backend:local
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      APP_ENV: ${APP_ENV:-staging}
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-lead_app}
+      DB_PASSWORD: ${DB_PASSWORD:-lead_app_password}
+      DB_NAME: ${DB_NAME:-lead_management}
+      RATE_LIMIT_BACKEND: redis
+      REDIS_URL: redis://redis:6379/0
+      UPLOAD_DIR: /app/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    command:
+      - python
+      - scripts/purge_operational_data.py
+      - --interval-seconds
+      - ${RETENTION_INTERVAL_SECONDS:-3600}
+      - --max-cycles
+      - "0"
+
+  frontend:
+    image: lead-management-frontend:local
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL}
+        VITE_APP_BASE_PATH: ${VITE_APP_BASE_PATH:-}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - ${FRONTEND_PORT:-8080}:80
+
+volumes:
+  mysql_data:
+  redis_data:
+  uploads_data:

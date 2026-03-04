@@ -50,3 +50,39 @@ Production lead-management platform for financial advisors with one-time lead pa
   - Vitest suite,
   - production build,
   - Playwright e2e critical flows (auth cookies, CSRF, refresh, checkout return).
+
+## Docker Deployment
+
+This repository now includes:
+
+- `backend/Dockerfile` for API/workers/migrations image.
+- `frontend/Dockerfile` for a production frontend image served by Nginx.
+- `docker-compose.yml` for MySQL, Redis, API, Stripe worker, notification worker, retention worker, and frontend.
+
+Quick start:
+
+1. Copy env template:
+   - `cp .env.docker.example .env.docker`
+2. Set required values in `.env.docker` (at minimum: `VITE_API_BASE_URL`, DB credentials, `SECRET_KEY`).
+3. Build and start:
+   - `docker compose --env-file .env.docker up -d --build`
+4. Open the app:
+   - `http://localhost:${FRONTEND_PORT:-8080}`
+
+Notes:
+
+- Frontend production build enforces absolute HTTPS `VITE_API_BASE_URL` and disallows loopback hosts.
+- `migrate` runs `alembic upgrade head` before API/workers start.
+- Uploaded files persist in Docker volume `uploads_data`.
+
+### Local test flow (recommended first pass)
+
+Because frontend production build requires HTTPS/non-loopback API base URL, start by validating backend + workers in Docker, then run frontend in dev mode locally:
+
+1. Start backend stack:
+   - `docker compose --env-file .env.docker up -d --build mysql redis migrate backend stripe-worker notification-worker retention-worker`
+2. Verify API health:
+   - `curl http://localhost:8000/health/live`
+   - `curl http://localhost:8000/health/ready`
+3. Run frontend dev server from `frontend/`:
+   - `VITE_API_BASE_URL=http://localhost:8000/api/v1 npm run dev`
