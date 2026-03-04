@@ -1,5 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
+import { captureUiException } from "@/lib/sentry";
+
 interface ErrorBoundaryProps {
   children: ReactNode;
 }
@@ -20,6 +22,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Unhandled UI error:", error, errorInfo);
+    captureUiException(error, { componentStack: errorInfo.componentStack ?? undefined });
   }
 
   private handleReload = () => {
