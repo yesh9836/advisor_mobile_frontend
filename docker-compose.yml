@@ -37,6 +37,8 @@ services:
       - .env.docker
     environment:
       APP_ENV: ${APP_ENV:-staging}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-${APP_ENV:-staging}}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
       DB_HOST: mysql
       DB_PORT: 3306
       DB_USER: ${DB_USER:-lead_app}
@@ -58,6 +60,8 @@ services:
       - .env.docker
     environment:
       APP_ENV: ${APP_ENV:-staging}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-${APP_ENV:-staging}}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
       HOST: 0.0.0.0
       PORT: 8000
       DB_HOST: mysql
@@ -95,6 +99,8 @@ services:
       - .env.docker
     environment:
       APP_ENV: ${APP_ENV:-staging}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-${APP_ENV:-staging}}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
       DB_HOST: mysql
       DB_PORT: 3306
       DB_USER: ${DB_USER:-lead_app}
@@ -127,6 +133,8 @@ services:
       - .env.docker
     environment:
       APP_ENV: ${APP_ENV:-staging}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-${APP_ENV:-staging}}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
       DB_HOST: mysql
       DB_PORT: 3306
       DB_USER: ${DB_USER:-lead_app}
@@ -154,6 +162,8 @@ services:
       - .env.docker
     environment:
       APP_ENV: ${APP_ENV:-staging}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-${APP_ENV:-staging}}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
       DB_HOST: mysql
       DB_PORT: 3306
       DB_USER: ${DB_USER:-lead_app}
@@ -185,6 +195,14 @@ services:
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL}
         VITE_APP_BASE_PATH: ${VITE_APP_BASE_PATH:-}
+        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
+        VITE_SENTRY_ENVIRONMENT: ${VITE_SENTRY_ENVIRONMENT:-}
+        VITE_SENTRY_RELEASE: ${VITE_SENTRY_RELEASE:-}
+        VITE_SENTRY_TRACES_SAMPLE_RATE: ${VITE_SENTRY_TRACES_SAMPLE_RATE:-0}
+        SENTRY_AUTH_TOKEN: ${SENTRY_AUTH_TOKEN:-}
+        SENTRY_ORG: ${SENTRY_ORG:-}
+        SENTRY_PROJECT: ${SENTRY_PROJECT:-}
+        SENTRY_RELEASE: ${SENTRY_RELEASE:-}
     restart: unless-stopped
     depends_on:
       backend:

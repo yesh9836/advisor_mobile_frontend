@@ -38,6 +38,11 @@ Production lead-management platform for financial advisors with one-time lead pa
 - Proxy safety:
   - Proxy-derived IP headers are trusted only when explicitly enabled.
   - Configure `RATE_LIMIT_TRUST_PROXY_HEADERS=true` with explicit `RATE_LIMIT_TRUSTED_PROXIES`.
+- Sentry monitoring:
+  - Backend/API and worker scripts initialize Sentry when `SENTRY_DSN` is set.
+  - Frontend initializes Sentry when `VITE_SENTRY_DSN` is set.
+  - Source-map uploads are optional and run only when all of `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`, and `VITE_SENTRY_RELEASE` are provided at build time.
+  - Deploy script enforces one shared release value for backend and frontend (`SENTRY_RELEASE` and `VITE_SENTRY_RELEASE`).
 
 ## CI Quality Gates
 
