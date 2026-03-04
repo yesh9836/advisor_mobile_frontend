@@ -53,6 +53,18 @@ const processedLicense: AdminLicenseDecisionRow = {
   created_at: "2026-02-08T10:00:00Z",
 };
 
+const buildProcessedDecision = (index: number): AdminLicenseDecisionRow => ({
+  ...processedLicense,
+  license_id: 300 + index,
+  user_id: 600 + index,
+  user_name: `Processed Advisor ${index}`,
+  user_email: `processed.advisor.${index}@example.com`,
+  state: "CA",
+  license_number: `CA-LIC-${9000 + index}`,
+  decision_at: `2026-02-${String(index).padStart(2, "0")}T11:12:00Z`,
+  created_at: `2026-02-${String(index).padStart(2, "0")}T10:00:00Z`,
+});
+
 describe("LicenseApproval", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -271,5 +283,36 @@ describe("LicenseApproval", () => {
         advisorQuery: undefined,
       });
     });
+  });
+
+  it("paginates processed decisions with 10 rows per page", async () => {
+    const processedRows = Array.from({ length: 12 }, (_, offset) =>
+      buildProcessedDecision(offset + 1),
+    );
+    vi.mocked(getProcessedLicenses).mockResolvedValueOnce(processedRows);
+
+    render(<LicenseApproval />);
+
+    expect(await screen.findByText("Processed Advisor 1")).toBeInTheDocument();
+    expect(screen.getByText("Processed Advisor 10")).toBeInTheDocument();
+    expect(screen.queryByText("Processed Advisor 11")).not.toBeInTheDocument();
+    expect(screen.queryByText("Processed Advisor 12")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Page 1 of 2 • 12 total processed licenses"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    await screen.findByText("Processed Advisor 11");
+    expect(screen.getByText("Processed Advisor 12")).toBeInTheDocument();
+    expect(screen.queryByText("Processed Advisor 1")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Page 2 of 2 • 12 total processed licenses"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+    await screen.findByText("Processed Advisor 1");
+    expect(screen.queryByText("Processed Advisor 11")).not.toBeInTheDocument();
   });
 });
