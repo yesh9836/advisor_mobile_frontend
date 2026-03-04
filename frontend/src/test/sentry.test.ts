@@ -26,7 +26,23 @@ describe("sentry helpers", () => {
     vi.unstubAllEnvs();
   });
 
+  const stubMissingDsnEnvironment = () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "");
+    vi.stubEnv("VITE_SENTRY_ENVIRONMENT", "");
+    vi.stubEnv("VITE_SENTRY_RELEASE", "");
+    vi.stubEnv("VITE_SENTRY_TRACES_SAMPLE_RATE", "");
+  };
+
   it("does not initialize when DSN is missing", async () => {
+    stubMissingDsnEnvironment();
+    const { initSentry } = await import("@/lib/sentry");
+    initSentry();
+    expect(initMock).not.toHaveBeenCalled();
+  });
+
+  it("does not initialize when DSN is whitespace", async () => {
+    stubMissingDsnEnvironment();
+    vi.stubEnv("VITE_SENTRY_DSN", "   ");
     const { initSentry } = await import("@/lib/sentry");
     initSentry();
     expect(initMock).not.toHaveBeenCalled();
