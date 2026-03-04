@@ -31,6 +31,8 @@ uploads/
 
 dump.rdb
 *.rdb
+backups/
+releases/
 
 # Playwright artifacts
 frontend/test-results/

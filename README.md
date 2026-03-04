@@ -75,6 +75,29 @@ Notes:
 - `migrate` runs `alembic upgrade head` before API/workers start.
 - Uploaded files persist in Docker volume `uploads_data`.
 
+### Operational scripts (VPS)
+
+For first-time production deployment on a VPS, use:
+
+1. Preflight checks:
+   - `./scripts/preflight.sh`
+2. Manual backup:
+   - `./scripts/backup.sh --label predeploy`
+3. Deploy:
+   - `./scripts/deploy.sh`
+4. Smoke checks only:
+   - `./scripts/smoke.sh`
+5. Roll back to previous release:
+   - `./scripts/rollback.sh`
+6. Roll back with DB restore:
+   - `./scripts/rollback.sh --db-backup ./backups/db/<backup>.sql.gz --yes`
+
+Details:
+
+- Release metadata is stored in `releases/<timestamp>/release.env`.
+- Backups are stored in `backups/db` and `backups/uploads`.
+- `deploy.sh` runs preflight, backup, deploy, readiness wait, and smoke checks by default.
+
 ### Local test flow (recommended first pass)
 
 Because frontend production build requires HTTPS/non-loopback API base URL, start by validating backend + workers in Docker, then run frontend in dev mode locally:
