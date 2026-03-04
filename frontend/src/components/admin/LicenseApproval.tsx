@@ -35,6 +35,8 @@ interface AdvisorOption {
   label: string;
 }
 
+const PROCESSED_LICENSE_DECISION_LIMIT = 10;
+
 const formatDateTime = (value: string | null): string => {
   if (!value) {
     return "Not available";
@@ -111,6 +113,7 @@ const LicenseApproval = () => {
   const [selectedAdvisorId, setSelectedAdvisorId] = useState<string>("all");
   const [advisorQueryInput, setAdvisorQueryInput] = useState("");
   const [advisorQuery, setAdvisorQuery] = useState("");
+  const [processedPage, setProcessedPage] = useState(1);
   const [preview, setPreview] = useState<PreviewState>({
     isOpen: false,
     loading: false,
@@ -202,6 +205,21 @@ const LicenseApproval = () => {
   }, [pendingLicenses, processedLicenses]);
 
   const isBusy = inflightAction !== null;
+  const processedTotalPages = useMemo(
+    () =>
+      Math.max(
+        1,
+        Math.ceil(
+          processedLicenses.length / PROCESSED_LICENSE_DECISION_LIMIT,
+        ),
+      ),
+    [processedLicenses],
+  );
+  const visibleProcessedLicenses = useMemo(() => {
+    const startIndex = (processedPage - 1) * PROCESSED_LICENSE_DECISION_LIMIT;
+    const endIndex = startIndex + PROCESSED_LICENSE_DECISION_LIMIT;
+    return processedLicenses.slice(startIndex, endIndex);
+  }, [processedLicenses, processedPage]);
 
   const matchesProcessedFilters = useCallback(
     (row: AdminLicenseDecisionRow): boolean => {
@@ -226,6 +244,12 @@ const LicenseApproval = () => {
   const refreshProcessedLicenses = useCallback(async () => {
     await loadProcessedLicenses(selectedAdvisorId, advisorQuery);
   }, [advisorQuery, loadProcessedLicenses, selectedAdvisorId]);
+
+  useEffect(() => {
+    if (processedPage > processedTotalPages) {
+      setProcessedPage(processedTotalPages);
+    }
+  }, [processedPage, processedTotalPages]);
 
   const handleApprove = async (license: LicenseWithUser) => {
     setError(null);
@@ -405,6 +429,7 @@ const LicenseApproval = () => {
 
   const handleApplyFilters = async () => {
     setError(null);
+    setProcessedPage(1);
     setAdvisorQuery(advisorQueryInput.trim());
     await loadProcessedLicenses(selectedAdvisorId, advisorQueryInput);
   };
@@ -412,6 +437,7 @@ const LicenseApproval = () => {
   const handleAdvisorChange = async (value: string) => {
     setSelectedAdvisorId(value);
     setError(null);
+    setProcessedPage(1);
     await loadProcessedLicenses(value, advisorQuery);
   };
 
@@ -420,6 +446,7 @@ const LicenseApproval = () => {
     setAdvisorQueryInput("");
     setAdvisorQuery("");
     setError(null);
+    setProcessedPage(1);
     await loadProcessedLicenses("all", "");
   };
 
@@ -790,11 +817,49 @@ const LicenseApproval = () => {
 
         <Table
           columns={processedColumns}
-          data={processedLicenses}
+          data={visibleProcessedLicenses}
           loading={loadingProcessed}
           rowKey={(decision) => decision.license_id}
           emptyMessage="No processed licenses to display."
         />
+
+        <div
+          className="row"
+          style={{ justifyContent: "space-between", alignItems: "center", marginTop: 8 }}
+        >
+          <span style={{ color: "#475569", fontSize: 14 }}>
+            Page {processedPage} of {processedTotalPages} •{" "}
+            {processedLicenses.length} total processed licenses
+          </span>
+          <div className="row">
+            <Button
+              variant="secondary"
+              className="px-3 py-1.5"
+              disabled={loadingProcessed || isBusy || processedPage <= 1}
+              onClick={() =>
+                setProcessedPage((current) => Math.max(1, current - 1))
+              }
+            >
+              Previous
+            </Button>
+            <Button
+              variant="secondary"
+              className="px-3 py-1.5"
+              disabled={
+                loadingProcessed ||
+                isBusy ||
+                processedPage >= processedTotalPages
+              }
+              onClick={() =>
+                setProcessedPage((current) =>
+                  Math.min(processedTotalPages, current + 1),
+                )
+              }
+            >
+              Next
+            </Button>
+          </div>
+        </div>
       </Card>
 
       {preview.isOpen && (
