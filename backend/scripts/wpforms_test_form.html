@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WPForms Webhook Test Form</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      max-width: 900px;
+      margin: 24px auto;
+      padding: 0 16px 24px;
+      line-height: 1.35;
+    }
+    h1 { margin: 0 0 16px; }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .full { grid-column: 1 / -1; }
+    label {
+      display: block;
+      font-size: 14px;
+      margin-bottom: 4px;
+      font-weight: 600;
+    }
+    input, select, textarea, button {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 8px 10px;
+      font-size: 14px;
+    }
+    textarea { min-height: 70px; resize: vertical; }
+    .actions {
+      margin-top: 14px;
+      display: flex;
+      gap: 10px;
+    }
+    button { cursor: pointer; }
+    pre {
+      background: #f6f8fa;
+      border: 1px solid #d0d7de;
+      padding: 10px;
+      overflow: auto;
+    }
+    .note {
+      background: #fff8c5;
+      border: 1px solid #d4b106;
+      padding: 10px;
+      margin: 12px 0;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <h1>WPForms Webhook Test Form</h1>
+  <p>Fill this form and click submit to send a signed webhook request to your intake endpoint.</p>
+
+  <div class="note">
+    Browser submission can fail due CORS preflight on custom signature headers.
+    If that happens, use <code>backend/scripts/send_wpforms_test_webhook.sh</code> instead.
+  </div>
+
+  <form id="webhook-form">
+    <div class="grid">
+      <div class="full">
+        <label for="webhook_url">Webhook URL</label>
+        <input id="webhook_url" name="webhook_url" required placeholder="https://<ngrok>/api/v1/webhooks/wpforms/survey" />
+      </div>
+      <div>
+        <label for="hmac_secret">HMAC Secret</label>
+        <input id="hmac_secret" name="hmac_secret" required placeholder="WPFORMS_WEBHOOK_HMAC_SECRET" />
+      </div>
+      <div>
+        <label for="entry_id">WPForms Entry ID</label>
+        <input id="entry_id" name="entry_id" value="" placeholder="leave blank for auto" />
+      </div>
+      <div class="full">
+        <label for="full_name">What is your First &amp; Last Name?</label>
+        <textarea id="full_name" name="full_name">Bernard
+Frazier</textarea>
+      </div>
+      <div>
+        <label for="retirement_timeline">When would you like to retire?</label>
+        <input id="retirement_timeline" name="retirement_timeline" value="5-9 Years" />
+      </div>
+      <div>
+        <label for="confidence">How confident are you in your current long-term financial plan?</label>
+        <input id="confidence" name="confidence" value="Not confident" />
+      </div>
+      <div>
+        <label for="retirement_activity">What activity is most important to you in retirement?</label>
+        <input id="retirement_activity" name="retirement_activity" value="Working part-time" />
+      </div>
+      <div>
+        <label for="overall_health">How would you characterize your overall health?</label>
+        <input id="overall_health" name="overall_health" value="Fair" />
+      </div>
+      <div>
+        <label for="relocate">Are you planning on relocating for retirement?</label>
+        <input id="relocate" name="relocate" value="No" />
+      </div>
+      <div>
+        <label for="income_source">Where do you expect the majority of your retirement income to come from?</label>
+        <input id="income_source" name="income_source" value="Employer (Pensions)" />
+      </div>
+      <div>
+        <label for="money_management">How do you currently manage your money?</label>
+        <input id="money_management" name="money_management" value="I work with a Financial Advisor" />
+      </div>
+      <div>
+        <label for="investor_statement">Which statement best describes you?</label>
+        <textarea id="investor_statement" name="investor_statement">I prefer lower-risk investments that are typically safer and have steady returns</textarea>
+      </div>
+      <div>
+        <label for="purpose_investing">What is your main purpose for investing? (comma-separated)</label>
+        <input id="purpose_investing" name="purpose_investing" value="Leaving a Legacy" />
+      </div>
+      <div>
+        <label for="investment_comfort">How comfortable are you with investing?</label>
+        <input id="investment_comfort" name="investment_comfort" value="Not comfortable at all" />
+      </div>
+      <div>
+        <label for="retirement_saved">About what amount do you currently have saved for retirement?</label>
+        <input id="retirement_saved" name="retirement_saved" value="$250,000 - $500,000" />
+      </div>
+      <div>
+        <label for="improve_timing">How quickly would you like to improve your long-term financial strategy?</label>
+        <input id="improve_timing" name="improve_timing" value="Within the next year" />
+      </div>
+      <div>
+        <label for="current_strategies">What investment strategies are you currently using? (comma-separated)</label>
+        <input id="current_strategies" name="current_strategies" value="Active Trading, Real Estate" />
+      </div>
+      <div>
+        <label for="has_advisor">Do you currently have a financial advisor?</label>
+        <input id="has_advisor" name="has_advisor" value="Yes, but I'm considering switching advisors" />
+      </div>
+      <div>
+        <label for="advisor_local">Would you prefer your financial advisor to be located in your immediate area?</label>
+        <input id="advisor_local" name="advisor_local" value="No, I am comfortable working by phone or video-conference" />
+      </div>
+      <div>
+        <label for="annual_income">Please estimate your annual household income</label>
+        <input id="annual_income" name="annual_income" value="$150,000 - $249,999" />
+      </div>
+      <div>
+        <label for="investable_assets">Please estimate your total investable assets</label>
+        <input id="investable_assets" name="investable_assets" value="$250,000 - $999,999" />
+      </div>
+      <div>
+        <label for="monthly_savings">Please estimate your current monthly savings</label>
+        <input id="monthly_savings" name="monthly_savings" value="$500 - $999" />
+      </div>
+      <div>
+        <label for="owns_annuity">Do you currently own an annuity?</label>
+        <input id="owns_annuity" name="owns_annuity" value="No" />
+      </div>
+      <div>
+        <label for="follow_up_method">Which follow-up method would you prefer?</label>
+        <input id="follow_up_method" name="follow_up_method" value="Either a phone call or text" />
+      </div>
+      <div>
+        <label for="state">What state are you located in?</label>
+        <input id="state" name="state" value="Florida" />
+      </div>
+      <div>
+        <label for="zip_code">Please Enter Your Zip Code</label>
+        <input id="zip_code" name="zip_code" value="33415" />
+      </div>
+      <div>
+        <label for="mobile_phone">Please provide your Mobile Phone Number</label>
+        <input id="mobile_phone" name="mobile_phone" value="3054959490" />
+      </div>
+      <div>
+        <label for="best_time">What is the best time of day to reach you?</label>
+        <input id="best_time" name="best_time" value="AM on" />
+      </div>
+      <div class="full">
+        <label for="notes">Is there anything else you'd like us to know?</label>
+        <textarea id="notes" name="notes"></textarea>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button type="submit">Submit Signed Webhook</button>
+      <button type="button" id="preview-btn">Preview Payload</button>
+    </div>
+  </form>
+
+  <h3>Response</h3>
+  <pre id="response">(none)</pre>
+
+  <h3>Payload Preview</h3>
+  <pre id="payload-preview">(none)</pre>
+
+  <script>
+    const encoder = new TextEncoder();
+
+    function buildPayload(formData) {
+      const entryId = formData.get("entry_id") || ("test-" + Date.now());
+      return {
+        entry_id: String(entryId),
+        form_id: "html-test",
+        fields: [
+          { name: "What is your First & Last Name?:", value: formData.get("full_name") || "" },
+          { name: "When would you like to retire?:", value: formData.get("retirement_timeline") || "" },
+          { name: "How confident are you in your current long-term financial plan?:", value: formData.get("confidence") || "" },
+          { name: "What activity is most important to you in retirement?:", value: formData.get("retirement_activity") || "" },
+          { name: "How would you characterize your overall health?:", value: formData.get("overall_health") || "" },
+          { name: "Are you planning on relocating for retirement?:", value: formData.get("relocate") || "" },
+          { name: "Where do you expect the majority of your retirement income to come from?:", value: formData.get("income_source") || "" },
+          { name: "How do you currently manage your money?:", value: formData.get("money_management") || "" },
+          { name: "Which statement best describes you?:", value: formData.get("investor_statement") || "" },
+          { name: "What is your main purpose for investing? (Check all that apply):", value: formData.get("purpose_investing") || "" },
+          { name: "How comfortable are you with investing?:", value: formData.get("investment_comfort") || "" },
+          { name: "About what amount do you currently have saved for retirement?:", value: formData.get("retirement_saved") || "" },
+          { name: "How quickly would you like to improve your long-term financial strategy?:", value: formData.get("improve_timing") || "" },
+          { name: "What investment strategies are you currently using? (Check all that apply):", value: formData.get("current_strategies") || "" },
+          { name: "Do you currently have a financial advisor?:", value: formData.get("has_advisor") || "" },
+          { name: "Would you prefer your financial advisor to be located in your immediate area?:", value: formData.get("advisor_local") || "" },
+          { name: "Please estimate your annual household income:", value: formData.get("annual_income") || "" },
+          { name: "Please estimate your total investable assets:", value: formData.get("investable_assets") || "" },
+          { name: "Please estimate your current monthly savings:", value: formData.get("monthly_savings") || "" },
+          { name: "Do you currently own an annuity?:", value: formData.get("owns_annuity") || "" },
+          { name: "Which follow-up method would you prefer?:", value: formData.get("follow_up_method") || "" },
+          { name: "What state are you located in?:", value: formData.get("state") || "" },
+          { name: "Please Enter Your Zip Code:", value: formData.get("zip_code") || "" },
+          { name: "Please provide your Mobile Phone Number::", value: formData.get("mobile_phone") || "" },
+          { name: "What is the best time of day to reach you?:", value: formData.get("best_time") || "" },
+          { name: "Is there anything else you'd like us to know?:", value: formData.get("notes") || "" }
+        ]
+      };
+    }
+
+    async function signHex(secret, message) {
+      const key = await crypto.subtle.importKey(
+        "raw",
+        encoder.encode(secret),
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["sign"]
+      );
+      const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(message));
+      return Array.from(new Uint8Array(signature))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+    }
+
+    const form = document.getElementById("webhook-form");
+    const responseEl = document.getElementById("response");
+    const payloadEl = document.getElementById("payload-preview");
+    const previewBtn = document.getElementById("preview-btn");
+
+    previewBtn.addEventListener("click", () => {
+      const formData = new FormData(form);
+      const payload = buildPayload(formData);
+      payloadEl.textContent = JSON.stringify(payload, null, 2);
+    });
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const formData = new FormData(form);
+      const webhookUrl = String(formData.get("webhook_url") || "").trim();
+      const secret = String(formData.get("hmac_secret") || "").trim();
+      if (!webhookUrl || !secret) {
+        responseEl.textContent = "Webhook URL and HMAC Secret are required.";
+        return;
+      }
+
+      const payload = buildPayload(formData);
+      const rawBody = JSON.stringify(payload);
+      const timestamp = Math.floor(Date.now() / 1000);
+      const signature = await signHex(secret, `${timestamp}.${rawBody}`);
+
+      payloadEl.textContent = JSON.stringify(payload, null, 2);
+      responseEl.textContent = "Submitting...";
+
+      try {
+        const res = await fetch(webhookUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Webhook-Timestamp": String(timestamp),
+            "X-Webhook-Signature": signature
+          },
+          body: rawBody
+        });
+        const text = await res.text();
+        responseEl.textContent = `HTTP ${res.status}\n${text}`;
+      } catch (err) {
+        responseEl.textContent = `Fetch error: ${String(err)}`;
+      }
+    });
+  </script>
+</body>
+</html>
