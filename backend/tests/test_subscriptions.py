@@ -816,7 +816,7 @@ def test_webhook_rejects_invalid_signature(client, monkeypatch):
     monkeypatch.setattr(
         "app.api.v1.webhooks.stripe.Webhook.construct_event",
         lambda payload, sig_header, secret: (_ for _ in ()).throw(
-            stripe.error.SignatureVerificationError("invalid signature")
+            stripe.error.SignatureVerificationError("invalid signature", sig_header)
         ),
     )
 
