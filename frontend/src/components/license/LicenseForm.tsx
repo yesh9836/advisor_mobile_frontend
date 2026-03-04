@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type SubmitEvent } from "react";
 
 import { submitLicense } from "@/api/licenses";
 import Button from "@/components/common/Button";
@@ -100,7 +100,7 @@ const LicenseForm = ({ onSubmitted }: LicenseFormProps) => {
     return null;
   };
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     setSuccessMessage(null);
