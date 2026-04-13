@@ -185,14 +185,6 @@ def approve_license(
         admin_id=current_admin.id,
     )
 
-    AuditService.log_event(
-        actor_user_id=current_admin.id,
-        action="license_approved",
-        entity_type="License",
-        entity_id=license.id,
-        meta_data={"state": license.state, "status": license.verification_status},
-    )
-
     return LicenseResponse.model_validate(license)
 
 
@@ -218,18 +210,6 @@ def reject_license(
         license_id=license_id,
         admin_id=current_admin.id,
         reason=data.rejection_reason,
-    )
-
-    AuditService.log_event(
-        actor_user_id=current_admin.id,
-        action="license_rejected",
-        entity_type="License",
-        entity_id=license.id,
-        meta_data={
-            "state": license.state,
-            "status": license.verification_status,
-            "reason": data.rejection_reason,
-        },
     )
 
     return LicenseResponse.model_validate(license)
@@ -261,14 +241,6 @@ async def resubmit_license(
         license_id=license_id,
         file=document,
         license_type=license_type,
-    )
-
-    AuditService.log_event(
-        actor_user_id=current_user.id,
-        action="license_resubmitted",
-        entity_type="License",
-        entity_id=license.id,
-        meta_data={"state": license.state},
     )
 
     return LicenseResponse.model_validate(license)
