@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import ProfilePage from "@/pages/advisor/ProfilePage";
+import type { PurchaseBalance, PurchaseHistory } from "@/types/purchase";
 
 vi.mock("@/context/AuthContext", () => ({
   useAuth: () => ({
@@ -157,8 +158,8 @@ describe("ProfilePage purchase fulfillment summary", () => {
 
   it("ignores stale purchase summary responses after a refresh-triggered reload", async () => {
     const { getPurchaseBalance, getPurchaseHistory } = await import("@/api/purchases");
-    const firstBalance = deferred<{ total_credits: number; remaining_credits: number; completed_purchases: number }>();
-    const firstHistory = deferred<{ items: Array<Record<string, unknown>> }>();
+    const firstBalance = deferred<PurchaseBalance>();
+    const firstHistory = deferred<PurchaseHistory>();
 
     vi.mocked(getPurchaseBalance)
       .mockImplementationOnce(() => firstBalance.promise)
