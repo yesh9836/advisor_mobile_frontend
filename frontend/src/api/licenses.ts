@@ -6,6 +6,10 @@ import { z } from "zod";
 
 const licenseListSchema: z.ZodType<License[]> = z.array(licenseSchema);
 
+interface RequestOptions {
+  signal?: AbortSignal;
+}
+
 export const submitLicense = async (data: FormData): Promise<License> => {
   const response = await apiClient.post<License>("/licenses", data, {
     headers: {
@@ -16,8 +20,12 @@ export const submitLicense = async (data: FormData): Promise<License> => {
   return parseApiContract(licenseSchema, response.data, "/licenses");
 };
 
-export const getMyLicenses = async (): Promise<License[]> => {
-  const response = await apiClient.get<License[]>("/licenses");
+export const getMyLicenses = async (
+  options: RequestOptions = {},
+): Promise<License[]> => {
+  const response = await apiClient.get<License[]>("/licenses", {
+    signal: options.signal,
+  });
   return parseApiContract(licenseListSchema, response.data, "/licenses");
 };
 

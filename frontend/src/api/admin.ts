@@ -64,6 +64,16 @@ interface OrdersExportDownload {
   filename: string;
 }
 
+interface RequestOptions {
+  signal?: AbortSignal;
+}
+
+export interface AnalyticsOverviewQuery extends RequestOptions {
+  monthlyRevenueLimit?: number;
+  userGrowthPage?: number;
+  userGrowthSize?: number;
+}
+
 const parseFilename = (
   contentDisposition: string | undefined,
   fallback: string,
@@ -130,6 +140,7 @@ const adminAnalyticsOverviewSchema: z.ZodType<AdminAnalyticsOverview> = z
           revenue_cents: z.number(),
         }),
     ),
+    monthly_revenue_total_months: z.number(),
     plan_breakdown: z.array(
       z
         .looseObject({
@@ -154,6 +165,10 @@ const adminAnalyticsOverviewSchema: z.ZodType<AdminAnalyticsOverview> = z
           new_users: z.number(),
         }),
     ),
+    user_growth_total_months: z.number(),
+    user_growth_page: z.number(),
+    user_growth_size: z.number(),
+    user_growth_total_pages: z.number(),
   });
 
 const adminUserListItemSchema = z
@@ -440,8 +455,18 @@ export const updateFirstPurchaseOfferConfig = async (
   );
 };
 
-export const getAnalyticsOverview = async (): Promise<AdminAnalyticsOverview> => {
-  const response = await apiClient.get<AdminAnalyticsOverview>("/admin/analytics");
+export const getAnalyticsOverview = async (
+  options: AnalyticsOverviewQuery = {},
+): Promise<AdminAnalyticsOverview> => {
+  const params = normalizeQueryParams({
+    monthly_revenue_limit: options.monthlyRevenueLimit,
+    user_growth_page: options.userGrowthPage,
+    user_growth_size: options.userGrowthSize,
+  });
+  const response = await apiClient.get<AdminAnalyticsOverview>("/admin/analytics", {
+    params,
+    signal: options.signal,
+  });
   return parseApiContract(
     adminAnalyticsOverviewSchema,
     response.data,
@@ -642,6 +667,7 @@ export const getLeadInventory = async (
   page: number,
   size: number,
   filters: LeadInventoryFilters = {},
+  options: RequestOptions = {},
 ): Promise<PaginatedLeadInventory> => {
   const params = normalizeQueryParams({
     page,
@@ -656,6 +682,7 @@ export const getLeadInventory = async (
 
   const response = await apiClient.get<PaginatedLeadInventory>("/admin/lead-inventory", {
     params,
+    signal: options.signal,
   });
   return parseApiContract(
     paginatedLeadInventorySchema,
@@ -664,9 +691,12 @@ export const getLeadInventory = async (
   );
 };
 
-export const getLicenseStatusSummary = async (): Promise<LicenseStatusSummaryItem[]> => {
+export const getLicenseStatusSummary = async (
+  options: RequestOptions = {},
+): Promise<LicenseStatusSummaryItem[]> => {
   const response = await apiClient.get<LicenseStatusSummaryItem[]>(
     "/admin/license-status-summary",
+    { signal: options.signal },
   );
   return parseApiContract(
     licenseStatusSummarySchema,
@@ -792,6 +822,7 @@ export const getAuditLogs = async (
   filters: AuditLogFilters,
   page: number,
   size: number,
+  options: RequestOptions = {},
 ): Promise<PaginatedAuditLogs> => {
   const params = normalizeQueryParams({
     page,
@@ -806,6 +837,7 @@ export const getAuditLogs = async (
 
   const response = await apiClient.get<PaginatedAuditLogs>("/admin/audit-logs", {
     params,
+    signal: options.signal,
   });
   return parseApiContract(
     paginatedAuditLogsSchema,

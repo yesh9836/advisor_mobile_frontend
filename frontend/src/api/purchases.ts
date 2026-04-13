@@ -135,8 +135,12 @@ const firstPurchaseOfferEligibilitySchema: z.ZodType<FirstPurchaseAddonOfferElig
       rejection_code: z.string().nullable().optional(),
       rejection_message: z.string().nullable().optional(),
       inventory_available_count: z.number().nullable().optional(),
-      inventory_required_count: z.number().nullable().optional(),
+        inventory_required_count: z.number().nullable().optional(),
     });
+
+interface RequestOptions {
+  signal?: AbortSignal;
+}
 
 export const getPackages = async (): Promise<PurchasePackage[]> => {
   const response = await apiClient.get<PurchasePackage[]>("/purchases/packages");
@@ -165,8 +169,12 @@ export const createCheckout = async (
   );
 };
 
-export const getPurchaseBalance = async (): Promise<PurchaseBalance> => {
-  const response = await apiClient.get<PurchaseBalance>("/purchases/balance");
+export const getPurchaseBalance = async (
+  options: RequestOptions = {},
+): Promise<PurchaseBalance> => {
+  const response = await apiClient.get<PurchaseBalance>("/purchases/balance", {
+    signal: options.signal,
+  });
   return parseApiContract(
     purchaseBalanceSchema,
     response.data,
@@ -174,9 +182,13 @@ export const getPurchaseBalance = async (): Promise<PurchaseBalance> => {
   );
 };
 
-export const getPurchaseHistory = async (limit = 50): Promise<PurchaseHistory> => {
+export const getPurchaseHistory = async (
+  limit = 50,
+  options: RequestOptions = {},
+): Promise<PurchaseHistory> => {
   const response = await apiClient.get<PurchaseHistory>("/purchases/history", {
     params: { limit },
+    signal: options.signal,
   });
   return parseApiContract(
     purchaseHistorySchema,
