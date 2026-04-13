@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { getAuditLogs, getDashboardStats } from "@/api/admin";
@@ -47,54 +47,50 @@ const AdminDashboard = () => {
   const [activityError, setActivityError] = useState<string | null>(null);
   const { beginRequest, isLatestRequest } = useLatestRequest();
 
-  const loadDashboard = useCallback(async () => {
-    const { requestId, signal } = beginRequest();
-    setStatsLoading(true);
-    setStatsError(null);
-    setActivityLoading(true);
-    setActivityError(null);
-
-    const [statsResult, activityResult] = await Promise.allSettled([
-      getDashboardStats({ signal }),
-      getAuditLogs({}, 1, 20, { signal }),
-    ]);
-
-    if (!isLatestRequest(requestId)) {
-      return;
-    }
-
-    if (statsResult.status === "fulfilled") {
-      setStats(statsResult.value);
-    } else if (!isRequestCanceled(statsResult.reason)) {
-      setStats(null);
-      setStatsError(
-        getApiErrorMessage(
-          statsResult.reason,
-          "Unable to load admin dashboard.",
-        ),
-      );
-    }
-    setStatsLoading(false);
-
-    if (activityResult.status === "fulfilled") {
-      setRecentActivity(activityResult.value.items);
-      setShowAllRecentActivity(false);
-    } else if (!isRequestCanceled(activityResult.reason)) {
-      setRecentActivity([]);
-      setShowAllRecentActivity(false);
-      setActivityError(
-        getApiErrorMessage(
-          activityResult.reason,
-          "Unable to load recent activity.",
-        ),
-      );
-    }
-    setActivityLoading(false);
-  }, [beginRequest, isLatestRequest]);
-
   useEffect(() => {
+    const { requestId, signal } = beginRequest();
+
+    const loadDashboard = async () => {
+      const [statsResult, activityResult] = await Promise.allSettled([
+        getDashboardStats({ signal }),
+        getAuditLogs({}, 1, 20, { signal }),
+      ]);
+
+      if (!isLatestRequest(requestId)) {
+        return;
+      }
+
+      if (statsResult.status === "fulfilled") {
+        setStats(statsResult.value);
+      } else if (!isRequestCanceled(statsResult.reason)) {
+        setStats(null);
+        setStatsError(
+          getApiErrorMessage(
+            statsResult.reason,
+            "Unable to load admin dashboard.",
+          ),
+        );
+      }
+      setStatsLoading(false);
+
+      if (activityResult.status === "fulfilled") {
+        setRecentActivity(activityResult.value.items);
+        setShowAllRecentActivity(false);
+      } else if (!isRequestCanceled(activityResult.reason)) {
+        setRecentActivity([]);
+        setShowAllRecentActivity(false);
+        setActivityError(
+          getApiErrorMessage(
+            activityResult.reason,
+            "Unable to load recent activity.",
+          ),
+        );
+      }
+      setActivityLoading(false);
+    };
+
     void loadDashboard();
-  }, [loadDashboard]);
+  }, [beginRequest, isLatestRequest]);
 
   const visibleRecentActivity = useMemo(() => {
     return showAllRecentActivity
