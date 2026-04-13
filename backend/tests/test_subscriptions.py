@@ -3271,6 +3271,65 @@ def test_grant_replacement_credits_is_idempotent_for_same_key(
 
 
 @pytest.mark.integration
+def test_grant_replacement_credits_rolls_back_when_audit_write_fails(
+    db,
+    user_factory,
+    plan_factory,
+    purchase_factory,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "app.services.subscription_service.AuditService.log_purchase_event",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("audit failed")),
+    )
+
+    advisor = user_factory(
+        role="advisor",
+        password="AdvisorReplacementRollback123!",
+        email="advisor.replacement.rollback@example.com",
+    )
+    plan = plan_factory(
+        daily_download_limit=5,
+        stripe_price_id="price_replacement_credit_rollback",
+    )
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=5,
+        credits_remaining=1,
+        status="completed",
+        stripe_checkout_session_id="cs_replacement_credit_rollback_1",
+        stripe_payment_intent_id="pi_replacement_credit_rollback_1",
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        SubscriptionService.grant_replacement_credits(
+            db=db,
+            purchase_id=int(purchase.id),
+            credits=2,
+            actor_user_id=int(advisor.id),
+            reason="manual replacement credit",
+            idempotency_key=f"replacement:{purchase.id}:rollback",
+            source="support_case",
+        )
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.detail == "Failed to grant replacement credits"
+
+    db.refresh(purchase)
+    assert purchase.credits_remaining == 1
+    assert (
+        db.query(LeadCreditLedger)
+        .filter(
+            LeadCreditLedger.purchase_id == purchase.id,
+            LeadCreditLedger.movement_type == "replacement_credit",
+        )
+        .count()
+        == 0
+    )
+
+
+@pytest.mark.integration
 def test_grant_replacement_credits_rejects_idempotency_key_conflict(
     db,
     user_factory,

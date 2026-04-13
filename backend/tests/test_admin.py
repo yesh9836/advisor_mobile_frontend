@@ -312,6 +312,7 @@ def test_admin_analytics_overview_returns_aggregates(
         {"month": "2026-01", "revenue_cents": 10000},
         {"month": "2026-02", "revenue_cents": 20000},
     ]
+    assert payload["monthly_revenue_total_months"] == 2
     assert len(payload["plan_breakdown"]) == 2
     by_revenue = {
         item["revenue_cents"]: item
@@ -328,6 +329,69 @@ def test_admin_analytics_overview_returns_aggregates(
     assert payload["user_growth"] == [
         {"month": "2026-01", "new_users": 1},
         {"month": "2026-02", "new_users": 1},
+    ]
+    assert payload["user_growth_total_months"] == 2
+    assert payload["user_growth_page"] == 1
+    assert payload["user_growth_size"] == 6
+    assert payload["user_growth_total_pages"] == 1
+
+
+def test_admin_analytics_overview_bounds_history_and_pages_user_growth(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+    plan_factory,
+    purchase_factory,
+):
+    _admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+    plan = plan_factory(name="AnalyticsBoundsPlan", price_cents=10000)
+
+    for month_offset in range(14):
+        year = 2025 + (month_offset // 12)
+        month = (month_offset % 12) + 1
+        advisor = user_factory(
+            role="advisor",
+            password=f"AnalyticsBound{month_offset + 1:02d}!",
+            email=f"analytics.bound.{month_offset + 1}@example.com",
+            name=f"Analytics Bound {month_offset + 1}",
+        )
+        advisor.created_at = datetime(year, month, 10, tzinfo=timezone.utc)
+        purchase = purchase_factory(
+            user_id=advisor.id,
+            package_id=plan.id,
+            status="completed",
+        )
+        purchase.purchased_at = datetime(year, month, 15, tzinfo=timezone.utc)
+        purchase.amount_cents = (month_offset + 1) * 1000
+        db.add(purchase)
+
+    db.commit()
+
+    response = client.get(
+        "/api/v1/admin/analytics?monthly_revenue_limit=12&user_growth_page=2&user_growth_size=6",
+        headers=admin_headers,
+    )
+    assert response.status_code == 200, response.text
+
+    payload = response.json()
+
+    assert payload["monthly_revenue_total_months"] == 14
+    assert len(payload["monthly_revenue"]) == 12
+    assert payload["monthly_revenue"][0]["month"] == "2025-03"
+    assert payload["monthly_revenue"][-1]["month"] == "2026-02"
+
+    assert payload["user_growth_total_months"] == 14
+    assert payload["user_growth_page"] == 2
+    assert payload["user_growth_size"] == 6
+    assert payload["user_growth_total_pages"] == 3
+    assert payload["user_growth"] == [
+        {"month": "2025-03", "new_users": 1},
+        {"month": "2025-04", "new_users": 1},
+        {"month": "2025-05", "new_users": 1},
+        {"month": "2025-06", "new_users": 1},
+        {"month": "2025-07", "new_users": 1},
+        {"month": "2025-08", "new_users": 1},
     ]
 
 
@@ -2052,6 +2116,52 @@ def test_admin_deactivate_blocks_self_and_admin_targets(
         .all()
     )
     assert deactivation_audits == []
+
+
+def test_admin_deactivate_rolls_back_when_audit_write_fails(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+    monkeypatch,
+):
+    admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+    advisor = user_factory(
+        role="advisor",
+        password="DeactivateRollback123!",
+        email="deactivate.rollback@example.com",
+        name="Deactivate Rollback",
+    )
+
+    def fail_audit(**_kwargs):
+        raise RuntimeError("audit insert failed")
+
+    monkeypatch.setattr("app.services.admin_service.AuditService.log_event", fail_audit)
+
+    response = client.post(
+        f"/api/v1/admin/users/{advisor.id}/deactivate",
+        headers=admin_headers,
+        json={"reason": "Fraud review"},
+    )
+    assert response.status_code == 500, response.text
+    assert response.json() == {"detail": "Failed to deactivate user"}
+
+    db.expire_all()
+    refreshed_user = db.query(User).filter(User.id == advisor.id).first()
+    assert refreshed_user is not None
+    assert refreshed_user.is_active is True
+    assert refreshed_user.deactivated_at is None
+    assert refreshed_user.deactivated_by is None
+    assert (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.actor_user_id == admin.id,
+            AuditLog.action == "user_deactivated",
+            AuditLog.entity_id == advisor.id,
+        )
+        .count()
+        == 0
+    )
 
 
 def test_admin_audit_logs_filters_and_ordering(client, db, user_factory, auth_headers):
