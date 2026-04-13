@@ -1,13 +1,21 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, Dispatch, SetStateAction } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
-import { deactivateUser, getUser } from "@/api/admin";
+import {
+  deactivateUser,
+  getUser,
+  getUserDownloadHistory,
+  getUserLicenses,
+  getUserPurchaseHistory,
+  getUserRecentActivity,
+} from "@/api/admin";
 import type {
   AuditLog,
   UserCreditSummary,
   UserDetails,
   UserDownloadHistoryItem,
+  UserHistoryPreview,
   UserLicenseItem,
   UserPurchaseItem,
 } from "@/types/admin";
@@ -35,6 +43,13 @@ const formatRole = (role: string): string =>
 
 const formatStatusLabel = (status: string): string =>
   status.replace(/_/g, " ").trim().toUpperCase();
+
+const formatTitleLabel = (value: string): string =>
+  value
+    .replace(/_/g, " ")
+    .trim()
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 
 const formatCurrency = (priceCents: number, currency: string): string => {
   return (priceCents / 100).toLocaleString("en-US", {
@@ -88,6 +103,43 @@ const licenseStatusBadgeStyle = (status: string): CSSProperties => {
 };
 
 const HISTORY_PREVIEW_LIMIT = 5;
+const HISTORY_PAGE_SIZE = 20;
+
+interface HistorySectionState<TItem> {
+  items: TItem[];
+  total: number;
+  page: number;
+  isExpanded: boolean;
+  isLoading: boolean;
+  error: string | null;
+}
+
+interface PaginatedHistoryResponse<TItem> {
+  items: TItem[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+const createEmptyHistorySectionState = <TItem,>(): HistorySectionState<TItem> => ({
+  items: [],
+  total: 0,
+  page: 0,
+  isExpanded: false,
+  isLoading: false,
+  error: null,
+});
+
+const createHistorySectionState = <TItem,>(
+  preview: UserHistoryPreview<TItem>,
+): HistorySectionState<TItem> => ({
+  items: preview.items,
+  total: preview.total,
+  page: 0,
+  isExpanded: false,
+  isLoading: false,
+  error: null,
+});
 
 const renderCreditSummary = (summary: UserCreditSummary) => {
   return (
@@ -199,9 +251,99 @@ const renderDownloadRow = (item: UserDownloadHistoryItem, index: number) => {
   );
 };
 
+const getActivitySummary = (item: AuditLog): string => {
+  const meta = item.meta_data ?? {};
+  const state = typeof meta.state === "string" ? meta.state : null;
+  const reason = typeof meta.reason === "string" ? meta.reason : null;
+  const newStatus = typeof meta.new_status === "string" ? meta.new_status : null;
+  const previousStatus = typeof meta.previous_status === "string" ? meta.previous_status : null;
+
+  switch (item.action) {
+    case "lead_downloaded":
+      return state ? `Downloaded a lead in ${state}.` : "Downloaded a lead.";
+    case "license_resubmitted":
+      return state ? `Resubmitted a ${state} license for review.` : "Resubmitted a license for review.";
+    case "lead_outcome_updated":
+      if (previousStatus && newStatus) {
+        return `Updated lead outcome from ${formatTitleLabel(previousStatus)} to ${formatTitleLabel(newStatus)}.`;
+      }
+      return "Updated a lead outcome.";
+    case "delivery_settings_updated":
+      return "Updated delivery preference settings.";
+    case "purchase_initiated":
+      return "Started a purchase checkout.";
+    case "purchase_confirmed":
+      return "Completed a purchase successfully.";
+    case "purchase_credits_granted":
+      return "Received purchase credits.";
+    case "purchase_leads_allocated":
+      return "Received lead allocations from a purchase.";
+    case "purchase_credit_consumed":
+      return "Used purchase credit for a lead.";
+    case "user_deactivated":
+      return reason ? `Deactivated a user account. Reason: ${reason}` : "Deactivated a user account.";
+    default:
+      return `Performed ${formatTitleLabel(item.action).toLowerCase()}.`;
+  }
+};
+
+const getActivityDetails = (item: AuditLog): string[] => {
+  const meta = item.meta_data;
+  if (!meta) {
+    return [];
+  }
+
+  const details: string[] = [];
+
+  if (typeof meta.state === "string") {
+    details.push(`State: ${meta.state}`);
+  }
+  if (typeof meta.status === "string") {
+    details.push(`Status: ${formatTitleLabel(meta.status)}`);
+  }
+  if (typeof meta.reason === "string" && meta.reason.trim()) {
+    details.push(`Reason: ${meta.reason.trim()}`);
+  }
+  if (typeof meta.lead_id === "number") {
+    details.push(`Lead: #${meta.lead_id}`);
+  }
+  if (typeof meta.package_id === "number") {
+    details.push(`Package: #${meta.package_id}`);
+  }
+  if (typeof meta.requested_count === "number") {
+    details.push(`Requested: ${meta.requested_count}`);
+  }
+  if (typeof meta.assigned_count === "number") {
+    details.push(`Assigned: ${meta.assigned_count}`);
+  }
+  if (typeof meta.unfulfilled_count === "number") {
+    details.push(`Unfulfilled: ${meta.unfulfilled_count}`);
+  }
+  if (typeof meta.notes_changed === "boolean") {
+    details.push(`Notes Changed: ${meta.notes_changed ? "Yes" : "No"}`);
+  }
+  if (typeof meta.previous_version === "number" && typeof meta.new_version === "number") {
+    details.push(`Version: ${meta.previous_version} -> ${meta.new_version}`);
+  }
+  if (
+    typeof meta.changed_fields === "object" &&
+    meta.changed_fields !== null &&
+    !Array.isArray(meta.changed_fields)
+  ) {
+    const changedFields = Object.keys(meta.changed_fields).slice(0, 3);
+    if (changedFields.length > 0) {
+      details.push(
+        `Changed: ${changedFields.map((field) => formatTitleLabel(field)).join(", ")}`,
+      );
+    }
+  }
+
+  return details.slice(0, 4);
+};
+
 const renderActivityRow = (item: AuditLog) => {
-  const rawMeta = item.meta_data ? JSON.stringify(item.meta_data) : null;
-  const metaPreview = rawMeta && rawMeta.length > 160 ? `${rawMeta.slice(0, 160)}...` : rawMeta;
+  const summary = getActivitySummary(item);
+  const details = getActivityDetails(item);
 
   return (
     <section
@@ -213,36 +355,36 @@ const renderActivityRow = (item: AuditLog) => {
     >
       <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ color: "#0b1b49", fontWeight: 700 }}>
-          {formatStatusLabel(item.action)}
+          {formatTitleLabel(item.action)}
         </div>
         <div style={{ color: "#64748b", fontSize: 13 }}>{formatDateTime(item.created_at)}</div>
       </div>
 
       <div style={{ marginTop: 8, color: "#334155", fontSize: 14 }}>
-        Entity: {item.entity_type}
+        Affected: {formatTitleLabel(item.entity_type)}
         {item.entity_id !== null ? ` #${item.entity_id}` : ""}
       </div>
 
-      {item.ip_address && (
-        <div style={{ marginTop: 6, color: "#475569", fontSize: 13 }}>IP: {item.ip_address}</div>
-      )}
+      <p style={{ margin: "8px 0 0 0", color: "#475569", fontSize: 14 }}>{summary}</p>
 
-      {metaPreview && (
-        <pre
-          style={{
-            marginTop: 8,
-            background: "#f1f5f9",
-            border: "1px solid #e2e8f0",
-            borderRadius: 10,
-            padding: 10,
-            color: "#334155",
-            fontSize: 12,
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word",
-          }}
-        >
-          {metaPreview}
-        </pre>
+      {details.length > 0 && (
+        <div className="row" style={{ marginTop: 8, gap: 8, flexWrap: "wrap" }}>
+          {details.map((detail) => (
+            <span
+              key={`${item.id}-${detail}`}
+              style={{
+                borderRadius: 999,
+                padding: "4px 10px",
+                fontSize: 12,
+                fontWeight: 600,
+                background: "#e2e8f0",
+                color: "#334155",
+              }}
+            >
+              {detail}
+            </span>
+          ))}
+        </div>
       )}
     </section>
   );
@@ -266,14 +408,27 @@ const UserDetailsPage = () => {
   const [deactivateSubmitting, setDeactivateSubmitting] = useState(false);
   const [deactivateError, setDeactivateError] = useState<string | null>(null);
   const [deactivateSuccess, setDeactivateSuccess] = useState<string | null>(null);
-  const [showAllPurchaseHistory, setShowAllPurchaseHistory] = useState(false);
-  const [showAllLicenses, setShowAllLicenses] = useState(false);
-  const [showAllDownloadHistory, setShowAllDownloadHistory] = useState(false);
-  const [showAllRecentActivity, setShowAllRecentActivity] = useState(false);
+
+  const [purchaseHistorySection, setPurchaseHistorySection] = useState<HistorySectionState<UserPurchaseItem>>(
+    () => createEmptyHistorySectionState<UserPurchaseItem>(),
+  );
+  const [licensesSection, setLicensesSection] = useState<HistorySectionState<UserLicenseItem>>(
+    () => createEmptyHistorySectionState<UserLicenseItem>(),
+  );
+  const [downloadHistorySection, setDownloadHistorySection] = useState<
+    HistorySectionState<UserDownloadHistoryItem>
+  >(() => createEmptyHistorySectionState<UserDownloadHistoryItem>());
+  const [recentActivitySection, setRecentActivitySection] = useState<HistorySectionState<AuditLog>>(
+    () => createEmptyHistorySectionState<AuditLog>(),
+  );
 
   const loadDetails = useCallback(async () => {
     if (!parsedUserId) {
       setDetails(null);
+      setPurchaseHistorySection(createEmptyHistorySectionState<UserPurchaseItem>());
+      setLicensesSection(createEmptyHistorySectionState<UserLicenseItem>());
+      setDownloadHistorySection(createEmptyHistorySectionState<UserDownloadHistoryItem>());
+      setRecentActivitySection(createEmptyHistorySectionState<AuditLog>());
       setError("Invalid user ID.");
       setLoading(false);
       return;
@@ -285,8 +440,16 @@ const UserDetailsPage = () => {
     try {
       const response = await getUser(parsedUserId);
       setDetails(response);
+      setLicensesSection(createHistorySectionState(response.licenses_preview));
+      setPurchaseHistorySection(createHistorySectionState(response.purchase_history_preview));
+      setDownloadHistorySection(createHistorySectionState(response.download_history_preview));
+      setRecentActivitySection(createHistorySectionState(response.recent_activity_preview));
     } catch (loadError) {
       setDetails(null);
+      setLicensesSection(createEmptyHistorySectionState<UserLicenseItem>());
+      setPurchaseHistorySection(createEmptyHistorySectionState<UserPurchaseItem>());
+      setDownloadHistorySection(createEmptyHistorySectionState<UserDownloadHistoryItem>());
+      setRecentActivitySection(createEmptyHistorySectionState<AuditLog>());
       setError(getApiErrorMessage(loadError, "Unable to load user details."));
     } finally {
       setLoading(false);
@@ -297,52 +460,115 @@ const UserDetailsPage = () => {
     void loadDetails();
   }, [loadDetails]);
 
-  useEffect(() => {
-    setShowAllPurchaseHistory(false);
-    setShowAllLicenses(false);
-    setShowAllDownloadHistory(false);
-    setShowAllRecentActivity(false);
-  }, [parsedUserId]);
-
-  const visiblePurchaseHistory = useMemo(() => {
-    if (!details) {
-      return [];
+  async function loadHistoryPage<TItem>(
+    params: {
+      sectionLabel: string;
+      currentPage: number;
+      setSection: Dispatch<SetStateAction<HistorySectionState<TItem>>>;
+      fetchPage: (
+        userId: number,
+        page: number,
+        size: number,
+      ) => Promise<PaginatedHistoryResponse<TItem>>;
+      append: boolean;
+    },
+  ): Promise<void> {
+    if (!parsedUserId) {
+      return;
     }
 
-    return showAllPurchaseHistory
-      ? details.purchase_history
-      : details.purchase_history.slice(0, HISTORY_PREVIEW_LIMIT);
-  }, [details, showAllPurchaseHistory]);
+    const nextPage = params.append ? params.currentPage + 1 : 1;
 
-  const visibleLicenses = useMemo(() => {
-    if (!details) {
-      return [];
+    params.setSection((current) => ({
+      ...current,
+      isExpanded: true,
+      isLoading: true,
+      error: null,
+    }));
+
+    try {
+      const response = await params.fetchPage(parsedUserId, nextPage, HISTORY_PAGE_SIZE);
+      params.setSection((current) => ({
+        ...current,
+        items: params.append ? [...current.items, ...response.items] : response.items,
+        total: response.total,
+        page: response.page,
+        isExpanded: true,
+        isLoading: false,
+        error: null,
+      }));
+    } catch (loadError) {
+      params.setSection((current) => ({
+        ...current,
+        isLoading: false,
+        error: getApiErrorMessage(loadError, `Unable to load ${params.sectionLabel}.`),
+      }));
+    }
+  }
+
+  async function toggleHistorySection<TItem>(
+    params: {
+      sectionLabel: string;
+      state: HistorySectionState<TItem>;
+      setSection: Dispatch<SetStateAction<HistorySectionState<TItem>>>;
+      fetchPage: (
+        userId: number,
+        page: number,
+        size: number,
+      ) => Promise<PaginatedHistoryResponse<TItem>>;
+    },
+  ): Promise<void> {
+    if (params.state.isExpanded) {
+      params.setSection((current) => ({
+        ...current,
+        isExpanded: false,
+        error: null,
+      }));
+      return;
     }
 
-    return showAllLicenses
-      ? details.licenses
-      : details.licenses.slice(0, HISTORY_PREVIEW_LIMIT);
-  }, [details, showAllLicenses]);
-
-  const visibleDownloadHistory = useMemo(() => {
-    if (!details) {
-      return [];
+    if (params.state.page === 0 && params.state.total > HISTORY_PREVIEW_LIMIT) {
+      await loadHistoryPage({
+        sectionLabel: params.sectionLabel,
+        currentPage: 0,
+        setSection: params.setSection,
+        fetchPage: params.fetchPage,
+        append: false,
+      });
+      return;
     }
 
-    return showAllDownloadHistory
-      ? details.download_history
-      : details.download_history.slice(0, HISTORY_PREVIEW_LIMIT);
-  }, [details, showAllDownloadHistory]);
+    params.setSection((current) => ({
+      ...current,
+      isExpanded: true,
+      error: null,
+    }));
+  }
 
-  const visibleRecentActivity = useMemo(() => {
-    if (!details) {
-      return [];
+  async function loadMoreHistorySection<TItem>(
+    params: {
+      sectionLabel: string;
+      state: HistorySectionState<TItem>;
+      setSection: Dispatch<SetStateAction<HistorySectionState<TItem>>>;
+      fetchPage: (
+        userId: number,
+        page: number,
+        size: number,
+      ) => Promise<PaginatedHistoryResponse<TItem>>;
+    },
+  ): Promise<void> {
+    if (params.state.isLoading || params.state.items.length >= params.state.total) {
+      return;
     }
 
-    return showAllRecentActivity
-      ? details.recent_activity
-      : details.recent_activity.slice(0, HISTORY_PREVIEW_LIMIT);
-  }, [details, showAllRecentActivity]);
+    await loadHistoryPage({
+      sectionLabel: params.sectionLabel,
+      currentPage: params.state.page,
+      setSection: params.setSection,
+      fetchPage: params.fetchPage,
+      append: true,
+    });
+  }
 
   const handleDeactivate = async () => {
     if (!parsedUserId || !details || !details.is_active) {
@@ -371,6 +597,24 @@ const UserDetailsPage = () => {
       setDeactivateSubmitting(false);
     }
   };
+
+  const visiblePurchaseHistory = purchaseHistorySection.isExpanded
+    ? purchaseHistorySection.items
+    : purchaseHistorySection.items.slice(0, HISTORY_PREVIEW_LIMIT);
+  const visibleLicenses = licensesSection.isExpanded
+    ? licensesSection.items
+    : licensesSection.items.slice(0, HISTORY_PREVIEW_LIMIT);
+  const visibleDownloadHistory = downloadHistorySection.isExpanded
+    ? downloadHistorySection.items
+    : downloadHistorySection.items.slice(0, HISTORY_PREVIEW_LIMIT);
+  const visibleRecentActivity = recentActivitySection.isExpanded
+    ? recentActivitySection.items
+    : recentActivitySection.items.slice(0, HISTORY_PREVIEW_LIMIT);
+
+  const purchaseHistoryHasMore = purchaseHistorySection.total > HISTORY_PREVIEW_LIMIT;
+  const licensesHasMore = licensesSection.total > HISTORY_PREVIEW_LIMIT;
+  const downloadHistoryHasMore = downloadHistorySection.total > HISTORY_PREVIEW_LIMIT;
+  const recentActivityHasMore = recentActivitySection.total > HISTORY_PREVIEW_LIMIT;
 
   return (
     <div className="page">
@@ -482,11 +726,13 @@ const UserDetailsPage = () => {
             <div>
               <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>Purchase History</h2>
               <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
-                Most recent purchase orders for this user (up to 100 records).
+                Showing the latest 5 purchases first. Load fuller history on demand.
               </p>
             </div>
 
-            {details.purchase_history.length === 0 ? (
+            {purchaseHistorySection.error && <div className="alert">{purchaseHistorySection.error}</div>}
+
+            {visiblePurchaseHistory.length === 0 ? (
               <p style={{ color: "#475569", margin: 0 }}>No purchases found.</p>
             ) : (
               <>
@@ -513,19 +759,55 @@ const UserDetailsPage = () => {
                   </table>
                 </div>
 
-                {details.purchase_history.length > HISTORY_PREVIEW_LIMIT && (
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => setShowAllPurchaseHistory((current) => !current)}
-                    style={{ alignSelf: "flex-start" }}
-                  >
-                    {showAllPurchaseHistory
-                      ? "Show Less Purchase History"
-                      : `Show Remaining Purchase History (${
-                          details.purchase_history.length - HISTORY_PREVIEW_LIMIT
-                        })`}
-                  </button>
+                {purchaseHistorySection.isExpanded && (
+                  <p style={{ margin: 0, color: "#475569" }}>
+                    Showing {purchaseHistorySection.items.length} of {purchaseHistorySection.total} purchase records.
+                  </p>
+                )}
+
+                {purchaseHistoryHasMore && (
+                  <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() =>
+                        void toggleHistorySection({
+                          sectionLabel: "purchase history",
+                          state: purchaseHistorySection,
+                          setSection: setPurchaseHistorySection,
+                          fetchPage: getUserPurchaseHistory,
+                        })
+                      }
+                      disabled={purchaseHistorySection.isLoading}
+                    >
+                      {purchaseHistorySection.isExpanded
+                        ? "Show Less Purchase History"
+                        : purchaseHistorySection.isLoading
+                          ? "Loading Purchase History..."
+                          : `View Full Purchase History (${
+                              purchaseHistorySection.total - HISTORY_PREVIEW_LIMIT
+                            } more)`}
+                    </button>
+
+                    {purchaseHistorySection.isExpanded &&
+                      purchaseHistorySection.items.length < purchaseHistorySection.total && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() =>
+                            void loadMoreHistorySection({
+                              sectionLabel: "purchase history",
+                              state: purchaseHistorySection,
+                              setSection: setPurchaseHistorySection,
+                              fetchPage: getUserPurchaseHistory,
+                            })
+                          }
+                          disabled={purchaseHistorySection.isLoading}
+                        >
+                          {purchaseHistorySection.isLoading ? "Loading..." : "Load More Purchases"}
+                        </button>
+                      )}
+                  </div>
                 )}
               </>
             )}
@@ -535,31 +817,65 @@ const UserDetailsPage = () => {
             <div>
               <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>Licenses</h2>
               <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
-                Latest submitted licenses and verification outcomes.
+                Showing the latest 5 licenses first. Load fuller history on demand.
               </p>
             </div>
 
-            {details.licenses.length === 0 ? (
+            {licensesSection.error && <div className="alert">{licensesSection.error}</div>}
+
+            {visibleLicenses.length === 0 ? (
               <p style={{ color: "#475569", margin: 0 }}>No licenses found.</p>
             ) : (
               <>
-                {visibleLicenses.map((license, index) =>
-                  renderLicense(license as UserLicenseItem, index),
+                {visibleLicenses.map((license, index) => renderLicense(license, index))}
+
+                {licensesSection.isExpanded && (
+                  <p style={{ margin: 0, color: "#475569" }}>
+                    Showing {licensesSection.items.length} of {licensesSection.total} license records.
+                  </p>
                 )}
 
-                {details.licenses.length > HISTORY_PREVIEW_LIMIT && (
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => setShowAllLicenses((current) => !current)}
-                    style={{ alignSelf: "flex-start" }}
-                  >
-                    {showAllLicenses
-                      ? "Show Less Licenses"
-                      : `Show Remaining Licenses (${
-                          details.licenses.length - HISTORY_PREVIEW_LIMIT
-                        })`}
-                  </button>
+                {licensesHasMore && (
+                  <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() =>
+                        void toggleHistorySection({
+                          sectionLabel: "licenses",
+                          state: licensesSection,
+                          setSection: setLicensesSection,
+                          fetchPage: getUserLicenses,
+                        })
+                      }
+                      disabled={licensesSection.isLoading}
+                    >
+                      {licensesSection.isExpanded
+                        ? "Show Less Licenses"
+                        : licensesSection.isLoading
+                          ? "Loading Licenses..."
+                          : `View Full Licenses (${licensesSection.total - HISTORY_PREVIEW_LIMIT} more)`}
+                    </button>
+
+                    {licensesSection.isExpanded &&
+                      licensesSection.items.length < licensesSection.total && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() =>
+                            void loadMoreHistorySection({
+                              sectionLabel: "licenses",
+                              state: licensesSection,
+                              setSection: setLicensesSection,
+                              fetchPage: getUserLicenses,
+                            })
+                          }
+                          disabled={licensesSection.isLoading}
+                        >
+                          {licensesSection.isLoading ? "Loading..." : "Load More Licenses"}
+                        </button>
+                      )}
+                  </div>
                 )}
               </>
             )}
@@ -569,11 +885,13 @@ const UserDetailsPage = () => {
             <div>
               <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>Download History</h2>
               <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
-                Most recent lead downloads for this user (up to 100 records).
+                Showing the latest 5 downloads first. Load fuller history on demand.
               </p>
             </div>
 
-            {details.download_history.length === 0 ? (
+            {downloadHistorySection.error && <div className="alert">{downloadHistorySection.error}</div>}
+
+            {visibleDownloadHistory.length === 0 ? (
               <p style={{ color: "#475569", margin: 0 }}>No lead downloads recorded.</p>
             ) : (
               <>
@@ -597,19 +915,55 @@ const UserDetailsPage = () => {
                   </table>
                 </div>
 
-                {details.download_history.length > HISTORY_PREVIEW_LIMIT && (
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => setShowAllDownloadHistory((current) => !current)}
-                    style={{ alignSelf: "flex-start" }}
-                  >
-                    {showAllDownloadHistory
-                      ? "Show Less Download History"
-                      : `Show Remaining Download History (${
-                          details.download_history.length - HISTORY_PREVIEW_LIMIT
-                        })`}
-                  </button>
+                {downloadHistorySection.isExpanded && (
+                  <p style={{ margin: 0, color: "#475569" }}>
+                    Showing {downloadHistorySection.items.length} of {downloadHistorySection.total} download records.
+                  </p>
+                )}
+
+                {downloadHistoryHasMore && (
+                  <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() =>
+                        void toggleHistorySection({
+                          sectionLabel: "download history",
+                          state: downloadHistorySection,
+                          setSection: setDownloadHistorySection,
+                          fetchPage: getUserDownloadHistory,
+                        })
+                      }
+                      disabled={downloadHistorySection.isLoading}
+                    >
+                      {downloadHistorySection.isExpanded
+                        ? "Show Less Download History"
+                        : downloadHistorySection.isLoading
+                          ? "Loading Download History..."
+                          : `View Full Download History (${
+                              downloadHistorySection.total - HISTORY_PREVIEW_LIMIT
+                            } more)`}
+                    </button>
+
+                    {downloadHistorySection.isExpanded &&
+                      downloadHistorySection.items.length < downloadHistorySection.total && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() =>
+                            void loadMoreHistorySection({
+                              sectionLabel: "download history",
+                              state: downloadHistorySection,
+                              setSection: setDownloadHistorySection,
+                              fetchPage: getUserDownloadHistory,
+                            })
+                          }
+                          disabled={downloadHistorySection.isLoading}
+                        >
+                          {downloadHistorySection.isLoading ? "Loading..." : "Load More Downloads"}
+                        </button>
+                      )}
+                  </div>
                 )}
               </>
             )}
@@ -619,29 +973,67 @@ const UserDetailsPage = () => {
             <div>
               <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>Recent Activity</h2>
               <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
-                Latest audit events initiated by this user (up to 100 records).
+                Showing the latest 5 audit events first. Load fuller history on demand.
               </p>
             </div>
 
-            {details.recent_activity.length === 0 ? (
+            {recentActivitySection.error && <div className="alert">{recentActivitySection.error}</div>}
+
+            {visibleRecentActivity.length === 0 ? (
               <p style={{ color: "#475569", margin: 0 }}>No recent activity found.</p>
             ) : (
               <>
                 {visibleRecentActivity.map(renderActivityRow)}
 
-                {details.recent_activity.length > HISTORY_PREVIEW_LIMIT && (
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => setShowAllRecentActivity((current) => !current)}
-                    style={{ alignSelf: "flex-start" }}
-                  >
-                    {showAllRecentActivity
-                      ? "Show Less Recent Activity"
-                      : `Show Remaining Recent Activity (${
-                          details.recent_activity.length - HISTORY_PREVIEW_LIMIT
-                        })`}
-                  </button>
+                {recentActivitySection.isExpanded && (
+                  <p style={{ margin: 0, color: "#475569" }}>
+                    Showing {recentActivitySection.items.length} of {recentActivitySection.total} activity records.
+                  </p>
+                )}
+
+                {recentActivityHasMore && (
+                  <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() =>
+                        void toggleHistorySection({
+                          sectionLabel: "recent activity",
+                          state: recentActivitySection,
+                          setSection: setRecentActivitySection,
+                          fetchPage: getUserRecentActivity,
+                        })
+                      }
+                      disabled={recentActivitySection.isLoading}
+                    >
+                      {recentActivitySection.isExpanded
+                        ? "Show Less Recent Activity"
+                        : recentActivitySection.isLoading
+                          ? "Loading Recent Activity..."
+                          : `View Full Recent Activity (${
+                              recentActivitySection.total - HISTORY_PREVIEW_LIMIT
+                            } more)`}
+                    </button>
+
+                    {recentActivitySection.isExpanded &&
+                      recentActivitySection.items.length < recentActivitySection.total && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() =>
+                            void loadMoreHistorySection({
+                              sectionLabel: "recent activity",
+                              state: recentActivitySection,
+                              setSection: setRecentActivitySection,
+                              fetchPage: getUserRecentActivity,
+                            })
+                          }
+                          disabled={recentActivitySection.isLoading}
+                        >
+                          {recentActivitySection.isLoading ? "Loading..." : "Load More Activity"}
+                        </button>
+                      )}
+                  </div>
                 )}
               </>
             )}
