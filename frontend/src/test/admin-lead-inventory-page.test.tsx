@@ -42,6 +42,14 @@ vi.mock("@/components/admin/ImportModal", () => ({
 }));
 
 describe("LeadInventoryPage", () => {
+  const deferred = <T,>() => {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((res) => {
+      resolve = res;
+    });
+    return { promise, resolve };
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
 
@@ -85,7 +93,14 @@ describe("LeadInventoryPage", () => {
     expect(screen.getByText("verified")).toBeInTheDocument();
     expect(screen.getByText("rejected")).toBeInTheDocument();
 
-    expect(getLeadInventory).toHaveBeenCalledWith(1, 20, expect.any(Object));
+    expect(getLeadInventory).toHaveBeenCalledWith(
+      1,
+      20,
+      expect.any(Object),
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+      }),
+    );
   });
 
   it("applies search filters and requests updated inventory", async () => {
@@ -103,6 +118,9 @@ describe("LeadInventoryPage", () => {
         1,
         20,
         expect.objectContaining({ search: "alice" }),
+        expect.objectContaining({
+          signal: expect.any(AbortSignal),
+        }),
       );
     });
   });
@@ -156,5 +174,89 @@ describe("LeadInventoryPage", () => {
         "Import completed. Inserted 4 leads, 1 duplicates, 1 failed rows.",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("ignores stale inventory responses after filters change quickly", async () => {
+    const firstInventory = deferred<{
+      items: Array<Record<string, unknown>>;
+      total: number;
+      page: number;
+      size: number;
+    }>();
+    const firstSummary = deferred<Array<{ status: "pending" | "verified" | "rejected"; count: number }>>();
+
+    getLeadInventory
+      .mockImplementationOnce(() => firstInventory.promise)
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 202,
+            state_code: "TX",
+            first_name: "Fresh",
+            last_name: "Result",
+            mobile_phone: "555-222-0000",
+            source: "manual_entry",
+            created_at: "2026-02-11T12:00:00Z",
+            download_count: 0,
+            assigned_advisor_id: null,
+            assigned_advisor_name: null,
+            assigned_advisor_email: null,
+            purchase_id: null,
+            purchase_reference: null,
+          },
+        ],
+        total: 1,
+        page: 1,
+        size: 20,
+      });
+    getLicenseStatusSummary
+      .mockImplementationOnce(() => firstSummary.promise)
+      .mockResolvedValueOnce([
+        { status: "pending", count: 1 },
+        { status: "verified", count: 0 },
+        { status: "rejected", count: 0 },
+      ]);
+
+    render(<LeadInventoryPage />);
+
+    fireEvent.change(screen.getByLabelText("Search"), {
+      target: { value: "fresh" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply Filters" }));
+
+    expect(await screen.findByText("Fresh Result")).toBeInTheDocument();
+
+    firstInventory.resolve({
+      items: [
+        {
+          id: 101,
+          state_code: "CA",
+          first_name: "Stale",
+          last_name: "Result",
+          mobile_phone: "555-111-0000",
+          source: "manual_entry",
+          created_at: "2026-02-10T12:00:00Z",
+          download_count: 0,
+          assigned_advisor_id: null,
+          assigned_advisor_name: null,
+          assigned_advisor_email: null,
+          purchase_id: null,
+          purchase_reference: null,
+        },
+      ],
+      total: 1,
+      page: 1,
+      size: 20,
+    });
+    firstSummary.resolve([
+      { status: "pending", count: 9 },
+      { status: "verified", count: 0 },
+      { status: "rejected", count: 0 },
+    ]);
+
+    await waitFor(() => {
+      expect(screen.queryByText("Stale Result")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("Fresh Result")).toBeInTheDocument();
   });
 });

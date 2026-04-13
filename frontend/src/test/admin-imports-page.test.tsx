@@ -41,6 +41,14 @@ vi.mock("@/components/admin/ImportModal", () => ({
 }));
 
 describe("ImportsPage", () => {
+  const deferred = <T,>() => {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((res) => {
+      resolve = res;
+    });
+    return { promise, resolve };
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
 
@@ -81,6 +89,9 @@ describe("ImportsPage", () => {
       },
       1,
       10,
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+      }),
     );
   });
 
@@ -101,5 +112,74 @@ describe("ImportsPage", () => {
     await waitFor(() => {
       expect(getAuditLogs).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it("ignores stale history responses after a newer import-triggered refresh", async () => {
+    const firstHistory = deferred<{
+      items: Array<Record<string, unknown>>;
+      total: number;
+      page: number;
+      size: number;
+    }>();
+
+    getAuditLogs
+      .mockImplementationOnce(() => firstHistory.promise)
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 2,
+            actor_user_id: 9,
+            action: "lead_bulk_import",
+            entity_type: "LeadImport",
+            entity_id: null,
+            created_at: "2026-02-13T12:30:00Z",
+            ip_address: "127.0.0.1",
+            meta_data: {
+              scanned: 12,
+              inserted: 10,
+              skipped_duplicates: 1,
+              failed: 1,
+            },
+          },
+        ],
+        total: 1,
+        page: 1,
+        size: 10,
+      });
+
+    render(<ImportsPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Run Import" }));
+    fireEvent.click(screen.getByRole("button", { name: "Complete Import" }));
+
+    expect(await screen.findByText("12 rows scanned")).toBeInTheDocument();
+
+    firstHistory.resolve({
+      items: [
+        {
+          id: 1,
+          actor_user_id: 9,
+          action: "lead_bulk_import",
+          entity_type: "LeadImport",
+          entity_id: null,
+          created_at: "2026-02-12T12:30:00Z",
+          ip_address: "127.0.0.1",
+          meta_data: {
+            scanned: 10,
+            inserted: 8,
+            skipped_duplicates: 1,
+            failed: 1,
+          },
+        },
+      ],
+      total: 1,
+      page: 1,
+      size: 10,
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText("10 rows scanned")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("12 rows scanned")).toBeInTheDocument();
   });
 });

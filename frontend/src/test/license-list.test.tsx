@@ -26,6 +26,14 @@ const rejectedLicense: License = {
 };
 
 describe("LicenseList", () => {
+  const deferred = <T,>() => {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((res) => {
+      resolve = res;
+    });
+    return { promise, resolve };
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getMyLicenses).mockResolvedValue([rejectedLicense]);
@@ -110,5 +118,38 @@ describe("LicenseList", () => {
     expect(
       screen.queryByText("Rejection reason: Document is blurry"),
     ).not.toBeInTheDocument();
+  });
+
+  it("ignores stale license loads after a refresh-triggered reload", async () => {
+    const firstLoad = deferred<License[]>();
+    const freshLicense: License = {
+      ...rejectedLicense,
+      id: 30,
+      state: "CA",
+      license_number: "FRESH-CA-30",
+    };
+    const staleLicense: License = {
+      ...rejectedLicense,
+      id: 31,
+      state: "TX",
+      license_number: "STALE-TX-31",
+    };
+
+    vi.mocked(getMyLicenses)
+      .mockImplementationOnce(() => firstLoad.promise)
+      .mockResolvedValueOnce([freshLicense]);
+
+    const { rerender } = render(<LicenseList refreshKey={0} />);
+
+    rerender(<LicenseList refreshKey={1} />);
+
+    expect(await screen.findByText("CA • FRESH-CA-30")).toBeInTheDocument();
+
+    firstLoad.resolve([staleLicense]);
+
+    await waitFor(() => {
+      expect(screen.queryByText("TX • STALE-TX-31")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("CA • FRESH-CA-30")).toBeInTheDocument();
   });
 });

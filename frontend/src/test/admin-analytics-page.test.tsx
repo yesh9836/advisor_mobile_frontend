@@ -14,12 +14,26 @@ describe("AnalyticsPage", () => {
     vi.clearAllMocks();
   });
 
+  const buildAnalyticsOverview = (overrides: Record<string, unknown> = {}) => ({
+    monthly_revenue: [],
+    monthly_revenue_total_months: 0,
+    plan_breakdown: [],
+    state_distribution: [],
+    user_growth: [],
+    user_growth_total_months: 0,
+    user_growth_page: 1,
+    user_growth_size: 6,
+    user_growth_total_pages: 1,
+    ...overrides,
+  });
+
   it("renders all analytics charts on success", async () => {
-    getAnalyticsOverview.mockResolvedValue({
+    getAnalyticsOverview.mockResolvedValue(buildAnalyticsOverview({
       monthly_revenue: [
         { month: "2026-01", revenue_cents: 120000 },
         { month: "2026-02", revenue_cents: 90000 },
       ],
+      monthly_revenue_total_months: 2,
       plan_breakdown: [
         {
           package_name: "Starter",
@@ -37,7 +51,8 @@ describe("AnalyticsPage", () => {
         { month: "2026-01", new_users: 3 },
         { month: "2026-02", new_users: 5 },
       ],
-    });
+      user_growth_total_months: 2,
+    }));
 
     render(<AnalyticsPage />);
 
@@ -57,12 +72,7 @@ describe("AnalyticsPage", () => {
   });
 
   it("shows empty states when all datasets are empty", async () => {
-    getAnalyticsOverview.mockResolvedValue({
-      monthly_revenue: [],
-      plan_breakdown: [],
-      state_distribution: [],
-      user_growth: [],
-    });
+    getAnalyticsOverview.mockResolvedValue(buildAnalyticsOverview());
 
     render(<AnalyticsPage />);
 
@@ -81,10 +91,8 @@ describe("AnalyticsPage", () => {
   });
 
   it("shows only the latest 12 months of monthly revenue", async () => {
-    getAnalyticsOverview.mockResolvedValue({
+    getAnalyticsOverview.mockResolvedValue(buildAnalyticsOverview({
       monthly_revenue: [
-        { month: "2025-01", revenue_cents: 10000 },
-        { month: "2025-02", revenue_cents: 20000 },
         { month: "2025-03", revenue_cents: 30000 },
         { month: "2025-04", revenue_cents: 40000 },
         { month: "2025-05", revenue_cents: 50000 },
@@ -98,10 +106,8 @@ describe("AnalyticsPage", () => {
         { month: "2026-01", revenue_cents: 130000 },
         { month: "2026-02", revenue_cents: 140000 },
       ],
-      plan_breakdown: [],
-      state_distribution: [],
-      user_growth: [],
-    });
+      monthly_revenue_total_months: 14,
+    }));
 
     render(<AnalyticsPage />);
 
@@ -112,21 +118,39 @@ describe("AnalyticsPage", () => {
     expect(screen.getByText("Feb 2026: $1,400.00")).toBeInTheDocument();
   });
 
-  it("pages user growth in 6-month windows starting with the latest window", async () => {
-    getAnalyticsOverview.mockResolvedValue({
-      monthly_revenue: [],
-      plan_breakdown: [],
-      state_distribution: [],
-      user_growth: [
-        { month: "2025-01", new_users: 1 },
-        { month: "2025-02", new_users: 2 },
-        { month: "2025-03", new_users: 3 },
-        { month: "2025-04", new_users: 4 },
-        { month: "2025-05", new_users: 5 },
-        { month: "2025-06", new_users: 6 },
-        { month: "2025-07", new_users: 7 },
-        { month: "2025-08", new_users: 8 },
-      ],
+  it("pages user growth via the bounded backend contract", async () => {
+    getAnalyticsOverview.mockImplementation((options?: { userGrowthPage?: number }) => {
+      if (options?.userGrowthPage === 2) {
+        return Promise.resolve(
+          buildAnalyticsOverview({
+            user_growth: [
+              { month: "2025-01", new_users: 1 },
+              { month: "2025-02", new_users: 2 },
+            ],
+            user_growth_total_months: 8,
+            user_growth_page: 2,
+            user_growth_size: 6,
+            user_growth_total_pages: 2,
+          }),
+        );
+      }
+
+      return Promise.resolve(
+        buildAnalyticsOverview({
+          user_growth: [
+            { month: "2025-03", new_users: 3 },
+            { month: "2025-04", new_users: 4 },
+            { month: "2025-05", new_users: 5 },
+            { month: "2025-06", new_users: 6 },
+            { month: "2025-07", new_users: 7 },
+            { month: "2025-08", new_users: 8 },
+          ],
+          user_growth_total_months: 8,
+          user_growth_page: 1,
+          user_growth_size: 6,
+          user_growth_total_pages: 2,
+        }),
+      );
     });
 
     render(<AnalyticsPage />);
@@ -154,5 +178,21 @@ describe("AnalyticsPage", () => {
     expect(
       await screen.findByText("Showing Mar 2025 - Aug 2025 • Page 1 of 2 • 8 total months"),
     ).toBeInTheDocument();
+    expect(getAnalyticsOverview).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        monthlyRevenueLimit: 12,
+        userGrowthPage: 1,
+        userGrowthSize: 6,
+      }),
+    );
+    expect(getAnalyticsOverview).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        monthlyRevenueLimit: 12,
+        userGrowthPage: 2,
+        userGrowthSize: 6,
+      }),
+    );
   });
 });

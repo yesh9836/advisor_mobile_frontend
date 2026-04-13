@@ -137,15 +137,29 @@ describe("admin API contract", () => {
   it("getAnalyticsOverview uses GET /admin/analytics", async () => {
     const payload = {
       monthly_revenue: [],
+      monthly_revenue_total_months: 0,
       plan_breakdown: [],
       state_distribution: [],
       user_growth: [],
+      user_growth_total_months: 0,
+      user_growth_page: 1,
+      user_growth_size: 6,
+      user_growth_total_pages: 1,
     };
     mockedApiClient.get.mockResolvedValueOnce({ data: payload });
 
-    await expect(getAnalyticsOverview()).resolves.toEqual(payload);
+    await expect(
+      getAnalyticsOverview({ monthlyRevenueLimit: 12, userGrowthPage: 2, userGrowthSize: 6 }),
+    ).resolves.toEqual(payload);
 
-    expect(mockedApiClient.get).toHaveBeenCalledWith("/admin/analytics");
+    expect(mockedApiClient.get).toHaveBeenCalledWith("/admin/analytics", {
+      params: {
+        monthly_revenue_limit: 12,
+        user_growth_page: 2,
+        user_growth_size: 6,
+      },
+      signal: undefined,
+    });
   });
 
   it("getAdminPlans sends normalized filters", async () => {
@@ -411,7 +425,9 @@ describe("admin API contract", () => {
 
     await expect(getLicenseStatusSummary()).resolves.toEqual(summary);
 
-    expect(mockedApiClient.get).toHaveBeenCalledWith("/admin/license-status-summary");
+    expect(mockedApiClient.get).toHaveBeenCalledWith("/admin/license-status-summary", {
+      signal: undefined,
+    });
   });
 
   it("createLeadAsAdmin posts normalized lead payload", async () => {
