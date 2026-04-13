@@ -203,6 +203,39 @@ def test_license_submission_rejects_invalid_us_state_code(
 
 
 @pytest.mark.integration
+def test_license_submission_accepts_district_of_columbia(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LicenseDcAdvisor123!",
+        email="advisor.dc@example.com",
+        name="District Advisor",
+    )
+    advisor_headers = auth_headers(advisor.email, "LicenseDcAdvisor123!")
+
+    response = client.post(
+        "/api/v1/licenses/",
+        headers=advisor_headers,
+        data={"state": "dc", "license_number": "DC-LIC-1001", "license_type": "Series 65"},
+        files={"document": ("license.pdf", b"%PDF-1.4 district", "application/pdf")},
+    )
+
+    assert response.status_code == 201, response.text
+    payload = response.json()
+    assert_public_license_payload(payload)
+    assert payload["state"] == "DC"
+    assert payload["verification_status"] == "pending"
+
+    stored = db.query(License).filter(License.user_id == advisor.id).one()
+    assert stored.state == "DC"
+    assert stored.license_number == "DC-LIC-1001"
+
+
+@pytest.mark.integration
 def test_license_submission_allows_same_state_for_different_advisors(
     client,
     user_factory,
