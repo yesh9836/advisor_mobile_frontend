@@ -20,17 +20,9 @@ from app.services.metrics_service import MetricsService
 from app.services.notification_service import NotificationService
 from app.utils.csv_generator import LEAD_CSV_REQUIRED_VALUE_FIELDS, generate_leads_csv_stream
 from app.utils.phone import normalize_phone_number
+from app.utils.us_states import US_STATE_CODES
 
 logger = logging.getLogger(__name__)
-
-US_STATE_CODES = {
-    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
-    "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
-    "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
-    "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
-    "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
-    "DC",
-}
 
 DEFAULT_DOWNLOAD_SIZE = 50
 SEARCH_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")

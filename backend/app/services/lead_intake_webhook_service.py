@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.lead import Lead, LeadIntakeWebhookEvent
 from app.schemas.lead import LeadCreate
-from app.services.lead_service import LeadService, US_STATE_CODES
+from app.services.lead_service import LeadService
+from app.utils.us_states import US_STATE_CODES, US_STATE_NAME_TO_CODE
 from app.utils.phone import normalize_phone_number
 
 logger = logging.getLogger(__name__)
@@ -35,61 +36,6 @@ _WPFORMS_META_KEYS = {
     "date",
     "time",
 }
-
-_STATE_NAME_TO_CODE = {
-    "alabama": "AL",
-    "alaska": "AK",
-    "arizona": "AZ",
-    "arkansas": "AR",
-    "california": "CA",
-    "colorado": "CO",
-    "connecticut": "CT",
-    "delaware": "DE",
-    "district of columbia": "DC",
-    "florida": "FL",
-    "georgia": "GA",
-    "hawaii": "HI",
-    "idaho": "ID",
-    "illinois": "IL",
-    "indiana": "IN",
-    "iowa": "IA",
-    "kansas": "KS",
-    "kentucky": "KY",
-    "louisiana": "LA",
-    "maine": "ME",
-    "maryland": "MD",
-    "massachusetts": "MA",
-    "michigan": "MI",
-    "minnesota": "MN",
-    "mississippi": "MS",
-    "missouri": "MO",
-    "montana": "MT",
-    "nebraska": "NE",
-    "nevada": "NV",
-    "new hampshire": "NH",
-    "new jersey": "NJ",
-    "new mexico": "NM",
-    "new york": "NY",
-    "north carolina": "NC",
-    "north dakota": "ND",
-    "ohio": "OH",
-    "oklahoma": "OK",
-    "oregon": "OR",
-    "pennsylvania": "PA",
-    "rhode island": "RI",
-    "south carolina": "SC",
-    "south dakota": "SD",
-    "tennessee": "TN",
-    "texas": "TX",
-    "utah": "UT",
-    "vermont": "VT",
-    "virginia": "VA",
-    "washington": "WA",
-    "west virginia": "WV",
-    "wisconsin": "WI",
-    "wyoming": "WY",
-}
-
 
 class LeadIntakeWebhookService:
     PROVIDER = "wpforms"
@@ -723,8 +669,8 @@ class LeadIntakeWebhookService:
             return upper
 
         normalized_name = LeadIntakeWebhookService._canonicalize_key(clean)
-        if normalized_name in _STATE_NAME_TO_CODE:
-            return _STATE_NAME_TO_CODE[normalized_name]
+        if normalized_name in US_STATE_NAME_TO_CODE:
+            return US_STATE_NAME_TO_CODE[normalized_name]
         return upper
 
     @staticmethod
