@@ -65,9 +65,17 @@ def get_dashboard_stats(
 def get_analytics_overview(
     current_admin: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
+    monthly_revenue_limit: int = Query(12, ge=1, le=24),
+    user_growth_page: int = Query(1, ge=1),
+    user_growth_size: int = Query(6, ge=1, le=12),
 ) -> AdminAnalyticsOverview:
     _ = current_admin
-    return AdminService.get_analytics_overview(db)
+    return AdminService.get_analytics_overview(
+        db,
+        monthly_revenue_limit=monthly_revenue_limit,
+        user_growth_page=user_growth_page,
+        user_growth_size=user_growth_size,
+    )
 
 
 @router.get(
