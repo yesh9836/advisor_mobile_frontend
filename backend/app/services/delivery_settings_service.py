@@ -128,21 +128,30 @@ class DeliverySettingsService:
         settings.sms_alerts_enabled = new_sms
         settings.version = current_version + 1
         settings.updated_at = datetime.now(timezone.utc)
-        db.add(settings)
-        db.commit()
-        db.refresh(settings)
+        try:
+            db.add(settings)
+            AuditService.log_event(
+                db=db,
+                actor_user_id=user_id,
+                action="delivery_settings_updated",
+                entity_type="AdvisorDeliverySettings",
+                entity_id=user_id,
+                meta_data={
+                    "changed_fields": changed_fields,
+                    "previous_version": current_version,
+                    "new_version": int(settings.version),
+                },
+            )
+            db.commit()
+            db.refresh(settings)
+        except Exception as exc:
+            db.rollback()
+            logger.error("Failed to update delivery settings for user_id=%s: %s", user_id, exc)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update delivery settings",
+            )
 
-        AuditService.log_event(
-            actor_user_id=user_id,
-            action="delivery_settings_updated",
-            entity_type="AdvisorDeliverySettings",
-            entity_id=user_id,
-            meta_data={
-                "changed_fields": changed_fields,
-                "previous_version": current_version,
-                "new_version": int(settings.version),
-            },
-        )
         logger.info(
             "Updated delivery settings for advisor user_id=%s changed=%s version=%s",
             user_id,
