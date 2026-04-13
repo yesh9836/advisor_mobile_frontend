@@ -21,13 +21,17 @@ import type {
   LeadInventoryFilters,
   LeadBulkImportResult,
   LicenseStatusSummaryItem,
-  PaginatedAdminPlans,
-  PaginatedAuditLogs,
-  PaginatedLeadInventory,
-  PaginatedOrders,
-  PaginatedUsers,
-  UserDetails,
-  UserListFilters,
+    PaginatedAdminPlans,
+    PaginatedAuditLogs,
+    PaginatedLeadInventory,
+    PaginatedOrders,
+    PaginatedUserDownloadHistory,
+    PaginatedUserLicenses,
+    PaginatedUserPurchaseHistory,
+    PaginatedUserRecentActivity,
+    PaginatedUsers,
+    UserDetails,
+    UserListFilters,
 } from "@/types/admin";
 import type { Lead } from "@/types/lead";
 import type {
@@ -281,6 +285,13 @@ const userDownloadHistoryItemSchema = z
     csv_batch_id: z.string().nullable(),
   });
 
+const userHistoryPreviewSchema = <TItem extends z.ZodTypeAny>(itemSchema: TItem) =>
+  z.looseObject({
+    items: z.array(itemSchema),
+    total: z.number(),
+    has_more: z.boolean(),
+  });
+
 const userDetailsSchema: z.ZodType<UserDetails> = z
   .looseObject({
     id: z.number(),
@@ -291,14 +302,46 @@ const userDetailsSchema: z.ZodType<UserDetails> = z
     created_at: z.string(),
     deactivated_at: z.string().nullable(),
     deactivated_by: z.number().nullable(),
-    licenses: z.array(z.union([userLicenseItemSchema, licenseSchema])),
     credit_summary: userCreditSummarySchema,
-    purchase_history: z.array(userPurchaseItemSchema),
-    download_history: z.array(userDownloadHistoryItemSchema),
-    recent_activity: z.array(auditLogSchema),
+    licenses_preview: userHistoryPreviewSchema(userLicenseItemSchema),
+    purchase_history_preview: userHistoryPreviewSchema(userPurchaseItemSchema),
+    download_history_preview: userHistoryPreviewSchema(userDownloadHistoryItemSchema),
+    recent_activity_preview: userHistoryPreviewSchema(auditLogSchema),
   });
 
 const paginatedAuditLogsSchema: z.ZodType<PaginatedAuditLogs> = z
+  .looseObject({
+    items: z.array(auditLogSchema),
+    total: z.number(),
+    page: z.number(),
+    size: z.number(),
+  });
+
+const paginatedUserLicensesSchema: z.ZodType<PaginatedUserLicenses> = z
+  .looseObject({
+    items: z.array(userLicenseItemSchema),
+    total: z.number(),
+    page: z.number(),
+    size: z.number(),
+  });
+
+const paginatedUserPurchaseHistorySchema: z.ZodType<PaginatedUserPurchaseHistory> = z
+  .looseObject({
+    items: z.array(userPurchaseItemSchema),
+    total: z.number(),
+    page: z.number(),
+    size: z.number(),
+  });
+
+const paginatedUserDownloadHistorySchema: z.ZodType<PaginatedUserDownloadHistory> = z
+  .looseObject({
+    items: z.array(userDownloadHistoryItemSchema),
+    total: z.number(),
+    page: z.number(),
+    size: z.number(),
+  });
+
+const paginatedUserRecentActivitySchema: z.ZodType<PaginatedUserRecentActivity> = z
   .looseObject({
     items: z.array(auditLogSchema),
     total: z.number(),
@@ -653,6 +696,69 @@ export const getUser = async (userId: number): Promise<UserDetails> => {
     userDetailsSchema,
     response.data,
     `/admin/users/${userId}`,
+  );
+};
+
+const getUserHistorySection = async <TResponse>(
+  path: string,
+  page: number,
+  size: number,
+  schema: z.ZodType<TResponse>,
+): Promise<TResponse> => {
+  const params = normalizeQueryParams({ page, size });
+  const response = await apiClient.get<TResponse>(path, { params });
+  return parseApiContract(schema, response.data, path);
+};
+
+export const getUserLicenses = async (
+  userId: number,
+  page: number,
+  size: number,
+): Promise<PaginatedUserLicenses> => {
+  return getUserHistorySection(
+    `/admin/users/${userId}/licenses`,
+    page,
+    size,
+    paginatedUserLicensesSchema,
+  );
+};
+
+export const getUserPurchaseHistory = async (
+  userId: number,
+  page: number,
+  size: number,
+): Promise<PaginatedUserPurchaseHistory> => {
+  return getUserHistorySection(
+    `/admin/users/${userId}/purchase-history`,
+    page,
+    size,
+    paginatedUserPurchaseHistorySchema,
+  );
+};
+
+export const getUserDownloadHistory = async (
+  userId: number,
+  page: number,
+  size: number,
+): Promise<PaginatedUserDownloadHistory> => {
+  return getUserHistorySection(
+    `/admin/users/${userId}/download-history`,
+    page,
+    size,
+    paginatedUserDownloadHistorySchema,
+  );
+};
+
+export const getUserRecentActivity = async (
+  userId: number,
+  page: number,
+  size: number,
+): Promise<PaginatedUserRecentActivity> => {
+  return getUserHistorySection(
+    `/admin/users/${userId}/recent-activity`,
+    page,
+    size,
+    paginatedUserRecentActivitySchema,
   );
 };
 
