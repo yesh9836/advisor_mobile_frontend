@@ -66,7 +66,19 @@ describe("AdminDashboard", () => {
 
     expect(await screen.findByText("10")).toBeInTheDocument();
     expect(screen.getByText("LEAD BULK IMPORT")).toBeInTheDocument();
-    expect(getAuditLogs).toHaveBeenCalledWith({}, 1, 20);
+    expect(getDashboardStats).toHaveBeenCalledWith(
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    expect(getAuditLogs).toHaveBeenCalledWith(
+      {},
+      1,
+      20,
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+      }),
+    );
   });
 
   it("shows first 5 recent activity entries and reveals remaining", async () => {

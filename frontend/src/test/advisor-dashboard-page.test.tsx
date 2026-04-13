@@ -99,8 +99,20 @@ describe("Advisor Dashboard delivery settings editor", () => {
     renderRoute();
 
     await waitFor(() => {
-      expect(getLeadDashboardSummaryMock).toHaveBeenCalledTimes(1);
+      expect(getLeadDashboardSummaryMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          signal: expect.any(AbortSignal),
+        }),
+      );
     });
+    expect(getLeadsMock).toHaveBeenCalledWith(
+      1,
+      3,
+      { delivery_status: "delivered" },
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+      }),
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Edit Settings" }));
     const emailToggle = await screen.findByLabelText("Email alerts");
@@ -170,7 +182,11 @@ describe("Advisor Dashboard delivery settings editor", () => {
     renderRoute();
 
     await waitFor(() => {
-      expect(getLeadDashboardSummaryMock).toHaveBeenCalledTimes(1);
+      expect(getLeadDashboardSummaryMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          signal: expect.any(AbortSignal),
+        }),
+      );
     });
 
     expect(screen.getByTestId("delivery-email-status")).toHaveTextContent("On");
@@ -276,5 +292,27 @@ describe("Advisor Dashboard delivery settings editor", () => {
     expect(hasUnmountedSetStateWarning).toBe(false);
 
     consoleErrorSpy.mockRestore();
+  });
+
+  it("passes abort signals into the initial dashboard requests", async () => {
+    getLeadDashboardSummaryMock.mockResolvedValue(summaryWithSettings(false, false));
+
+    renderRoute();
+
+    await waitFor(() => {
+      expect(getLeadDashboardSummaryMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          signal: expect.any(AbortSignal),
+        }),
+      );
+    });
+    expect(getLeadsMock).toHaveBeenCalledWith(
+      1,
+      3,
+      { delivery_status: "delivered" },
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+      }),
+    );
   });
 });

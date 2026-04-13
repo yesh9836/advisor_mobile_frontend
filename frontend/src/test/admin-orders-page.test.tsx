@@ -45,7 +45,14 @@ describe("OrdersPage", () => {
     render(<OrdersPage />);
 
     expect(await screen.findByText("Advisor 1 • Starter (1)")).toBeInTheDocument();
-    expect(getOrders).toHaveBeenCalledWith(1, 10);
+    expect(getOrders).toHaveBeenCalledWith(
+      1,
+      10,
+      undefined,
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+      }),
+    );
     expect(screen.getByText("Page 1 of 1 • 1 total orders")).toBeInTheDocument();
   });
 
@@ -79,7 +86,14 @@ describe("OrdersPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
 
     await waitFor(() => {
-      expect(getOrders).toHaveBeenLastCalledWith(2, 10);
+      expect(getOrders).toHaveBeenLastCalledWith(
+        2,
+        10,
+        undefined,
+        expect.objectContaining({
+          signal: expect.any(AbortSignal),
+        }),
+      );
     });
     expect(await screen.findByText("Advisor 11 • Starter (1)")).toBeInTheDocument();
     expect(screen.getByText("Page 2 of 2 • 12 total orders")).toBeInTheDocument();
@@ -87,8 +101,16 @@ describe("OrdersPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Previous" }));
 
     await waitFor(() => {
-      expect(getOrders).toHaveBeenLastCalledWith(1, 10);
+      expect(getOrders).toHaveBeenLastCalledWith(
+        1,
+        10,
+        undefined,
+        expect.objectContaining({
+          signal: expect.any(AbortSignal),
+        }),
+      );
     });
     expect(await screen.findByText("Advisor 1 • Starter (1)")).toBeInTheDocument();
   });
+
 });
