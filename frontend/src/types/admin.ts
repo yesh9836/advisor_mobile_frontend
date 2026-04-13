@@ -1,5 +1,3 @@
-import type { License } from "@/types/license";
-
 export interface DashboardStats {
   total_users: number;
   completed_purchases: number;
@@ -172,6 +170,12 @@ export interface AuditLog {
   created_at: string;
 }
 
+export interface UserHistoryPreview<TItem> {
+  items: TItem[];
+  total: number;
+  has_more: boolean;
+}
+
 export interface UserDetails {
   id: number;
   name: string;
@@ -181,16 +185,44 @@ export interface UserDetails {
   created_at: string;
   deactivated_at: string | null;
   deactivated_by: number | null;
-  licenses: Array<UserLicenseItem | License>;
   credit_summary: UserCreditSummary;
-  purchase_history: UserPurchaseItem[];
-  download_history: UserDownloadHistoryItem[];
-  recent_activity: AuditLog[];
+  licenses_preview: UserHistoryPreview<UserLicenseItem>;
+  purchase_history_preview: UserHistoryPreview<UserPurchaseItem>;
+  download_history_preview: UserHistoryPreview<UserDownloadHistoryItem>;
+  recent_activity_preview: UserHistoryPreview<AuditLog>;
 }
 
 export type AuditLogItem = AuditLog;
 
 export interface PaginatedAuditLogs {
+  items: AuditLog[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+export interface PaginatedUserLicenses {
+  items: UserLicenseItem[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+export interface PaginatedUserPurchaseHistory {
+  items: UserPurchaseItem[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+export interface PaginatedUserDownloadHistory {
+  items: UserDownloadHistoryItem[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+export interface PaginatedUserRecentActivity {
   items: AuditLog[];
   total: number;
   page: number;
