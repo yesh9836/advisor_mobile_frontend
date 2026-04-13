@@ -2,29 +2,16 @@ import { useCallback, useEffect, useState } from "react";
 
 import { getMyLicenses, resubmitLicense } from "@/api/licenses";
 import Button from "@/components/common/Button";
+import {
+  LICENSE_DOCUMENT_ACCEPT,
+  validateLicenseDocument,
+} from "@/components/license/documentUpload";
 import type { License } from "@/types/license";
 import { getApiErrorMessage } from "@/utils/api-error";
 
 interface LicenseListProps {
   refreshKey?: number;
 }
-
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-
-const validateFile = (file: File): string | null => {
-  const isPdf = file.type === "application/pdf";
-  const isImage = file.type.startsWith("image/");
-
-  if (!isPdf && !isImage) {
-    return "Document must be a PDF or image file.";
-  }
-
-  if (file.size > MAX_FILE_SIZE_BYTES) {
-    return "Document must be 10 MB or smaller.";
-  }
-
-  return null;
-};
 
 const formatDate = (value: string | null): string => {
   if (!value) {
@@ -128,7 +115,7 @@ const LicenseList = ({ refreshKey = 0 }: LicenseListProps) => {
       return;
     }
 
-    const fileError = validateFile(file);
+    const fileError = validateLicenseDocument(file);
     if (fileError) {
       setResubmitErrors((previous) => ({
         ...previous,
@@ -268,12 +255,12 @@ const LicenseList = ({ refreshKey = 0 }: LicenseListProps) => {
                         htmlFor={`resubmit-document-${license.id}`}
                         className="block text-xs font-semibold uppercase tracking-wide text-[#4c628a]"
                       >
-                        Upload replacement document
+                        Upload replacement document (PDF, JPG, JPEG, or PNG)
                       </label>
                       <input
                         id={`resubmit-document-${license.id}`}
                         type="file"
-                        accept="application/pdf,image/*"
+                        accept={LICENSE_DOCUMENT_ACCEPT}
                         onChange={(event) =>
                           handleFileSelection(
                             license.id,

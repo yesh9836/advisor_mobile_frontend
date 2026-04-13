@@ -2,6 +2,10 @@ import { useRef, useState, type SubmitEvent } from "react";
 
 import { submitLicense } from "@/api/licenses";
 import Button from "@/components/common/Button";
+import {
+  LICENSE_DOCUMENT_ACCEPT,
+  validateLicenseDocument,
+} from "@/components/license/documentUpload";
 import type { License } from "@/types/license";
 import { getApiErrorMessage } from "@/utils/api-error";
 
@@ -62,8 +66,6 @@ const US_STATES: Array<{ code: string; label: string }> = [
   { code: "WY", label: "Wyoming" },
 ];
 
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-
 const LicenseForm = ({ onSubmitted }: LicenseFormProps) => {
   const [stateCode, setStateCode] = useState("");
   const [licenseNumber, setLicenseNumber] = useState("");
@@ -84,20 +86,6 @@ const LicenseForm = ({ onSubmitted }: LicenseFormProps) => {
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
-  };
-
-  const validateFile = (file: File): string | null => {
-    const isPdf = file.type === "application/pdf";
-    const isImage = file.type.startsWith("image/");
-    if (!isPdf && !isImage) {
-      return "Document must be a PDF or image file.";
-    }
-
-    if (file.size > MAX_FILE_SIZE_BYTES) {
-      return "Document must be 10 MB or smaller.";
-    }
-
-    return null;
   };
 
   const handleSubmit = async (event: SubmitEvent<HTMLFormElement>) => {
@@ -124,7 +112,7 @@ const LicenseForm = ({ onSubmitted }: LicenseFormProps) => {
       return;
     }
 
-    const fileError = validateFile(document);
+    const fileError = validateLicenseDocument(document);
     if (fileError) {
       setErrorMessage(fileError);
       return;
@@ -223,11 +211,11 @@ const LicenseForm = ({ onSubmitted }: LicenseFormProps) => {
       </label>
 
       <label className="space-y-1 text-sm font-medium text-[#0a1633]">
-        <span>Document upload (PDF or image)</span>
+        <span>Document upload (PDF, JPG, JPEG, or PNG)</span>
         <input
           ref={fileInputRef}
           type="file"
-          accept="application/pdf,image/*"
+          accept={LICENSE_DOCUMENT_ACCEPT}
           onChange={(event) => setDocument(event.target.files?.[0] ?? null)}
           className="w-full rounded-xl border border-[#d9e4f8] px-3 py-2 text-sm text-[#0a1633] file:mr-3 file:rounded-full file:border-0 file:bg-[#eaf1ff] file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-[#0a1633]"
           required
