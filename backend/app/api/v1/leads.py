@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_active_user, get_db, require_admin
 from app.models.user import User
 from app.schemas.lead import LeadCreate, LeadDashboardSummaryResponse, LeadListResponse, LeadOutcomeResponse, LeadOutcomeUpdateRequest, LeadResponse 
-from app.services.audit_service import AuditService
 from app.services.lead_service import LeadService
 from app.utils.csv_generator import LEAD_CSV_HEADERS, LEAD_CSV_REQUIRED_VALUE_FIELDS, parse_leads_csv
 
@@ -151,31 +150,11 @@ def bulk_import_leads(
     db: Session = Depends(get_db),
 ) -> Dict[str, object]:
     rows = parse_leads_csv(csv_file)
-    result = LeadService.bulk_import_leads(db=db, csv_data=rows)
-
-    errors = result.get("errors", [])
-    skipped_duplicates = 0
-    if isinstance(errors, list):
-        skipped_duplicates = sum(
-            1
-            for error in errors
-            if isinstance(error, dict)
-            and "duplicate" in str(error.get("error", "")).lower()
-        )
-
-    AuditService.log_event(
+    result = LeadService.bulk_import_leads(
+        db=db,
+        csv_data=rows,
         actor_user_id=current_admin.id,
-        action="lead_bulk_import",
-        entity_type="LeadImport",
-        meta_data={
-            "scanned": len(rows),
-            "inserted": int(result.get("success", 0) or 0),
-            "failed": int(result.get("failed", 0) or 0),
-            "skipped_duplicates": skipped_duplicates,
-            "errors": errors if isinstance(errors, list) else [],
-        },
     )
-
     return result
 
 
