@@ -11,6 +11,10 @@ import type {
 } from "@/types/lead";
 import { z } from "zod";
 
+interface RequestOptions {
+  signal?: AbortSignal;
+}
+
 const nullableString = z.string().nullable();
 const nullableStringArray = z.array(z.string()).nullable();
 
@@ -93,6 +97,7 @@ export const getLeads = async (
   page: number,
   size: number,
   filters: LeadFilters = {},
+  options: RequestOptions = {},
 ): Promise<PaginatedLeads> => {
   const response = await apiClient.get<PaginatedLeads>("/leads/", {
     params: {
@@ -100,6 +105,7 @@ export const getLeads = async (
       size,
       ...normalizeQueryParams(filters),
     },
+    signal: options.signal,
   });
 
   return parseApiContract(paginatedLeadsSchema, response.data, "/leads/");
@@ -140,9 +146,12 @@ export const saveLeadOutcome = async (
 };
 
 export const getLeadDashboardSummary =
-  async (): Promise<LeadDashboardSummary> => {
+  async (options: RequestOptions = {}): Promise<LeadDashboardSummary> => {
     const response = await apiClient.get<LeadDashboardSummary>(
       "/leads/dashboard/summary",
+      {
+        signal: options.signal,
+      },
     );
     return parseApiContract(
       leadDashboardSummarySchema,

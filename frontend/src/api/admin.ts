@@ -421,8 +421,12 @@ const paginatedAdminPlansSchema: z.ZodType<PaginatedAdminPlans> = z
     size: z.number(),
   });
 
-export const getDashboardStats = async (): Promise<DashboardStats> => {
-  const response = await apiClient.get<DashboardStats>("/admin/dashboard");
+export const getDashboardStats = async (
+  options: RequestOptions = {},
+): Promise<DashboardStats> => {
+  const response = await apiClient.get<DashboardStats>("/admin/dashboard", {
+    signal: options.signal,
+  });
   return parseApiContract(
     dashboardStatsSchema,
     response.data,
@@ -601,6 +605,7 @@ export const getUsers = async (
   page: number,
   size: number,
   filters?: UserListFilters,
+  options: RequestOptions = {},
 ): Promise<PaginatedUsers> => {
   const params = normalizeQueryParams({
     page,
@@ -612,6 +617,7 @@ export const getUsers = async (
 
   const response = await apiClient.get<PaginatedUsers>("/admin/users", {
     params,
+    signal: options.signal,
   });
   return parseApiContract(
     paginatedUsersSchema,
@@ -624,6 +630,7 @@ export const getOrders = async (
   page: number,
   size: number,
   status?: string,
+  options: RequestOptions = {},
 ): Promise<PaginatedOrders> => {
   const params = normalizeQueryParams({
     page,
@@ -633,6 +640,7 @@ export const getOrders = async (
 
   const response = await apiClient.get<PaginatedOrders>("/admin/orders", {
     params,
+    signal: options.signal,
   });
   return parseApiContract(
     paginatedOrdersSchema,
