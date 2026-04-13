@@ -34,6 +34,10 @@ from app.schemas.admin import (
     PaginatedAdminPlans,
     PaginatedLeadInventory,
     PaginatedOrders,
+    PaginatedUserDownloadHistory,
+    PaginatedUserLicenses,
+    PaginatedUserPurchaseHistory,
+    PaginatedUserRecentActivity,
     PaginatedUsers,
     PlanBreakdownItem,
     StateDistributionItem,
@@ -42,10 +46,14 @@ from app.schemas.admin import (
     UserGrowthPoint,
     UserCreditSummary,
     UserLicenseItem,
+    UserLicensePreview,
     UserListFilters,
     UserListItem,
     UserPurchaseItem,
+    UserPurchaseHistoryPreview,
     UserRecentActivityItem,
+    UserRecentActivityPreview,
+    UserDownloadHistoryPreview,
 )
 from app.services.audit_service import AuditService
 from app.services.admin_audit_service import AdminAuditService
@@ -58,6 +66,8 @@ logger = logging.getLogger(__name__)
 
 
 class AdminService:
+    USER_DETAILS_PREVIEW_LIMIT = 5
+
     @staticmethod
     def _is_first_purchase_offer_managed_package(package: LeadPackage) -> bool:
         return isinstance(package.features, dict) and package.features.get("managed_by") == "first_purchase_offer"
@@ -1343,32 +1353,14 @@ class AdminService:
         ]
 
     @staticmethod
-    def get_user_details(db: Session, user_id: int) -> UserDetails:
+    def _get_user_or_404(db: Session, user_id: int) -> User:
         user = db.query(User).filter(User.id == user_id).first()
         if user is None:
             raise HTTPException(status_code=404, detail="User not found")
+        return user
 
-        licenses = (
-            db.query(License)
-            .filter(License.user_id == user_id)
-            .order_by(License.created_at.desc(), License.id.desc())
-            .all()
-        )
-
-        license_items = [
-            UserLicenseItem(
-                id=license.id,
-                state=license.state,
-                license_number=license.license_number,
-                license_type=license.license_type,
-                verification_status=license.verification_status,
-                created_at=license.created_at,
-                verified_at=license.verified_at,
-                rejection_reason=license.rejection_reason,
-            )
-            for license in licenses
-        ]
-
+    @staticmethod
+    def _build_credit_summary(db: Session, user_id: int) -> UserCreditSummary:
         credit_totals_row = (
             db.query(
                 func.coalesce(
@@ -1402,79 +1394,212 @@ class AdminService:
             .filter(LeadPurchase.user_id == user_id)
             .first()
         )
-        credit_summary = UserCreditSummary(
+        return UserCreditSummary(
             total_credits=int((credit_totals_row[0] if credit_totals_row else 0) or 0),
             remaining_credits=int((credit_totals_row[1] if credit_totals_row else 0) or 0),
             completed_purchases=int((credit_totals_row[2] if credit_totals_row else 0) or 0),
         )
 
-        purchase_rows = (
+    @staticmethod
+    def _serialize_user_license(license: License) -> UserLicenseItem:
+        return UserLicenseItem(
+            id=license.id,
+            state=license.state,
+            license_number=license.license_number,
+            license_type=license.license_type,
+            verification_status=license.verification_status,
+            created_at=license.created_at,
+            verified_at=license.verified_at,
+            rejection_reason=license.rejection_reason,
+        )
+
+    @staticmethod
+    def _serialize_user_purchase(
+        purchase: LeadPurchase,
+        package: Optional[LeadPackage],
+    ) -> UserPurchaseItem:
+        return UserPurchaseItem(
+            id=purchase.id,
+            order_reference=(
+                purchase.stripe_checkout_session_id
+                or purchase.stripe_payment_intent_id
+                or f"purchase-{purchase.id}"
+            ),
+            status=purchase.status,
+            package_name=package.name if package else None,
+            amount_cents=purchase.amount_cents,
+            currency=(purchase.currency or "USD").upper(),
+            credits_total=purchase.credits_total,
+            credits_remaining=purchase.credits_remaining,
+            purchased_at=purchase.purchased_at,
+        )
+
+    @staticmethod
+    def _serialize_user_download(
+        download: LeadDownload,
+        state_code: str,
+    ) -> UserDownloadHistoryItem:
+        return UserDownloadHistoryItem(
+            lead_id=download.lead_id,
+            state_code=state_code,
+            downloaded_at=download.downloaded_at,
+            csv_batch_id=download.csv_batch_id,
+        )
+
+    @staticmethod
+    def _serialize_user_activity(activity: AuditLog) -> UserRecentActivityItem:
+        return UserRecentActivityItem(
+            id=activity.id,
+            actor_user_id=activity.actor_user_id,
+            action=activity.action,
+            entity_type=activity.entity_type,
+            entity_id=activity.entity_id,
+            meta_data=activity.meta_data,
+            ip_address=activity.ip_address,
+            created_at=activity.created_at,
+        )
+
+    @staticmethod
+    def get_user_licenses(
+        db: Session,
+        user_id: int,
+        page: int,
+        size: int,
+    ) -> PaginatedUserLicenses:
+        AdminService._get_user_or_404(db, user_id)
+
+        total = db.query(func.count(License.id)).filter(License.user_id == user_id).scalar() or 0
+        rows = (
+            db.query(License)
+            .filter(License.user_id == user_id)
+            .order_by(License.created_at.desc(), License.id.desc())
+            .offset((page - 1) * size)
+            .limit(size)
+            .all()
+        )
+
+        return PaginatedUserLicenses(
+            items=[AdminService._serialize_user_license(license) for license in rows],
+            total=int(total),
+            page=page,
+            size=size,
+        )
+
+    @staticmethod
+    def get_user_purchase_history(
+        db: Session,
+        user_id: int,
+        page: int,
+        size: int,
+    ) -> PaginatedUserPurchaseHistory:
+        AdminService._get_user_or_404(db, user_id)
+
+        total = db.query(func.count(LeadPurchase.id)).filter(LeadPurchase.user_id == user_id).scalar() or 0
+        rows = (
             db.query(LeadPurchase, LeadPackage)
             .outerjoin(LeadPackage, LeadPurchase.package_id == LeadPackage.id)
             .filter(LeadPurchase.user_id == user_id)
             .order_by(LeadPurchase.purchased_at.desc(), LeadPurchase.id.desc())
-            .limit(100)
+            .offset((page - 1) * size)
+            .limit(size)
             .all()
         )
-        purchase_history = [
-            UserPurchaseItem(
-                id=purchase.id,
-                order_reference=(
-                    purchase.stripe_checkout_session_id
-                    or purchase.stripe_payment_intent_id
-                    or f"purchase-{purchase.id}"
-                ),
-                status=purchase.status,
-                package_name=package.name if package else None,
-                amount_cents=purchase.amount_cents,
-                currency=(purchase.currency or "USD").upper(),
-                credits_total=purchase.credits_total,
-                credits_remaining=purchase.credits_remaining,
-                purchased_at=purchase.purchased_at,
-            )
-            for purchase, package in purchase_rows
-        ]
 
-        download_rows = (
+        return PaginatedUserPurchaseHistory(
+            items=[
+                AdminService._serialize_user_purchase(purchase, package)
+                for purchase, package in rows
+            ],
+            total=int(total),
+            page=page,
+            size=size,
+        )
+
+    @staticmethod
+    def get_user_download_history(
+        db: Session,
+        user_id: int,
+        page: int,
+        size: int,
+    ) -> PaginatedUserDownloadHistory:
+        AdminService._get_user_or_404(db, user_id)
+
+        total = db.query(func.count(LeadDownload.id)).filter(LeadDownload.user_id == user_id).scalar() or 0
+        rows = (
             db.query(LeadDownload, Lead.state_code)
             .join(Lead, Lead.id == LeadDownload.lead_id)
             .filter(LeadDownload.user_id == user_id)
             .order_by(LeadDownload.downloaded_at.desc(), LeadDownload.id.desc())
-            .limit(100)
+            .offset((page - 1) * size)
+            .limit(size)
             .all()
         )
 
-        download_history = [
-            UserDownloadHistoryItem(
-                lead_id=download.lead_id,
-                state_code=state_code,
-                downloaded_at=download.downloaded_at,
-                csv_batch_id=download.csv_batch_id,
-            )
-            for download, state_code in download_rows
-        ]
+        return PaginatedUserDownloadHistory(
+            items=[
+                AdminService._serialize_user_download(download, state_code)
+                for download, state_code in rows
+            ],
+            total=int(total),
+            page=page,
+            size=size,
+        )
 
-        activity_rows = (
+    @staticmethod
+    def get_user_recent_activity(
+        db: Session,
+        user_id: int,
+        page: int,
+        size: int,
+    ) -> PaginatedUserRecentActivity:
+        AdminService._get_user_or_404(db, user_id)
+
+        total = db.query(func.count(AuditLog.id)).filter(AuditLog.actor_user_id == user_id).scalar() or 0
+        rows = (
             db.query(AuditLog)
             .filter(AuditLog.actor_user_id == user_id)
             .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
-            .limit(100)
+            .offset((page - 1) * size)
+            .limit(size)
             .all()
         )
 
-        recent_activity = [
-            UserRecentActivityItem(
-                id=activity.id,
-                actor_user_id=activity.actor_user_id,
-                action=activity.action,
-                entity_type=activity.entity_type,
-                entity_id=activity.entity_id,
-                meta_data=activity.meta_data,
-                ip_address=activity.ip_address,
-                created_at=activity.created_at,
-            )
-            for activity in activity_rows
-        ]
+        return PaginatedUserRecentActivity(
+            items=[AdminService._serialize_user_activity(activity) for activity in rows],
+            total=int(total),
+            page=page,
+            size=size,
+        )
+
+    @staticmethod
+    def get_user_details(db: Session, user_id: int) -> UserDetails:
+        user = AdminService._get_user_or_404(db, user_id)
+        preview_limit = AdminService.USER_DETAILS_PREVIEW_LIMIT
+
+        licenses_preview = AdminService.get_user_licenses(
+            db=db,
+            user_id=user_id,
+            page=1,
+            size=preview_limit,
+        )
+        purchase_history_preview = AdminService.get_user_purchase_history(
+            db=db,
+            user_id=user_id,
+            page=1,
+            size=preview_limit,
+        )
+        download_history_preview = AdminService.get_user_download_history(
+            db=db,
+            user_id=user_id,
+            page=1,
+            size=preview_limit,
+        )
+        recent_activity_preview = AdminService.get_user_recent_activity(
+            db=db,
+            user_id=user_id,
+            page=1,
+            size=preview_limit,
+        )
 
         return UserDetails(
             id=user.id,
@@ -1485,11 +1610,27 @@ class AdminService:
             created_at=user.created_at,
             deactivated_at=user.deactivated_at,
             deactivated_by=user.deactivated_by,
-            licenses=license_items,
-            credit_summary=credit_summary,
-            purchase_history=purchase_history,
-            download_history=download_history,
-            recent_activity=recent_activity,
+            credit_summary=AdminService._build_credit_summary(db, user_id),
+            licenses_preview=UserLicensePreview(
+                items=licenses_preview.items,
+                total=licenses_preview.total,
+                has_more=licenses_preview.total > len(licenses_preview.items),
+            ),
+            purchase_history_preview=UserPurchaseHistoryPreview(
+                items=purchase_history_preview.items,
+                total=purchase_history_preview.total,
+                has_more=purchase_history_preview.total > len(purchase_history_preview.items),
+            ),
+            download_history_preview=UserDownloadHistoryPreview(
+                items=download_history_preview.items,
+                total=download_history_preview.total,
+                has_more=download_history_preview.total > len(download_history_preview.items),
+            ),
+            recent_activity_preview=UserRecentActivityPreview(
+                items=recent_activity_preview.items,
+                total=recent_activity_preview.total,
+                has_more=recent_activity_preview.total > len(recent_activity_preview.items),
+            ),
         )
 
     @staticmethod
