@@ -269,6 +269,33 @@ class AdminService:
         }
 
     @staticmethod
+    def _queue_plan_lifecycle_audit(
+        db: Session,
+        *,
+        actor_user_id: int,
+        action: str,
+        package: LeadPackage,
+        before: Optional[Dict[str, Any]],
+        after: Dict[str, Any],
+        reason: Optional[str] = None,
+    ) -> None:
+        meta_data: Dict[str, Any] = {
+            "before": before,
+            "after": after,
+        }
+        if reason is not None:
+            meta_data["reason"] = reason
+
+        AuditService.log_event(
+            db=db,
+            actor_user_id=actor_user_id,
+            action=action,
+            entity_type="LeadPackage",
+            entity_id=int(package.id),
+            meta_data=meta_data,
+        )
+
+    @staticmethod
     def _to_admin_plan_item(
         package: LeadPackage,
         *,
@@ -435,6 +462,16 @@ class AdminService:
         )
         db.add(package)
         try:
+            db.flush()
+            snapshot = AdminService._serialize_plan_snapshot(package, has_purchases=False)
+            AdminService._queue_plan_lifecycle_audit(
+                db,
+                actor_user_id=int(admin_user.id),
+                action="admin_plan_created",
+                package=package,
+                before=None,
+                after=snapshot,
+            )
             db.commit()
             db.refresh(package)
         except SQLAlchemyError as exc:
@@ -476,17 +513,6 @@ class AdminService:
                 unknown_error_detail="Failed to create plan",
             )
 
-        snapshot = AdminService._serialize_plan_snapshot(package, has_purchases=False)
-        AuditService.log_event(
-            actor_user_id=admin_user.id,
-            action="admin_plan_created",
-            entity_type="LeadPackage",
-            entity_id=int(package.id),
-            meta_data={
-                "before": None,
-                "after": snapshot,
-            },
-        )
         return AdminService._to_admin_plan_item(package, has_purchases=False)
 
     @staticmethod
@@ -606,7 +632,17 @@ class AdminService:
 
         package.updated_by = int(admin_user.id)
         db.add(package)
+        after_snapshot = AdminService._serialize_plan_snapshot(package, has_purchases=has_purchases)
         try:
+            if before_snapshot != after_snapshot:
+                AdminService._queue_plan_lifecycle_audit(
+                    db,
+                    actor_user_id=int(admin_user.id),
+                    action="admin_plan_updated",
+                    package=package,
+                    before=before_snapshot,
+                    after=after_snapshot,
+                )
             db.commit()
             db.refresh(package)
         except SQLAlchemyError as exc:
@@ -648,21 +684,7 @@ class AdminService:
                 unknown_error_detail="Failed to update plan",
             )
 
-        has_purchases_after = AdminService._plan_has_purchases(db, plan_id=int(package.id))
-        after_snapshot = AdminService._serialize_plan_snapshot(package, has_purchases=has_purchases_after)
-        if before_snapshot != after_snapshot:
-            AuditService.log_event(
-                actor_user_id=admin_user.id,
-                action="admin_plan_updated",
-                entity_type="LeadPackage",
-                entity_id=int(package.id),
-                meta_data={
-                    "before": before_snapshot,
-                    "after": after_snapshot,
-                },
-            )
-
-        return AdminService._to_admin_plan_item(package, has_purchases=has_purchases_after)
+        return AdminService._to_admin_plan_item(package, has_purchases=has_purchases)
 
     @staticmethod
     def archive_plan(
@@ -681,7 +703,18 @@ class AdminService:
             package.archived_at = utcnow()
             package.updated_by = int(admin_user.id)
             db.add(package)
+            after_snapshot = AdminService._serialize_plan_snapshot(package, has_purchases=has_purchases)
             try:
+                if before_snapshot != after_snapshot:
+                    AdminService._queue_plan_lifecycle_audit(
+                        db,
+                        actor_user_id=int(admin_user.id),
+                        action="admin_plan_archived",
+                        package=package,
+                        before=before_snapshot,
+                        after=after_snapshot,
+                        reason=payload.reason,
+                    )
                 db.commit()
                 db.refresh(package)
             except SQLAlchemyError as exc:
@@ -730,20 +763,6 @@ class AdminService:
                     },
                 )
 
-        after_snapshot = AdminService._serialize_plan_snapshot(package, has_purchases=has_purchases)
-        if before_snapshot != after_snapshot:
-            AuditService.log_event(
-                actor_user_id=admin_user.id,
-                action="admin_plan_archived",
-                entity_type="LeadPackage",
-                entity_id=int(package.id),
-                meta_data={
-                    "reason": payload.reason,
-                    "before": before_snapshot,
-                    "after": after_snapshot,
-                },
-            )
-
         return AdminService._to_admin_plan_item(package, has_purchases=has_purchases)
 
     @staticmethod
@@ -778,7 +797,18 @@ class AdminService:
             package.archived_at = None
             package.updated_by = int(admin_user.id)
             db.add(package)
+            after_snapshot = AdminService._serialize_plan_snapshot(package, has_purchases=has_purchases)
             try:
+                if before_snapshot != after_snapshot:
+                    AdminService._queue_plan_lifecycle_audit(
+                        db,
+                        actor_user_id=int(admin_user.id),
+                        action="admin_plan_unarchived",
+                        package=package,
+                        before=before_snapshot,
+                        after=after_snapshot,
+                        reason=payload.reason,
+                    )
                 db.commit()
                 db.refresh(package)
             except SQLAlchemyError as exc:
@@ -813,20 +843,6 @@ class AdminService:
                     db_error_detail="Failed to persist plan unarchive",
                     unknown_error_detail="Failed to unarchive plan",
                 )
-
-        after_snapshot = AdminService._serialize_plan_snapshot(package, has_purchases=has_purchases)
-        if before_snapshot != after_snapshot:
-            AuditService.log_event(
-                actor_user_id=admin_user.id,
-                action="admin_plan_unarchived",
-                entity_type="LeadPackage",
-                entity_id=int(package.id),
-                meta_data={
-                    "reason": payload.reason,
-                    "before": before_snapshot,
-                    "after": after_snapshot,
-                },
-            )
 
         return AdminService._to_admin_plan_item(package, has_purchases=has_purchases)
 
