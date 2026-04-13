@@ -34,6 +34,28 @@ class LeadService:
     _RECONCILIATION_MAX_ASSIGNMENTS_PER_ADVISOR_ROUND = 25
 
     @staticmethod
+    def _build_bulk_import_audit_metadata(
+        *,
+        scanned_count: int,
+        success_count: int,
+        failed_count: int,
+        errors: Optional[List[Dict[str, object]]] = None,
+    ) -> Dict[str, int]:
+        error_items = errors if isinstance(errors, list) else []
+        skipped_duplicates = sum(
+            1
+            for error in error_items
+            if isinstance(error, dict)
+            and "duplicate" in str(error.get("error", "")).lower()
+        )
+        return {
+            "scanned": int(scanned_count),
+            "inserted": int(success_count),
+            "failed": int(failed_count),
+            "skipped_duplicates": int(skipped_duplicates),
+        }
+
+    @staticmethod
     def _lead_not_downloaded_by_anyone_condition():
         return ~select(LeadDownload.id).where(LeadDownload.lead_id == Lead.id).exists()
 
@@ -1421,12 +1443,37 @@ class LeadService:
             raise HTTPException(status_code=500, detail="Failed to create lead")
 
     @staticmethod
-    def bulk_import_leads(db: Session, csv_data: List[dict]) -> Dict[str, object]:
+    def bulk_import_leads(
+        db: Session,
+        csv_data: List[dict],
+        *,
+        actor_user_id: Optional[int] = None,
+    ) -> Dict[str, object]:
         errors: List[Dict[str, object]] = []
         failed_rows = 0
 
         if not csv_data:
-            return {"success": 0, "failed": 0, "errors": []}
+            result = {"success": 0, "failed": 0, "errors": []}
+            if actor_user_id is not None:
+                try:
+                    AuditService.log_event(
+                        db=db,
+                        actor_user_id=actor_user_id,
+                        action="lead_bulk_import",
+                        entity_type="LeadImport",
+                        meta_data=LeadService._build_bulk_import_audit_metadata(
+                            scanned_count=0,
+                            success_count=0,
+                            failed_count=0,
+                            errors=[],
+                        ),
+                    )
+                    db.commit()
+                except Exception as exc:
+                    db.rollback()
+                    logger.error("Failed to audit empty lead import: %s", exc)
+                    raise HTTPException(status_code=500, detail="Failed to import leads")
+            return result
 
         normalized_rows: List[dict] = []
         for row in csv_data:
@@ -1488,11 +1535,44 @@ class LeadService:
             valid_rows.append(clean_row)
 
         if errors:
-            return {"success": 0, "failed": failed_rows, "errors": errors}
+            result = {"success": 0, "failed": failed_rows, "errors": errors}
+            if actor_user_id is not None:
+                try:
+                    AuditService.log_event(
+                        db=db,
+                        actor_user_id=actor_user_id,
+                        action="lead_bulk_import",
+                        entity_type="LeadImport",
+                        meta_data=LeadService._build_bulk_import_audit_metadata(
+                            scanned_count=len(csv_data),
+                            success_count=0,
+                            failed_count=failed_rows,
+                            errors=errors,
+                        ),
+                    )
+                    db.commit()
+                except Exception as exc:
+                    db.rollback()
+                    logger.error("Failed to audit rejected lead import: %s", exc)
+                    raise HTTPException(status_code=500, detail="Failed to import leads")
+            return result
 
         try:
             leads = [Lead(**row) for row in valid_rows]
             db.add_all(leads)
+            if actor_user_id is not None:
+                AuditService.log_event(
+                    db=db,
+                    actor_user_id=actor_user_id,
+                    action="lead_bulk_import",
+                    entity_type="LeadImport",
+                    meta_data=LeadService._build_bulk_import_audit_metadata(
+                        scanned_count=len(csv_data),
+                        success_count=len(leads),
+                        failed_count=0,
+                        errors=[],
+                    ),
+                )
             db.commit()
             imported_states = sorted({lead.state_code for lead in leads if lead.state_code})
             LeadService._reconcile_pending_purchases_best_effort(
