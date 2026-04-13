@@ -13,6 +13,7 @@ import type {
   LicenseStatusSummaryItem,
 } from "@/types/admin";
 import { getApiErrorMessage } from "@/utils/api-error";
+import { isRequestCanceled, useLatestRequest } from "@/utils/request-control";
 
 const PAGE_SIZE = 20;
 
@@ -96,18 +97,23 @@ const LeadInventoryPage = () => {
 
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
+  const { beginRequest, isLatestRequest } = useLatestRequest();
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / PAGE_SIZE)), [total]);
 
   const loadInventory = useCallback(async () => {
+    const { requestId, signal } = beginRequest();
     setLoading(true);
     setError(null);
 
     try {
       const [leadResponse, licenseResponse] = await Promise.all([
-        getLeadInventory(page, PAGE_SIZE, filters),
-        getLicenseStatusSummary(),
+        getLeadInventory(page, PAGE_SIZE, filters, { signal }),
+        getLicenseStatusSummary({ signal }),
       ]);
+      if (!isLatestRequest(requestId)) {
+        return;
+      }
       setItems(leadResponse.items);
       setTotal(leadResponse.total);
 
@@ -118,6 +124,9 @@ const LeadInventoryPage = () => {
         statusOrder.map((status) => byStatus.get(status) ?? { status, count: 0 }),
       );
     } catch (loadError) {
+      if (!isLatestRequest(requestId) || isRequestCanceled(loadError)) {
+        return;
+      }
       setItems([]);
       setTotal(0);
       setLicenseSummary(
@@ -125,9 +134,11 @@ const LeadInventoryPage = () => {
       );
       setError(getApiErrorMessage(loadError, "Unable to load lead inventory."));
     } finally {
-      setLoading(false);
+      if (isLatestRequest(requestId)) {
+        setLoading(false);
+      }
     }
-  }, [filters, page]);
+  }, [beginRequest, filters, isLatestRequest, page]);
 
   useEffect(() => {
     void loadInventory();

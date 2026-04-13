@@ -9,6 +9,7 @@ import type {
   UserGrowthPoint,
 } from "@/types/admin";
 import { getApiErrorMessage } from "@/utils/api-error";
+import { isRequestCanceled, useLatestRequest } from "@/utils/request-control";
 
 const MONTHLY_REVENUE_WINDOW_SIZE = 12;
 const USER_GROWTH_PAGE_SIZE = 6;
@@ -259,63 +260,48 @@ const AnalyticsPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [userGrowthPage, setUserGrowthPage] = useState(1);
+  const { beginRequest, isLatestRequest } = useLatestRequest();
 
   useEffect(() => {
-    let cancelled = false;
-
     const loadAnalytics = async () => {
+      const { requestId, signal } = beginRequest();
       setLoading(true);
       setError(null);
 
       try {
-        const response = await getAnalyticsOverview();
-        if (cancelled) return;
+        const response = await getAnalyticsOverview({
+          monthlyRevenueLimit: MONTHLY_REVENUE_WINDOW_SIZE,
+          userGrowthPage,
+          userGrowthSize: USER_GROWTH_PAGE_SIZE,
+          signal,
+        });
+        if (!isLatestRequest(requestId)) return;
         setData(response);
       } catch (loadError) {
-        if (cancelled) return;
+        if (!isLatestRequest(requestId) || isRequestCanceled(loadError)) return;
         setData(null);
         setError(getApiErrorMessage(loadError, "Unable to load analytics."));
       } finally {
-        if (!cancelled) {
+        if (isLatestRequest(requestId)) {
           setLoading(false);
         }
       }
     };
 
     void loadAnalytics();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    setUserGrowthPage(1);
-  }, [data?.user_growth]);
+  }, [beginRequest, isLatestRequest, userGrowthPage]);
 
   const monthlyRevenueWindow = useMemo(
-    () => (data?.monthly_revenue ?? []).slice(-MONTHLY_REVENUE_WINDOW_SIZE),
+    () => data?.monthly_revenue ?? [],
     [data?.monthly_revenue],
   );
 
-  const totalRevenueMonths = data?.monthly_revenue.length ?? 0;
-
-  const userGrowthTotalPages = useMemo(
-    () => Math.max(1, Math.ceil((data?.user_growth.length ?? 0) / USER_GROWTH_PAGE_SIZE)),
-    [data?.user_growth.length],
+  const totalRevenueMonths = data?.monthly_revenue_total_months ?? 0;
+  const userGrowthTotalPages = data?.user_growth_total_pages ?? 1;
+  const visibleUserGrowth = useMemo(
+    () => data?.user_growth ?? [],
+    [data?.user_growth],
   );
-
-  const visibleUserGrowth = useMemo(() => {
-    const userGrowth = data?.user_growth ?? [];
-    if (userGrowth.length === 0) {
-      return [];
-    }
-
-    const safePage = Math.min(Math.max(userGrowthPage, 1), userGrowthTotalPages);
-    const end = userGrowth.length - (safePage - 1) * USER_GROWTH_PAGE_SIZE;
-    const start = Math.max(0, end - USER_GROWTH_PAGE_SIZE);
-    return userGrowth.slice(start, end);
-  }, [data?.user_growth, userGrowthPage, userGrowthTotalPages]);
 
   const visibleUserGrowthRangeLabel = useMemo(() => {
     if (visibleUserGrowth.length === 0) {
@@ -331,7 +317,7 @@ const AnalyticsPage = () => {
     return `${formatMonthLabel(firstMonth)} - ${formatMonthLabel(lastMonth)}`;
   }, [visibleUserGrowth]);
 
-  const totalUserGrowthMonths = data?.user_growth.length ?? 0;
+  const totalUserGrowthMonths = data?.user_growth_total_months ?? 0;
 
   const planBreakdownRows = useMemo(
     () =>
@@ -417,8 +403,8 @@ const AnalyticsPage = () => {
                 <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
                   <span style={{ color: "#475569", fontSize: 13 }}>
                     {visibleUserGrowthRangeLabel
-                      ? `Showing ${visibleUserGrowthRangeLabel} • Page ${userGrowthPage} of ${userGrowthTotalPages} • ${totalUserGrowthMonths} total months`
-                      : `Page ${userGrowthPage} of ${userGrowthTotalPages} • ${totalUserGrowthMonths} total months`}
+                      ? `Showing ${visibleUserGrowthRangeLabel} • Page ${data?.user_growth_page ?? userGrowthPage} of ${userGrowthTotalPages} • ${totalUserGrowthMonths} total months`
+                      : `Page ${data?.user_growth_page ?? userGrowthPage} of ${userGrowthTotalPages} • ${totalUserGrowthMonths} total months`}
                   </span>
                   <div className="row">
                     <button

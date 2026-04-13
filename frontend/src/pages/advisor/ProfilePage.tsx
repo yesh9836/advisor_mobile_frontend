@@ -8,6 +8,7 @@ import LicenseList from "@/components/license/LicenseList";
 import { useAuth } from "@/context/AuthContext";
 import type { PurchaseBalance, PurchaseOrderItem } from "@/types/purchase";
 import { getApiErrorMessage } from "@/utils/api-error";
+import { isRequestCanceled, useLatestRequest } from "@/utils/request-control";
 
 const formatDate = (value: string | null | undefined): string => {
   if (!value) {
@@ -51,19 +52,27 @@ const ProfilePage = () => {
   const [billingLoading, setBillingLoading] = useState(true);
   const [billingError, setBillingError] = useState<string | null>(null);
   const [licensesRefreshKey, setLicensesRefreshKey] = useState(0);
+  const { beginRequest, isLatestRequest } = useLatestRequest();
 
   const loadPurchaseSummary = useCallback(async () => {
+    const { requestId, signal } = beginRequest();
     setBillingLoading(true);
     setBillingError(null);
 
     try {
       const [balanceResponse, historyResponse] = await Promise.all([
-        getPurchaseBalance(),
-        getPurchaseHistory(5),
+        getPurchaseBalance({ signal }),
+        getPurchaseHistory(5, { signal }),
       ]);
+      if (!isLatestRequest(requestId)) {
+        return;
+      }
       setBalance(balanceResponse);
       setRecentPurchases(historyResponse.items);
     } catch (error) {
+      if (!isLatestRequest(requestId) || isRequestCanceled(error)) {
+        return;
+      }
       if (axios.isAxiosError(error) && error.response?.status === 404) {
         setBalance(null);
         setRecentPurchases([]);
@@ -73,9 +82,11 @@ const ProfilePage = () => {
         );
       }
     } finally {
-      setBillingLoading(false);
+      if (isLatestRequest(requestId)) {
+        setBillingLoading(false);
+      }
     }
-  }, []);
+  }, [beginRequest, isLatestRequest]);
 
   useEffect(() => {
     void loadPurchaseSummary();

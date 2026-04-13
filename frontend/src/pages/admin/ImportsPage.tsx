@@ -5,6 +5,7 @@ import ImportModal from "@/components/admin/ImportModal";
 import { toImportSummary } from "@/components/admin/import-summary";
 import type { AuditLog } from "@/types/admin";
 import { getApiErrorMessage } from "@/utils/api-error";
+import { isRequestCanceled, useLatestRequest } from "@/utils/request-control";
 
 interface ImportHistoryItem {
   id: number;
@@ -75,6 +76,7 @@ const ImportsPage = () => {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [runSuccess, setRunSuccess] = useState<string | null>(null);
+  const { beginRequest, isLatestRequest } = useLatestRequest();
 
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil(historyTotal / HISTORY_PAGE_SIZE)),
@@ -82,6 +84,7 @@ const ImportsPage = () => {
   );
 
   const loadImportHistory = useCallback(async () => {
+    const { requestId, signal } = beginRequest();
     setHistoryLoading(true);
     setHistoryError(null);
 
@@ -93,18 +96,27 @@ const ImportsPage = () => {
         },
         historyPage,
         HISTORY_PAGE_SIZE,
+        { signal },
       );
+      if (!isLatestRequest(requestId)) {
+        return;
+      }
 
       setHistory(response.items.map(mapAuditLogToImportHistory));
       setHistoryTotal(response.total);
     } catch (loadError) {
+      if (!isLatestRequest(requestId) || isRequestCanceled(loadError)) {
+        return;
+      }
       setHistory([]);
       setHistoryTotal(0);
       setHistoryError(getApiErrorMessage(loadError, "Failed to load import history."));
     } finally {
-      setHistoryLoading(false);
+      if (isLatestRequest(requestId)) {
+        setHistoryLoading(false);
+      }
     }
-  }, [historyPage]);
+  }, [beginRequest, historyPage, isLatestRequest]);
 
   useEffect(() => {
     void loadImportHistory();
