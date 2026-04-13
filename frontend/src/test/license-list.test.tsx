@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getMyLicenses, resubmitLicense } from "@/api/licenses";
+import { LICENSE_DOCUMENT_ACCEPT } from "@/components/license/documentUpload";
 import LicenseList from "@/components/license/LicenseList";
 import type { License } from "@/types/license";
 
@@ -45,6 +46,29 @@ describe("LicenseList", () => {
     expect(resubmitLicense).not.toHaveBeenCalled();
   });
 
+  it("blocks unsupported replacement formats before calling the API", async () => {
+    render(<LicenseList />);
+
+    expect(await screen.findByText("AL • DEMO-26-AL-001")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Resubmit" }));
+
+    const fileInput = screen.getByLabelText("Upload replacement document (PDF, JPG, JPEG, or PNG)");
+    expect(fileInput).toHaveAttribute("accept", LICENSE_DOCUMENT_ACCEPT);
+
+    const file = new File(["animated"], "replacement.gif", {
+      type: "image/gif",
+    });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Resubmit" }));
+
+    expect(
+      await screen.findByText("Document must be a PDF, JPG, JPEG, or PNG file."),
+    ).toBeInTheDocument();
+    expect(resubmitLicense).not.toHaveBeenCalled();
+  });
+
   it("resubmits rejected license and updates row status", async () => {
     vi.mocked(resubmitLicense).mockResolvedValue({
       ...rejectedLicense,
@@ -58,7 +82,9 @@ describe("LicenseList", () => {
     expect(await screen.findByText("AL • DEMO-26-AL-001")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Resubmit" }));
 
-    const fileInput = screen.getByLabelText("Upload replacement document");
+    const fileInput = screen.getByLabelText(
+      "Upload replacement document (PDF, JPG, JPEG, or PNG)",
+    );
     const file = new File(["%PDF-1.4 retry"], "replacement.pdf", {
       type: "application/pdf",
     });
