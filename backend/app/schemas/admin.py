@@ -159,6 +159,30 @@ class UserRecentActivityItem(BaseModel):
     created_at: datetime
 
 
+class UserLicensePreview(BaseModel):
+    items: List[UserLicenseItem]
+    total: int
+    has_more: bool
+
+
+class UserPurchaseHistoryPreview(BaseModel):
+    items: List[UserPurchaseItem]
+    total: int
+    has_more: bool
+
+
+class UserDownloadHistoryPreview(BaseModel):
+    items: List[UserDownloadHistoryItem]
+    total: int
+    has_more: bool
+
+
+class UserRecentActivityPreview(BaseModel):
+    items: List[UserRecentActivityItem]
+    total: int
+    has_more: bool
+
+
 class UserDetails(BaseModel):
     id: int
     name: str
@@ -168,11 +192,11 @@ class UserDetails(BaseModel):
     created_at: datetime
     deactivated_at: Optional[datetime] = None
     deactivated_by: Optional[int] = None
-    licenses: List[UserLicenseItem]
     credit_summary: UserCreditSummary
-    purchase_history: List[UserPurchaseItem]
-    download_history: List[UserDownloadHistoryItem]
-    recent_activity: List[UserRecentActivityItem]
+    licenses_preview: UserLicensePreview
+    purchase_history_preview: UserPurchaseHistoryPreview
+    download_history_preview: UserDownloadHistoryPreview
+    recent_activity_preview: UserRecentActivityPreview
 
 
 class AuditLogItem(BaseModel):
@@ -188,6 +212,34 @@ class AuditLogItem(BaseModel):
 
 class PaginatedAuditLogs(BaseModel):
     items: List[AuditLogItem]
+    total: int
+    page: int
+    size: int
+
+
+class PaginatedUserLicenses(BaseModel):
+    items: List[UserLicenseItem]
+    total: int
+    page: int
+    size: int
+
+
+class PaginatedUserPurchaseHistory(BaseModel):
+    items: List[UserPurchaseItem]
+    total: int
+    page: int
+    size: int
+
+
+class PaginatedUserDownloadHistory(BaseModel):
+    items: List[UserDownloadHistoryItem]
+    total: int
+    page: int
+    size: int
+
+
+class PaginatedUserRecentActivity(BaseModel):
+    items: List[UserRecentActivityItem]
     total: int
     page: int
     size: int
