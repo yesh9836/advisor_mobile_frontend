@@ -8,6 +8,7 @@ import {
 } from "@/components/license/documentUpload";
 import type { License } from "@/types/license";
 import { getApiErrorMessage } from "@/utils/api-error";
+import { isRequestCanceled, useLatestRequest } from "@/utils/request-control";
 
 interface LicenseListProps {
   refreshKey?: number;
@@ -55,21 +56,31 @@ const LicenseList = ({ refreshKey = 0 }: LicenseListProps) => {
   const [resubmittingLicenseId, setResubmittingLicenseId] = useState<number | null>(
     null,
   );
+  const { beginRequest, isLatestRequest } = useLatestRequest();
 
   const loadLicenses = useCallback(async () => {
+    const { requestId, signal } = beginRequest();
     setLoading(true);
     setError(null);
     setNotice(null);
 
     try {
-      const data = await getMyLicenses();
+      const data = await getMyLicenses({ signal });
+      if (!isLatestRequest(requestId)) {
+        return;
+      }
       setLicenses(data);
     } catch (error) {
+      if (!isLatestRequest(requestId) || isRequestCanceled(error)) {
+        return;
+      }
       setError(getApiErrorMessage(error, "Unable to load licenses."));
     } finally {
-      setLoading(false);
+      if (isLatestRequest(requestId)) {
+        setLoading(false);
+      }
     }
-  }, []);
+  }, [beginRequest, isLatestRequest]);
 
   useEffect(() => {
     void loadLicenses();
