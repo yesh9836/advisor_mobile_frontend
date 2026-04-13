@@ -494,6 +494,20 @@ class FirstPurchaseOfferService:
                 )
                 config.offer_package_id = int(managed_offer_package.id)
 
+            after = FirstPurchaseOfferService._snapshot_config(config)
+            if asdict(before) != asdict(after):
+                AuditService.log_event(
+                    db=db,
+                    actor_user_id=admin_user.id,
+                    action="first_purchase_addon_offer_updated",
+                    entity_type="FirstPurchaseAddonOffer",
+                    entity_id=int(config.id),
+                    meta_data={
+                        "before": FirstPurchaseOfferService._serialize_snapshot_for_audit(before),
+                        "after": FirstPurchaseOfferService._serialize_snapshot_for_audit(after),
+                    },
+                )
+
             db.add(config)
             db.commit()
             db.refresh(config)
@@ -513,19 +527,6 @@ class FirstPurchaseOfferService:
             db.rollback()
             logger.error("Failed to update first-purchase add-on offer config: %s", exc)
             raise HTTPException(status_code=500, detail="Failed to save first-purchase add-on offer")
-
-        after = FirstPurchaseOfferService._snapshot_config(config)
-        if asdict(before) != asdict(after):
-            AuditService.log_event(
-                actor_user_id=admin_user.id,
-                action="first_purchase_addon_offer_updated",
-                entity_type="FirstPurchaseAddonOffer",
-                entity_id=int(config.id),
-                meta_data={
-                    "before": FirstPurchaseOfferService._serialize_snapshot_for_audit(before),
-                    "after": FirstPurchaseOfferService._serialize_snapshot_for_audit(after),
-                },
-            )
 
         return FirstPurchaseOfferService._build_config_response(db, config)
 
