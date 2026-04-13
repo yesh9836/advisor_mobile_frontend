@@ -26,6 +26,10 @@ import {
   getOrders,
   getPendingLicenses,
   getProcessedLicenses,
+  getUserDownloadHistory,
+  getUserLicenses,
+  getUserPurchaseHistory,
+  getUserRecentActivity,
   getUser,
   getUsers,
   previewLicenseDocument,
@@ -69,15 +73,31 @@ const buildAdminUserDetails = () => ({
   created_at: "2026-01-01T00:00:00Z",
   deactivated_at: null,
   deactivated_by: null,
-  licenses: [],
   credit_summary: {
     total_credits: 10,
     remaining_credits: 4,
     completed_purchases: 2,
   },
-  purchase_history: [],
-  download_history: [],
-  recent_activity: [],
+  licenses_preview: {
+    items: [],
+    total: 0,
+    has_more: false,
+  },
+  purchase_history_preview: {
+    items: [],
+    total: 0,
+    has_more: false,
+  },
+  download_history_preview: {
+    items: [],
+    total: 0,
+    has_more: false,
+  },
+  recent_activity_preview: {
+    items: [],
+    total: 0,
+    has_more: false,
+  },
 });
 
 const buildLicense = (id: number) => ({
@@ -461,6 +481,50 @@ describe("admin API contract", () => {
     await expect(getUser(14)).resolves.toEqual(details);
 
     expect(mockedApiClient.get).toHaveBeenCalledWith("/admin/users/14");
+  });
+
+  it("getUserLicenses sends page/size params", async () => {
+    const payload = { items: [], total: 0, page: 1, size: 20 };
+    mockedApiClient.get.mockResolvedValueOnce({ data: payload });
+
+    await expect(getUserLicenses(14, 1, 20)).resolves.toEqual(payload);
+
+    expect(mockedApiClient.get).toHaveBeenCalledWith("/admin/users/14/licenses", {
+      params: { page: 1, size: 20 },
+    });
+  });
+
+  it("getUserPurchaseHistory sends page/size params", async () => {
+    const payload = { items: [], total: 0, page: 2, size: 20 };
+    mockedApiClient.get.mockResolvedValueOnce({ data: payload });
+
+    await expect(getUserPurchaseHistory(14, 2, 20)).resolves.toEqual(payload);
+
+    expect(mockedApiClient.get).toHaveBeenCalledWith("/admin/users/14/purchase-history", {
+      params: { page: 2, size: 20 },
+    });
+  });
+
+  it("getUserDownloadHistory sends page/size params", async () => {
+    const payload = { items: [], total: 0, page: 1, size: 10 };
+    mockedApiClient.get.mockResolvedValueOnce({ data: payload });
+
+    await expect(getUserDownloadHistory(14, 1, 10)).resolves.toEqual(payload);
+
+    expect(mockedApiClient.get).toHaveBeenCalledWith("/admin/users/14/download-history", {
+      params: { page: 1, size: 10 },
+    });
+  });
+
+  it("getUserRecentActivity sends page/size params", async () => {
+    const payload = { items: [], total: 0, page: 3, size: 5 };
+    mockedApiClient.get.mockResolvedValueOnce({ data: payload });
+
+    await expect(getUserRecentActivity(14, 3, 5)).resolves.toEqual(payload);
+
+    expect(mockedApiClient.get).toHaveBeenCalledWith("/admin/users/14/recent-activity", {
+      params: { page: 3, size: 5 },
+    });
   });
 
   it("deactivateUser posts normalized reason payload and returns void", async () => {
