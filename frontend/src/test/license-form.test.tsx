@@ -32,6 +32,12 @@ describe("LicenseForm", () => {
     );
   });
 
+  it("includes District of Columbia in the state selector", () => {
+    render(<LicenseForm />);
+
+    expect(screen.getByRole("option", { name: "District of Columbia (DC)" })).toBeInTheDocument();
+  });
+
   it("blocks unsupported image formats before submitting", async () => {
     const { container } = render(<LicenseForm />);
 
