@@ -158,3 +158,45 @@ def test_delivery_settings_patch_requires_at_least_one_toggle(client, user_facto
         json={"expected_version": 1},
     )
     assert response.status_code == 422
+
+
+@pytest.mark.integration
+def test_delivery_settings_update_rolls_back_when_audit_write_fails(
+    client,
+    user_factory,
+    auth_headers,
+    monkeypatch,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="DeliveryIntRollback123!",
+        email="delivery.int.rollback@example.com",
+    )
+    headers = auth_headers(advisor.email, "DeliveryIntRollback123!")
+
+    initial = client.get("/api/v1/delivery-settings/me", headers=headers)
+    assert initial.status_code == 200, initial.text
+    initial_body = initial.json()
+
+    def fail_audit(**_kwargs):
+        raise RuntimeError("audit insert failed")
+
+    monkeypatch.setattr(
+        "app.services.delivery_settings_service.AuditService.log_event",
+        fail_audit,
+    )
+
+    patch_response = client.patch(
+        "/api/v1/delivery-settings/me",
+        headers=headers,
+        json={"email_alerts_enabled": True, "expected_version": int(initial_body["version"])},
+    )
+    assert patch_response.status_code == 500, patch_response.text
+    assert patch_response.json() == {"detail": "Failed to update delivery settings"}
+
+    refreshed = client.get("/api/v1/delivery-settings/me", headers=headers)
+    assert refreshed.status_code == 200, refreshed.text
+    refreshed_body = refreshed.json()
+    assert refreshed_body["email_alerts_enabled"] is False
+    assert refreshed_body["sms_alerts_enabled"] is False
+    assert int(refreshed_body["version"]) == int(initial_body["version"])

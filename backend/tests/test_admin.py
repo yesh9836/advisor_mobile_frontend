@@ -517,6 +517,56 @@ def test_admin_first_purchase_offer_update_rejects_non_usd_currency(
     assert "offer_currency must be USD" in response.text
 
 
+def test_admin_first_purchase_offer_update_rolls_back_when_audit_write_fails(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+    plan_factory,
+    monkeypatch,
+):
+    admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+    trigger_package = plan_factory(name="TriggerAuditRollback", price_cents=12000, daily_download_limit=10)
+
+    def fail_audit(**_kwargs):
+        raise RuntimeError("audit insert failed")
+
+    monkeypatch.setattr(
+        "app.services.first_purchase_offer_service.AuditService.log_event",
+        fail_audit,
+    )
+
+    response = client.put(
+        "/api/v1/admin/first-purchase-offer",
+        headers=admin_headers,
+        json={
+            "is_enabled": True,
+            "trigger_package_id": trigger_package.id,
+            "offer_credits_total": 5,
+            "offer_price_cents": 7500,
+            "offer_currency": "USD",
+            "headline": "Audit rollback offer",
+            "message": "Should fail before commit.",
+            "cta_label": "Do not persist",
+        },
+    )
+    assert response.status_code == 500, response.text
+    assert response.json() == {"detail": "Failed to save first-purchase add-on offer"}
+
+    config = FirstPurchaseOfferService._get_singleton_config(db)
+    assert config is None
+    assert (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.actor_user_id == admin.id,
+            AuditLog.action == "first_purchase_addon_offer_updated",
+            AuditLog.entity_type == "FirstPurchaseAddonOffer",
+        )
+        .count()
+        == 0
+    )
+
+
 def test_admin_first_purchase_offer_update_preserves_client_http_errors(
     client,
     db,

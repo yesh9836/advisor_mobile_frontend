@@ -1,9 +1,13 @@
+import csv
+import io
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.models.lead import LeadDownload, LeadOutcome, LeadOwnership
+from app.models.audit_log import AuditLog
+from app.models.lead import Lead, LeadDownload, LeadOutcome, LeadOwnership
 from app.models.purchase import LeadCreditLedger, LeadPurchase
+from app.utils.csv_generator import LEAD_CSV_HEADERS
 
 
 def _create_admin_and_headers(user_factory, auth_headers):
@@ -66,6 +70,15 @@ def _create_advisor_with_purchase_access(
     )
     headers = auth_headers(advisor.email, "AdvisorPurchase123!")
     return advisor, plan, headers
+
+
+def _build_leads_csv_file(rows):
+    buffer = io.StringIO(newline="")
+    writer = csv.DictWriter(buffer, fieldnames=LEAD_CSV_HEADERS)
+    writer.writeheader()
+    for row in rows:
+        writer.writerow({header: row.get(header, "") for header in LEAD_CSV_HEADERS})
+    return ("leads.csv", buffer.getvalue().encode("utf-8"), "text/csv")
 
 
 @pytest.mark.integration
@@ -1236,6 +1249,55 @@ def test_dashboard_summary_keeps_legacy_download_fallback_when_no_ownership_exis
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["leads_delivered_7_days"] == 1
+
+
+@pytest.mark.integration
+def test_admin_bulk_import_rolls_back_when_audit_write_fails(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+    monkeypatch,
+):
+    admin, headers = _create_admin_and_headers(user_factory, auth_headers)
+
+    def fail_audit(**_kwargs):
+        raise RuntimeError("audit insert failed")
+
+    monkeypatch.setattr(
+        "app.services.lead_service.AuditService.log_event",
+        fail_audit,
+    )
+
+    response = client.post(
+        "/api/v1/leads/bulk",
+        headers=headers,
+        files={
+            "csv_file": _build_leads_csv_file(
+                [
+                    {
+                        "state_code": "CA",
+                        "mobile_phone": "555-BULK-AUDIT-0001",
+                        "first_name": "Audit",
+                        "last_name": "Rollback",
+                    }
+                ]
+            )
+        },
+    )
+    assert response.status_code == 500, response.text
+    assert response.json() == {"detail": "Failed to import leads"}
+    assert db.query(Lead).filter(Lead.mobile_phone == "555-BULK-AUDIT-0001").count() == 0
+    assert (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.actor_user_id == admin.id,
+            AuditLog.action == "lead_bulk_import",
+            AuditLog.entity_type == "LeadImport",
+        )
+        .count()
+        == 0
+    )
 
 
 @pytest.mark.integration
