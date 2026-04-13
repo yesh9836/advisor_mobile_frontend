@@ -39,9 +39,14 @@ class UserGrowthPoint(BaseModel):
 
 class AdminAnalyticsOverview(BaseModel):
     monthly_revenue: List[MonthlyRevenuePoint]
+    monthly_revenue_total_months: int
     plan_breakdown: List[PlanBreakdownItem]
     state_distribution: List[StateDistributionItem]
     user_growth: List[UserGrowthPoint]
+    user_growth_total_months: int
+    user_growth_page: int
+    user_growth_size: int
+    user_growth_total_pages: int
 
 
 class UserListItem(BaseModel):
