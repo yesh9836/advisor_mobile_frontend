@@ -85,6 +85,30 @@ def test_admin_endpoints_require_admin(client, user_factory, auth_headers, plan_
     )
     assert ok_user_details.status_code == 200, ok_user_details.text
 
+    ok_user_licenses = client.get(
+        f"/api/v1/admin/users/{advisor.id}/licenses?page=1&size=20",
+        headers=admin_headers,
+    )
+    assert ok_user_licenses.status_code == 200, ok_user_licenses.text
+
+    ok_user_purchase_history = client.get(
+        f"/api/v1/admin/users/{advisor.id}/purchase-history?page=1&size=20",
+        headers=admin_headers,
+    )
+    assert ok_user_purchase_history.status_code == 200, ok_user_purchase_history.text
+
+    ok_user_download_history = client.get(
+        f"/api/v1/admin/users/{advisor.id}/download-history?page=1&size=20",
+        headers=admin_headers,
+    )
+    assert ok_user_download_history.status_code == 200, ok_user_download_history.text
+
+    ok_user_recent_activity = client.get(
+        f"/api/v1/admin/users/{advisor.id}/recent-activity?page=1&size=20",
+        headers=admin_headers,
+    )
+    assert ok_user_recent_activity.status_code == 200, ok_user_recent_activity.text
+
     ok_deactivate = client.post(
         f"/api/v1/admin/users/{target_user.id}/deactivate",
         headers=admin_headers,
@@ -164,6 +188,10 @@ def test_admin_endpoints_require_admin(client, user_factory, auth_headers, plan_
         ("GET", "/api/v1/admin/lead-inventory"),
         ("GET", "/api/v1/admin/license-status-summary"),
         ("GET", f"/api/v1/admin/users/{admin.id}"),
+        ("GET", f"/api/v1/admin/users/{admin.id}/licenses?page=1&size=20"),
+        ("GET", f"/api/v1/admin/users/{admin.id}/purchase-history?page=1&size=20"),
+        ("GET", f"/api/v1/admin/users/{admin.id}/download-history?page=1&size=20"),
+        ("GET", f"/api/v1/admin/users/{admin.id}/recent-activity?page=1&size=20"),
         ("POST", f"/api/v1/admin/users/{admin.id}/deactivate"),
         ("GET", "/api/v1/admin/audit-logs"),
         ("GET", "/api/v1/admin/plans"),
@@ -1748,28 +1776,46 @@ def test_admin_user_details_200_and_404(
     )
 
     plan = plan_factory(name="DetailPlan", price_cents=30000)
-    purchase_factory(user_id=advisor.id, package_id=plan.id, status="completed")
+    base_time = datetime(2026, 3, 1, tzinfo=timezone.utc)
+    states = ["CA", "NY", "TX", "FL", "WA", "AZ", "NV"]
 
-    license_factory(user_id=advisor.id, state="CA", status="verified")
+    for index in range(7):
+        purchase = purchase_factory(
+            user_id=advisor.id,
+            package_id=plan.id,
+            status="completed",
+            stripe_checkout_session_id=f"cs_detail_{index}",
+        )
+        purchase.purchased_at = base_time + timedelta(days=index)
 
-    lead = lead_factory(state_code="CA", first_name="Detail", last_name="Lead")
-    db.add(
-        LeadDownload(
+        license_row = license_factory(
+            user_id=advisor.id,
+            state=states[index],
+            status="verified",
+            license_number=f"{states[index]}-DETAIL-{index}",
+        )
+        license_row.created_at = base_time + timedelta(days=index)
+        license_row.verified_at = base_time + timedelta(days=index, hours=1)
+
+        lead = lead_factory(state_code="CA", first_name="Detail", last_name=f"Lead{index}")
+        download = LeadDownload(
             user_id=advisor.id,
             lead_id=lead.id,
-            csv_batch_id="batch-1",
+            csv_batch_id=f"batch-{index}",
         )
-    )
-    db.add(
-        AuditLog(
+        download.downloaded_at = base_time + timedelta(days=index)
+
+        activity = AuditLog(
             actor_user_id=advisor.id,
-            action="lead_downloaded",
+            action=f"lead_downloaded_{index}",
             entity_type="Lead",
             entity_id=lead.id,
-            meta_data={"state": "CA"},
+            meta_data={"state": "CA", "index": index},
             ip_address="203.0.113.11",
+            created_at=base_time + timedelta(days=index, minutes=5),
         )
-    )
+        db.add_all([download, activity])
+
     db.commit()
 
     details_response = client.get(
@@ -1782,15 +1828,72 @@ def test_admin_user_details_200_and_404(
     assert payload["id"] == advisor.id
     assert payload["email"] == "detail.advisor@example.com"
     assert payload["is_active"] is True
-    assert isinstance(payload["licenses"], list)
-    assert len(payload["licenses"]) == 1
-    assert payload["credit_summary"]["completed_purchases"] == 1
+    assert payload["credit_summary"]["completed_purchases"] == 7
     assert payload["credit_summary"]["remaining_credits"] > 0
-    assert len(payload["purchase_history"]) == 1
-    assert payload["purchase_history"][0]["status"] == "completed"
-    assert len(payload["download_history"]) == 1
-    assert len(payload["recent_activity"]) == 1
-    assert payload["recent_activity"][0]["actor_user_id"] == advisor.id
+    assert payload["licenses_preview"]["total"] == 7
+    assert payload["licenses_preview"]["has_more"] is True
+    assert len(payload["licenses_preview"]["items"]) == 5
+    assert payload["licenses_preview"]["items"][0]["license_number"] == "NV-DETAIL-6"
+    assert payload["purchase_history_preview"]["total"] == 7
+    assert payload["purchase_history_preview"]["has_more"] is True
+    assert len(payload["purchase_history_preview"]["items"]) == 5
+    assert payload["purchase_history_preview"]["items"][0]["order_reference"] == "cs_detail_6"
+    assert payload["download_history_preview"]["total"] == 7
+    assert payload["download_history_preview"]["has_more"] is True
+    assert len(payload["download_history_preview"]["items"]) == 5
+    assert payload["download_history_preview"]["items"][0]["csv_batch_id"] == "batch-6"
+    assert payload["recent_activity_preview"]["total"] == 7
+    assert payload["recent_activity_preview"]["has_more"] is True
+    assert len(payload["recent_activity_preview"]["items"]) == 5
+    assert payload["recent_activity_preview"]["items"][0]["actor_user_id"] == advisor.id
+
+    licenses_response = client.get(
+        f"/api/v1/admin/users/{advisor.id}/licenses?page=1&size=3",
+        headers=admin_headers,
+    )
+    assert licenses_response.status_code == 200, licenses_response.text
+    licenses_payload = licenses_response.json()
+    assert licenses_payload["total"] == 7
+    assert licenses_payload["page"] == 1
+    assert licenses_payload["size"] == 3
+    assert len(licenses_payload["items"]) == 3
+    assert licenses_payload["items"][0]["license_number"] == "NV-DETAIL-6"
+
+    purchase_history_response = client.get(
+        f"/api/v1/admin/users/{advisor.id}/purchase-history?page=2&size=3",
+        headers=admin_headers,
+    )
+    assert purchase_history_response.status_code == 200, purchase_history_response.text
+    purchase_history_payload = purchase_history_response.json()
+    assert purchase_history_payload["total"] == 7
+    assert purchase_history_payload["page"] == 2
+    assert purchase_history_payload["size"] == 3
+    assert len(purchase_history_payload["items"]) == 3
+    assert purchase_history_payload["items"][0]["order_reference"] == "cs_detail_3"
+
+    download_history_response = client.get(
+        f"/api/v1/admin/users/{advisor.id}/download-history?page=1&size=4",
+        headers=admin_headers,
+    )
+    assert download_history_response.status_code == 200, download_history_response.text
+    download_history_payload = download_history_response.json()
+    assert download_history_payload["total"] == 7
+    assert download_history_payload["page"] == 1
+    assert download_history_payload["size"] == 4
+    assert len(download_history_payload["items"]) == 4
+    assert download_history_payload["items"][0]["csv_batch_id"] == "batch-6"
+
+    recent_activity_response = client.get(
+        f"/api/v1/admin/users/{advisor.id}/recent-activity?page=3&size=2",
+        headers=admin_headers,
+    )
+    assert recent_activity_response.status_code == 200, recent_activity_response.text
+    recent_activity_payload = recent_activity_response.json()
+    assert recent_activity_payload["total"] == 7
+    assert recent_activity_payload["page"] == 3
+    assert recent_activity_payload["size"] == 2
+    assert len(recent_activity_payload["items"]) == 2
+    assert recent_activity_payload["items"][0]["action"] == "lead_downloaded_2"
 
     not_found = client.get("/api/v1/admin/users/999999", headers=admin_headers)
     assert not_found.status_code == 404
