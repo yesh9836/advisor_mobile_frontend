@@ -131,7 +131,9 @@ describe("admin API contract", () => {
 
     await expect(getDashboardStats()).resolves.toEqual(dashboard);
 
-    expect(mockedApiClient.get).toHaveBeenCalledWith("/admin/dashboard");
+    expect(mockedApiClient.get).toHaveBeenCalledWith("/admin/dashboard", {
+      signal: undefined,
+    });
   });
 
   it("getAnalyticsOverview uses GET /admin/analytics", async () => {
@@ -333,6 +335,7 @@ describe("admin API contract", () => {
         role: "advisor",
         status: "active",
       },
+      signal: undefined,
     });
   });
 
@@ -348,6 +351,7 @@ describe("admin API contract", () => {
         page: 1,
         size: 20,
       },
+      signal: undefined,
     });
   });
 
@@ -591,6 +595,7 @@ describe("admin API contract", () => {
         created_from: "2026-01-01T00:00:00Z",
         created_to: "2026-02-01T00:00:00Z",
       },
+      signal: undefined,
     });
   });
 
@@ -611,13 +616,17 @@ describe("admin API contract", () => {
     await getAdminAuditLogs({});
     const result = await deactivateAdminUser(8, { reason: " duplicate " });
 
-    expect(mockedApiClient.get).toHaveBeenCalledWith("/admin/dashboard");
+    expect(mockedApiClient.get).toHaveBeenCalledWith("/admin/dashboard", {
+      signal: undefined,
+    });
     expect(mockedApiClient.get).toHaveBeenCalledWith("/admin/users", {
       params: { page: 1, size: 20 },
+      signal: undefined,
     });
     expect(mockedApiClient.get).toHaveBeenCalledWith("/admin/users/8");
     expect(mockedApiClient.get).toHaveBeenCalledWith("/admin/audit-logs", {
       params: { page: 1, size: 20 },
+      signal: undefined,
     });
     expect(mockedApiClient.post).toHaveBeenCalledWith(
       "/admin/users/8/deactivate",
