@@ -23,6 +23,34 @@ def _create_admin_and_headers(user_factory, auth_headers):
     return admin, auth_headers(admin.email, "AdminSuite123!")
 
 
+def _mock_plan_lifecycle_payment_services(monkeypatch):
+    stripe_toggles = {"create": [], "deactivate": [], "activate": []}
+
+    def _create_price(**kwargs):
+        stripe_toggles["create"].append(kwargs)
+        return {
+            "stripe_price_id": f"price_admin_{kwargs['request_id']}",
+            "stripe_product_id": f"prod_admin_{kwargs['request_id']}",
+        }
+
+    monkeypatch.setattr(
+        "app.services.payment_service.PaymentService.create_stripe_price_for_plan",
+        _create_price,
+    )
+    monkeypatch.setattr(
+        "app.services.payment_service.PaymentService.deactivate_stripe_plan_artifacts",
+        lambda **kwargs: stripe_toggles["deactivate"].append(kwargs)
+        or {"price_deactivated": True, "product_deactivated": True},
+    )
+    monkeypatch.setattr(
+        "app.services.payment_service.PaymentService.activate_stripe_plan_artifacts",
+        lambda **kwargs: stripe_toggles["activate"].append(kwargs)
+        or {"price_activated": True, "product_activated": True},
+    )
+
+    return stripe_toggles
+
+
 def test_admin_endpoints_require_admin(client, user_factory, auth_headers, plan_factory, monkeypatch):
     admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
     advisor = user_factory(
@@ -953,6 +981,232 @@ def test_admin_plan_update_duplicate_name_rejected_before_stripe_side_effects(
     assert response.status_code == 409, response.text
     assert response.json()["detail"] == "Plan name already exists"
     assert call_counter["count"] == 0
+
+
+def test_admin_plan_create_rolls_back_when_audit_write_fails(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+    monkeypatch,
+):
+    admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+    stripe_toggles = _mock_plan_lifecycle_payment_services(monkeypatch)
+
+    monkeypatch.setattr(
+        "app.services.admin_service.AuditService.log_event",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("audit insert failed")),
+    )
+
+    response = client.post(
+        "/api/v1/admin/plans",
+        headers=admin_headers,
+        json={
+            "name": "Plan Rollback Create",
+            "price_cents": 25000,
+            "credits_total": 25,
+            "state_limit": 4,
+            "catalog_visible": True,
+            "request_id": "admin_plan_rollback_create_01",
+        },
+    )
+    assert response.status_code == 500, response.text
+    assert response.json() == {"detail": "Failed to create plan"}
+
+    db.expire_all()
+    assert db.query(LeadPackage).filter(LeadPackage.name == "Plan Rollback Create").first() is None
+    assert (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.actor_user_id == admin.id,
+            AuditLog.action == "admin_plan_created",
+            AuditLog.entity_type == "LeadPackage",
+        )
+        .count()
+        == 0
+    )
+    assert stripe_toggles["deactivate"] == [
+        {
+            "stripe_price_id": "price_admin_admin_plan_rollback_create_01",
+            "stripe_product_id": "prod_admin_admin_plan_rollback_create_01",
+        }
+    ]
+
+
+def test_admin_plan_update_rolls_back_when_audit_write_fails(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+    plan_factory,
+    monkeypatch,
+):
+    _admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+    stripe_toggles = _mock_plan_lifecycle_payment_services(monkeypatch)
+    plan = plan_factory(
+        name="Plan Rollback Update",
+        price_cents=20000,
+        daily_download_limit=20,
+        stripe_price_id="price_existing_update",
+    )
+    original_name = plan.name
+
+    monkeypatch.setattr(
+        "app.services.admin_service.AuditService.log_event",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("audit insert failed")),
+    )
+
+    response = client.put(
+        f"/api/v1/admin/plans/{plan.id}",
+        headers=admin_headers,
+        json={
+            "name": "Plan Rollback Update Changed",
+            "price_cents": 30000,
+            "credits_total": 30,
+            "request_id": "admin_plan_rollback_update_01",
+        },
+    )
+    assert response.status_code == 500, response.text
+    assert response.json() == {"detail": "Failed to update plan"}
+
+    db.expire_all()
+    refreshed_plan = db.query(LeadPackage).filter(LeadPackage.id == plan.id).first()
+    assert refreshed_plan is not None
+    assert refreshed_plan.name == original_name
+    assert refreshed_plan.price_cents == 20000
+    assert refreshed_plan.daily_download_limit == 20
+    assert refreshed_plan.stripe_price_id == "price_existing_update"
+    assert (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.action == "admin_plan_updated",
+            AuditLog.entity_type == "LeadPackage",
+            AuditLog.entity_id == plan.id,
+        )
+        .count()
+        == 0
+    )
+    assert stripe_toggles["deactivate"] == [
+        {
+            "stripe_price_id": "price_admin_admin_plan_rollback_update_01",
+            "stripe_product_id": "prod_admin_admin_plan_rollback_update_01",
+        }
+    ]
+
+
+def test_admin_plan_archive_rolls_back_when_audit_write_fails(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+    plan_factory,
+    monkeypatch,
+):
+    _admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+    stripe_toggles = _mock_plan_lifecycle_payment_services(monkeypatch)
+    plan = plan_factory(
+        name="Plan Rollback Archive",
+        price_cents=20000,
+        daily_download_limit=20,
+        stripe_price_id="price_existing_archive",
+    )
+    plan.stripe_product_id = "prod_existing_archive"
+    db.add(plan)
+    db.commit()
+
+    monkeypatch.setattr(
+        "app.services.admin_service.AuditService.log_event",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("audit insert failed")),
+    )
+
+    response = client.post(
+        f"/api/v1/admin/plans/{plan.id}/archive",
+        headers=admin_headers,
+        json={"reason": "Rollback archive"},
+    )
+    assert response.status_code == 500, response.text
+    assert response.json() == {"detail": "Failed to archive plan"}
+
+    db.expire_all()
+    refreshed_plan = db.query(LeadPackage).filter(LeadPackage.id == plan.id).first()
+    assert refreshed_plan is not None
+    assert refreshed_plan.is_archived is False
+    assert refreshed_plan.archived_at is None
+    assert (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.action == "admin_plan_archived",
+            AuditLog.entity_type == "LeadPackage",
+            AuditLog.entity_id == plan.id,
+        )
+        .count()
+        == 0
+    )
+    assert stripe_toggles["deactivate"] == []
+
+
+def test_admin_plan_unarchive_rolls_back_when_audit_write_fails(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+    plan_factory,
+    monkeypatch,
+):
+    _admin, admin_headers = _create_admin_and_headers(user_factory, auth_headers)
+    stripe_toggles = _mock_plan_lifecycle_payment_services(monkeypatch)
+    plan = plan_factory(
+        name="Plan Rollback Unarchive",
+        price_cents=20000,
+        daily_download_limit=20,
+        stripe_price_id="price_existing_unarchive",
+    )
+    plan.stripe_product_id = "prod_existing_unarchive"
+    plan.is_archived = True
+    plan.archived_at = datetime.now(timezone.utc)
+    db.add(plan)
+    db.commit()
+
+    monkeypatch.setattr(
+        "app.services.admin_service.AuditService.log_event",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("audit insert failed")),
+    )
+
+    response = client.post(
+        f"/api/v1/admin/plans/{plan.id}/unarchive",
+        headers=admin_headers,
+        json={"reason": "Rollback unarchive"},
+    )
+    assert response.status_code == 500, response.text
+    assert response.json() == {"detail": "Failed to unarchive plan"}
+
+    db.expire_all()
+    refreshed_plan = db.query(LeadPackage).filter(LeadPackage.id == plan.id).first()
+    assert refreshed_plan is not None
+    assert refreshed_plan.is_archived is True
+    assert refreshed_plan.archived_at is not None
+    assert (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.action == "admin_plan_unarchived",
+            AuditLog.entity_type == "LeadPackage",
+            AuditLog.entity_id == plan.id,
+        )
+        .count()
+        == 0
+    )
+    assert stripe_toggles["activate"] == [
+        {
+            "stripe_price_id": "price_existing_unarchive",
+            "stripe_product_id": "prod_existing_unarchive",
+        }
+    ]
+    assert stripe_toggles["deactivate"] == [
+        {
+            "stripe_price_id": "price_existing_unarchive",
+            "stripe_product_id": "prod_existing_unarchive",
+        }
+    ]
 
 
 def test_admin_plan_create_commit_failure_enqueues_stripe_cleanup_outbox_when_inline_cleanup_fails(
