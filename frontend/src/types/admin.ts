@@ -33,9 +33,14 @@ export interface UserGrowthPoint {
 
 export interface AdminAnalyticsOverview {
   monthly_revenue: MonthlyRevenuePoint[];
+  monthly_revenue_total_months: number;
   plan_breakdown: PlanBreakdownItem[];
   state_distribution: StateDistributionItem[];
   user_growth: UserGrowthPoint[];
+  user_growth_total_months: number;
+  user_growth_page: number;
+  user_growth_size: number;
+  user_growth_total_pages: number;
 }
 
 export interface AdminUserListItem {
