@@ -16,6 +16,7 @@ from app.models.license_resubmission import LicenseResubmission
 from app.models.user import User
 from app.core.config import settings
 from app.schemas.license import LicenseCreate
+from app.services.audit_service import AuditService
 
 logger = logging.getLogger(__name__)
 
@@ -435,6 +436,14 @@ class LicenseService:
                     user_id=user_id,
                 )
             )
+            AuditService.log_event(
+                db=db,
+                actor_user_id=user_id,
+                action="license_resubmitted",
+                entity_type="License",
+                entity_id=license.id,
+                meta_data={"state": license.state},
+            )
             db.commit()
             db.refresh(license)
 
@@ -491,6 +500,14 @@ class LicenseService:
             license.reviewed_at = license.verified_at
             license.reviewed_by = admin_id
 
+            AuditService.log_event(
+                db=db,
+                actor_user_id=admin_id,
+                action="license_approved",
+                entity_type="License",
+                entity_id=license.id,
+                meta_data={"state": license.state, "status": license.verification_status},
+            )
             db.commit()
             db.refresh(license)
 
@@ -543,6 +560,18 @@ class LicenseService:
             license.reviewed_at = datetime.now(timezone.utc)
             license.reviewed_by = admin_id
 
+            AuditService.log_event(
+                db=db,
+                actor_user_id=admin_id,
+                action="license_rejected",
+                entity_type="License",
+                entity_id=license.id,
+                meta_data={
+                    "state": license.state,
+                    "status": license.verification_status,
+                    "reason": reason,
+                },
+            )
             db.commit()
             db.refresh(license)
 

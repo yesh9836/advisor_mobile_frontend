@@ -835,6 +835,7 @@ class LeadService:
                     delivered_leads_count=assigned_count,
                 )
             AuditService.log_purchase_event(
+                db=db,
                 actor_user_id=purchase.user_id,
                 action="purchase_leads_backfilled",
                 purchase_id=purchase_id,
@@ -1316,12 +1317,12 @@ class LeadService:
         for attempt in range(1, max_attempts + 1):
             try:
                 leads, consumed_events = LeadService._allocate_download_batch_atomically(db=db, user=user)
-                db.commit()
                 for consumed in consumed_events:
                     purchase_id = consumed["purchase_id"]
                     lead_id = consumed["lead_id"]
                     credits_delta = consumed["credits_delta"]
                     AuditService.log_purchase_event(
+                        db=db,
                         actor_user_id=user.id,
                         action="purchase_credit_consumed",
                         purchase_id=purchase_id,
@@ -1334,6 +1335,7 @@ class LeadService:
                             "movement_type": "lead_consumed",
                         },
                     )
+                db.commit()
                 return generate_leads_csv_stream(leads, prepend_message=prepend_msg)
             except HTTPException:
                 db.rollback()

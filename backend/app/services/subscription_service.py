@@ -478,6 +478,23 @@ class SubscriptionService:
 
             db.add(purchase)
             try:
+                db.flush()
+                AuditService.log_purchase_event(
+                    db=db,
+                    actor_user_id=user.id,
+                    action="purchase_initiated",
+                    purchase_id=purchase.id,
+                    amount_cents=int(purchase.amount_cents or 0),
+                    correlation_ids={
+                        "checkout_session_id": session_id,
+                        "payment_intent_id": payment_intent_id,
+                        "idempotency_key": idempotency_key,
+                    },
+                    meta_data={
+                        "package_id": package.id,
+                        "currency": str((purchase.currency or "USD")).upper(),
+                    },
+                )
                 db.commit()
             except IntegrityError:
                 db.rollback()
@@ -504,22 +521,6 @@ class SubscriptionService:
                     "package_id": str(package.id),
                 },
             )
-            AuditService.log_purchase_event(
-                actor_user_id=user.id,
-                action="purchase_initiated",
-                purchase_id=purchase.id,
-                amount_cents=int(purchase.amount_cents or 0),
-                correlation_ids={
-                    "checkout_session_id": session_id,
-                    "payment_intent_id": payment_intent_id,
-                    "idempotency_key": idempotency_key,
-                },
-                meta_data={
-                    "package_id": package.id,
-                    "currency": str((purchase.currency or "USD")).upper(),
-                },
-            )
-
             return {"session_id": session_id, "url": session["url"]}
 
         except stripe.error.StripeError as e:
@@ -933,6 +934,19 @@ class SubscriptionService:
         db.add(purchase)
 
         try:
+            AuditService.log_purchase_event(
+                db=db,
+                actor_user_id=normalized_actor_user_id,
+                action="purchase_replacement_credits_granted",
+                purchase_id=purchase.id,
+                credits_delta=normalized_credits,
+                correlation_ids={"purchase_id": purchase.id},
+                meta_data={
+                    "reason": normalized_reason,
+                    "source": normalized_source,
+                    "idempotency_key": normalized_idempotency_key,
+                },
+            )
             db.commit()
         except IntegrityError:
             db.rollback()
@@ -968,19 +982,21 @@ class SubscriptionService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Replacement credit idempotency conflict",
             )
+        except HTTPException:
+            db.rollback()
+            raise
+        except Exception as exc:
+            db.rollback()
+            logger.error(
+                "Failed to grant replacement credits for purchase_id=%s: %s",
+                normalized_purchase_id,
+                exc,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to grant replacement credits",
+            ) from exc
 
-        AuditService.log_purchase_event(
-            actor_user_id=normalized_actor_user_id,
-            action="purchase_replacement_credits_granted",
-            purchase_id=purchase.id,
-            credits_delta=normalized_credits,
-            correlation_ids={"purchase_id": purchase.id},
-            meta_data={
-                "reason": normalized_reason,
-                "source": normalized_source,
-                "idempotency_key": normalized_idempotency_key,
-            },
-        )
         MetricsService.increment(
             "purchase_replacement_credits_total",
             tags={"outcome": "applied", "source": normalized_source},
@@ -1398,16 +1414,16 @@ class SubscriptionService:
                 delivered_leads_count=assigned_count,
             )
 
-        db.add(purchase)
-        db.commit()
         correlation_ids = SubscriptionService._build_purchase_correlation_ids(
             stripe_event_id=stripe_event_id,
             checkout_session_id=purchase.stripe_checkout_session_id,
             payment_intent_id=purchase.stripe_payment_intent_id,
             purchase_id=purchase.id,
         )
+        db.add(purchase)
         if purchase.status == "completed" and previous_status != "completed":
             AuditService.log_purchase_event(
+                db=db,
                 actor_user_id=purchase.user_id,
                 action="purchase_confirmed",
                 purchase_id=purchase.id,
@@ -1424,6 +1440,7 @@ class SubscriptionService:
                 source_event=grant_latency_source,
             )
             AuditService.log_purchase_event(
+                db=db,
                 actor_user_id=purchase.user_id,
                 action="purchase_credits_granted",
                 purchase_id=purchase.id,
@@ -1435,6 +1452,7 @@ class SubscriptionService:
             )
         if purchase.status == "completed":
             AuditService.log_purchase_event(
+                db=db,
                 actor_user_id=purchase.user_id,
                 action="purchase_leads_allocated",
                 purchase_id=purchase.id,
@@ -1450,6 +1468,7 @@ class SubscriptionService:
                     "notification_enqueued_sms": int(notification_summary["enqueued_sms"]),
                 },
             )
+        db.commit()
 
         return {
             "grant_created": grant_created,

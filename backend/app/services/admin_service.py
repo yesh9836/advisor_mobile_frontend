@@ -67,6 +67,8 @@ logger = logging.getLogger(__name__)
 
 class AdminService:
     USER_DETAILS_PREVIEW_LIMIT = 5
+    ANALYTICS_MONTHLY_REVENUE_LIMIT = 12
+    ANALYTICS_USER_GROWTH_PAGE_SIZE = 6
 
     @staticmethod
     def _is_first_purchase_offer_managed_package(package: LeadPackage) -> bool:
@@ -900,8 +902,17 @@ class AdminService:
         )
 
     @staticmethod
-    def get_analytics_overview(db: Session) -> AdminAnalyticsOverview:
-        monthly_revenue_rows = (
+    def get_analytics_overview(
+        db: Session,
+        *,
+        monthly_revenue_limit: int = ANALYTICS_MONTHLY_REVENUE_LIMIT,
+        user_growth_page: int = 1,
+        user_growth_size: int = ANALYTICS_USER_GROWTH_PAGE_SIZE,
+    ) -> AdminAnalyticsOverview:
+        safe_monthly_revenue_limit = max(1, monthly_revenue_limit)
+        safe_user_growth_size = max(1, user_growth_size)
+
+        monthly_revenue_grouped = (
             db.query(
                 func.extract("year", LeadPurchase.purchased_at).label("year"),
                 func.extract("month", LeadPurchase.purchased_at).label("month"),
@@ -909,8 +920,30 @@ class AdminService:
             )
             .filter(LeadPurchase.status == "completed")
             .group_by("year", "month")
-            .order_by("year", "month")
+            .subquery()
+        )
+        monthly_revenue_total_months = (
+            db.query(func.count())
+            .select_from(monthly_revenue_grouped)
+            .scalar()
+            or 0
+        )
+        monthly_revenue_rows = (
+            db.query(
+                monthly_revenue_grouped.c.year,
+                monthly_revenue_grouped.c.month,
+                monthly_revenue_grouped.c.revenue_cents,
+            )
+            .order_by(
+                monthly_revenue_grouped.c.year.desc(),
+                monthly_revenue_grouped.c.month.desc(),
+            )
+            .limit(safe_monthly_revenue_limit)
             .all()
+        )
+        monthly_revenue_rows = sorted(
+            monthly_revenue_rows,
+            key=lambda row: (int(row[0]), int(row[1])),
         )
 
         monthly_revenue = [
@@ -965,7 +998,7 @@ class AdminService:
             for state_code, lead_count in state_distribution_rows
         ]
 
-        user_growth_rows = (
+        user_growth_grouped = (
             db.query(
                 func.extract("year", User.created_at).label("year"),
                 func.extract("month", User.created_at).label("month"),
@@ -973,8 +1006,37 @@ class AdminService:
             )
             .filter(User.role == "advisor")
             .group_by("year", "month")
-            .order_by("year", "month")
+            .subquery()
+        )
+        user_growth_total_months = (
+            db.query(func.count())
+            .select_from(user_growth_grouped)
+            .scalar()
+            or 0
+        )
+        user_growth_total_pages = max(
+            1,
+            (int(user_growth_total_months) + safe_user_growth_size - 1) // safe_user_growth_size,
+        )
+        safe_user_growth_page = min(max(1, user_growth_page), user_growth_total_pages)
+        user_growth_offset = (safe_user_growth_page - 1) * safe_user_growth_size
+        user_growth_rows = (
+            db.query(
+                user_growth_grouped.c.year,
+                user_growth_grouped.c.month,
+                user_growth_grouped.c.new_users,
+            )
+            .order_by(
+                user_growth_grouped.c.year.desc(),
+                user_growth_grouped.c.month.desc(),
+            )
+            .offset(user_growth_offset)
+            .limit(safe_user_growth_size)
             .all()
+        )
+        user_growth_rows = sorted(
+            user_growth_rows,
+            key=lambda row: (int(row[0]), int(row[1])),
         )
 
         user_growth = [
@@ -987,9 +1049,14 @@ class AdminService:
 
         return AdminAnalyticsOverview(
             monthly_revenue=monthly_revenue,
+            monthly_revenue_total_months=int(monthly_revenue_total_months),
             plan_breakdown=plan_breakdown,
             state_distribution=state_distribution,
             user_growth=user_growth,
+            user_growth_total_months=int(user_growth_total_months),
+            user_growth_page=safe_user_growth_page,
+            user_growth_size=safe_user_growth_size,
+            user_growth_total_pages=user_growth_total_pages,
         )
 
     @staticmethod
@@ -1669,23 +1736,23 @@ class AdminService:
         )
 
         try:
+            AuditService.log_event(
+                db=db,
+                actor_user_id=admin_id,
+                action="user_deactivated",
+                entity_type="User",
+                entity_id=user.id,
+                meta_data={
+                    "target_user_id": user.id,
+                    "target_email": user.email,
+                    "reason": reason,
+                },
+            )
             db.commit()
         except Exception as exc:
             db.rollback()
             logger.error("Failed to deactivate user_id=%s: %s", user_id, exc)
             raise HTTPException(status_code=500, detail="Failed to deactivate user")
-
-        AuditService.log_event(
-            actor_user_id=admin_id,
-            action="user_deactivated",
-            entity_type="User",
-            entity_id=user.id,
-            meta_data={
-                "target_user_id": user.id,
-                "target_email": user.email,
-                "reason": reason,
-            },
-        )
 
     @staticmethod
     def get_audit_logs(
