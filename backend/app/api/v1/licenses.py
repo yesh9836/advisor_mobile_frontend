@@ -3,6 +3,7 @@ from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_active_user, get_db, require_admin
@@ -48,11 +49,17 @@ async def submit_license(
     - Maximum file size: 10 MB
     """
     # Create schema for validation
-    license_data = LicenseCreate(
-        state=state,
-        license_number=license_number,
-        license_type=license_type,
-    )
+    try:
+        license_data = LicenseCreate(
+            state=state,
+            license_number=license_number,
+            license_type=license_type,
+        )
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=exc.errors(include_url=False, include_context=False),
+        ) from exc
 
     # Submit license
     license = await LicenseService.submit_license(

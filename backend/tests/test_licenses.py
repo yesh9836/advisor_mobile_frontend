@@ -174,6 +174,35 @@ def test_license_submission_rejects_duplicate_state_for_same_advisor(
 
 
 @pytest.mark.integration
+def test_license_submission_rejects_invalid_us_state_code(
+    client,
+    db,
+    user_factory,
+    auth_headers,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LicenseInvalidStateAdvisor123!",
+        email="advisor.invalid.state@example.com",
+        name="Invalid State Advisor",
+    )
+    advisor_headers = auth_headers(advisor.email, "LicenseInvalidStateAdvisor123!")
+
+    response = client.post(
+        "/api/v1/licenses/",
+        headers=advisor_headers,
+        data={"state": "ZZ", "license_number": "ZZ-INVALID-001", "license_type": "Series 65"},
+        files={"document": ("license.pdf", b"%PDF-1.4 invalid-state", "application/pdf")},
+    )
+
+    assert response.status_code == 422, response.text
+    payload = response.json()
+    assert any(error["loc"][-1] == "state" for error in payload["detail"])
+    assert any("valid US state code" in error["msg"] for error in payload["detail"])
+    assert db.query(License).filter(License.user_id == advisor.id).count() == 0
+
+
+@pytest.mark.integration
 def test_license_submission_allows_same_state_for_different_advisors(
     client,
     user_factory,

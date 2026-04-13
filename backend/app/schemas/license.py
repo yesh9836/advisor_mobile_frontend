@@ -3,6 +3,8 @@ from typing import Optional, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.utils.us_states import normalize_and_validate_us_state_code
+
 
 class LicenseCreate(BaseModel):
     """Schema for creating a new license submission."""
@@ -28,8 +30,8 @@ class LicenseCreate(BaseModel):
     @field_validator("state")
     @classmethod
     def validate_state_uppercase(cls, v: str) -> str:
-        """Ensure state code is uppercase."""
-        return v.upper()
+        """Normalize and validate a US state code."""
+        return normalize_and_validate_us_state_code(v)
 
     @field_validator("license_number")
     @classmethod
