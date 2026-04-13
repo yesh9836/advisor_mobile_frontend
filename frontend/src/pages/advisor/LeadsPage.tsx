@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { downloadLeads, getLeads, saveLeadOutcome } from "@/api/leads";
@@ -12,6 +12,7 @@ import {
 } from "@/pages/advisor/leadPresentation";
 import type { Lead, LeadFilters, LeadOutcomeStatus } from "@/types/lead";
 import { getApiErrorMessage } from "@/utils/api-error";
+import { isRequestCanceled, useLatestRequest } from "@/utils/request-control";
 
 type StageFilter = "All" | LeadStage;
 type DeliveryFilter = "All" | "Available" | "Delivered";
@@ -96,6 +97,7 @@ const LeadsPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
+  const { beginRequest, isLatestRequest } = useLatestRequest();
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -106,67 +108,79 @@ const LeadsPage = () => {
     };
   }, [searchQuery]);
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadInbox = useCallback(async () => {
+    const { requestId, signal } = beginRequest();
+    setLoading(true);
+    setError(null);
 
-    const loadInbox = async () => {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const response = await getLeads(currentPage, PAGE_SIZE, {
+    try {
+      const response = await getLeads(
+        currentPage,
+        PAGE_SIZE,
+        {
           delivery_status: DELIVERY_FILTER_TO_QUERY[deliveryFilter],
           outcome_status: STAGE_FILTER_TO_QUERY[stageFilter],
           ...(debouncedSearchQuery ? { search: debouncedSearchQuery } : {}),
-        });
-        if (cancelled) return;
-
-        setTotalLeads(response.total);
-        const lastPage = Math.max(1, Math.ceil(response.total / PAGE_SIZE));
-        if (response.total > 0 && currentPage > lastPage) {
-          setCurrentPage(lastPage);
-          return;
-        }
-
-        const mapped = response.items.map((lead) => toInboxLead(lead));
-        const nextStatusByLeadId: Record<number, LeadStage> = {};
-        const nextNotesByLeadId: Record<number, string> = {};
-
-        for (const lead of response.items) {
-          nextStatusByLeadId[lead.id] = toDisplayStage(lead.outcome_status);
-          nextNotesByLeadId[lead.id] = lead.outcome_notes ?? "";
-        }
-
-        setLeads(mapped);
-        setStatusByLeadId(nextStatusByLeadId);
-        setNotesByLeadId(nextNotesByLeadId);
-
-        setSelectedLeadId((previousLeadId) => {
-          if (mapped.length === 0) {
-            return null;
-          }
-          return mapped.some((lead) => lead.id === previousLeadId)
-            ? previousLeadId
-            : mapped[0].id;
-        });
-      } catch (loadError) {
-        if (cancelled) return;
-        setLeads([]);
-        setTotalLeads(0);
-        setSelectedLeadId(null);
-        setError(getApiErrorMessage(loadError, "Unable to load lead inbox."));
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        },
+        { signal },
+      );
+      if (!isLatestRequest(requestId)) {
+        return;
       }
-    };
 
+      setTotalLeads(response.total);
+      const lastPage = Math.max(1, Math.ceil(response.total / PAGE_SIZE));
+      if (response.total > 0 && currentPage > lastPage) {
+        setCurrentPage(lastPage);
+        return;
+      }
+
+      const mapped = response.items.map((lead) => toInboxLead(lead));
+      const nextStatusByLeadId: Record<number, LeadStage> = {};
+      const nextNotesByLeadId: Record<number, string> = {};
+
+      for (const lead of response.items) {
+        nextStatusByLeadId[lead.id] = toDisplayStage(lead.outcome_status);
+        nextNotesByLeadId[lead.id] = lead.outcome_notes ?? "";
+      }
+
+      setLeads(mapped);
+      setStatusByLeadId(nextStatusByLeadId);
+      setNotesByLeadId(nextNotesByLeadId);
+
+      setSelectedLeadId((previousLeadId) => {
+        if (mapped.length === 0) {
+          return null;
+        }
+        return mapped.some((lead) => lead.id === previousLeadId)
+          ? previousLeadId
+          : mapped[0].id;
+      });
+    } catch (loadError) {
+      if (!isLatestRequest(requestId) || isRequestCanceled(loadError)) {
+        return;
+      }
+      setLeads([]);
+      setTotalLeads(0);
+      setSelectedLeadId(null);
+      setError(getApiErrorMessage(loadError, "Unable to load lead inbox."));
+    } finally {
+      if (isLatestRequest(requestId)) {
+        setLoading(false);
+      }
+    }
+  }, [
+    beginRequest,
+    currentPage,
+    debouncedSearchQuery,
+    deliveryFilter,
+    isLatestRequest,
+    stageFilter,
+  ]);
+
+  useEffect(() => {
     void loadInbox();
-    return () => {
-      cancelled = true;
-    };
-  }, [currentPage, deliveryFilter, stageFilter, debouncedSearchQuery, reloadTick]);
+  }, [loadInbox, reloadTick]);
 
   const selectedLead = useMemo(() => {
     if (selectedLeadId === null) {

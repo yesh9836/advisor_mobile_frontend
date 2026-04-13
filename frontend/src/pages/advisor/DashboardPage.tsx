@@ -21,6 +21,7 @@ import type {
   LeadDashboardSummary,
 } from "@/types/lead";
 import { getApiErrorMessage } from "@/utils/api-error";
+import { isRequestCanceled, useLatestRequest } from "@/utils/request-control";
 
 interface RecentLeadItem {
   id: number;
@@ -126,57 +127,54 @@ const DashboardPage = () => {
   const [editorSettings, setEditorSettings] =
     useState<DeliverySettingsEditorState | null>(null);
   const [hasAutoOpenedFromQuery, setHasAutoOpenedFromQuery] = useState(false);
+  const { beginRequest, isLatestRequest } = useLatestRequest();
+
+  const loadDashboard = useCallback(async () => {
+    const { requestId, signal } = beginRequest();
+    setLoading(true);
+    setError(null);
+
+    const [summaryResult, leadsResult] = await Promise.allSettled([
+      getLeadDashboardSummary({ signal }),
+      getLeads(1, 3, { delivery_status: "delivered" }, { signal }),
+    ]);
+    if (!isLatestRequest(requestId)) {
+      return;
+    }
+
+    let nextError: string | null = null;
+
+    if (summaryResult.status === "fulfilled") {
+      setSummary(summaryResult.value);
+    } else if (!isRequestCanceled(summaryResult.reason)) {
+      setSummary(null);
+      nextError = getApiErrorMessage(
+        summaryResult.reason,
+        "Unable to load dashboard summary.",
+      );
+    }
+
+    if (leadsResult.status === "fulfilled") {
+      setRecentLeads(
+        leadsResult.value.items.slice(0, 3).map((lead) => toRecentLead(lead)),
+      );
+    } else if (!isRequestCanceled(leadsResult.reason)) {
+      setRecentLeads([]);
+      if (nextError === null) {
+        nextError = getApiErrorMessage(
+          leadsResult.reason,
+          "Unable to load recent leads.",
+        );
+      }
+    }
+
+    setError(nextError);
+    setLoading(false);
+  }, [beginRequest, isLatestRequest]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-
-      const [summaryResult, leadsResult] = await Promise.allSettled([
-        getLeadDashboardSummary(),
-        getLeads(1, 3, { delivery_status: "delivered" }),
-      ]);
-      if (cancelled) {
-        return;
-      }
-
-      let nextError: string | null = null;
-
-      if (summaryResult.status === "fulfilled") {
-        setSummary(summaryResult.value);
-      } else {
-        setSummary(null);
-        nextError = getApiErrorMessage(
-          summaryResult.reason,
-          "Unable to load dashboard summary.",
-        );
-      }
-
-      if (leadsResult.status === "fulfilled") {
-        setRecentLeads(
-          leadsResult.value.items.slice(0, 3).map((lead) => toRecentLead(lead)),
-        );
-      } else {
-        setRecentLeads([]);
-        if (nextError === null) {
-          nextError = getApiErrorMessage(
-            leadsResult.reason,
-            "Unable to load recent leads.",
-          );
-        }
-      }
-
-      setError(nextError);
-      setLoading(false);
-    };
-
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    void loadDashboard();
+  }, [loadDashboard]);
 
   const handleOpenSettingsEditor = useCallback(async () => {
     setIsSettingsEditorOpen(true);

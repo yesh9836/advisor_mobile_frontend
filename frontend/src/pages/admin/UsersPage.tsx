@@ -1,10 +1,11 @@
 import type { CSSProperties } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { getUsers } from "@/api/admin";
 import type { AdminUserListItem, UserListFilters } from "@/types/admin";
 import { getApiErrorMessage } from "@/utils/api-error";
+import { isRequestCanceled, useLatestRequest } from "@/utils/request-control";
 
 const DEFAULT_PAGE_SIZE = 20;
 
@@ -81,42 +82,42 @@ const UsersPage = () => {
 
   const [filterDraft, setFilterDraft] = useState<UserFilterDraft>(defaultDraftFilters);
   const [filters, setFilters] = useState<UserListFilters>({});
+  const { beginRequest, isLatestRequest } = useLatestRequest();
 
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil(total / size)),
     [total, size],
   );
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadUsers = useCallback(async () => {
+    const { requestId, signal } = beginRequest();
+    setLoading(true);
+    setError(null);
 
-    const loadUsers = async () => {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const response = await getUsers(page, size, filters);
-        if (cancelled) return;
-        setUsers(response.items);
-        setTotal(response.total);
-      } catch (loadError) {
-        if (cancelled) return;
-        setUsers([]);
-        setTotal(0);
-        setError(getApiErrorMessage(loadError, "Unable to load users."));
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+    try {
+      const response = await getUsers(page, size, filters, { signal });
+      if (!isLatestRequest(requestId)) {
+        return;
       }
-    };
+      setUsers(response.items);
+      setTotal(response.total);
+    } catch (loadError) {
+      if (!isLatestRequest(requestId) || isRequestCanceled(loadError)) {
+        return;
+      }
+      setUsers([]);
+      setTotal(0);
+      setError(getApiErrorMessage(loadError, "Unable to load users."));
+    } finally {
+      if (isLatestRequest(requestId)) {
+        setLoading(false);
+      }
+    }
+  }, [beginRequest, filters, isLatestRequest, page, size]);
 
+  useEffect(() => {
     void loadUsers();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [filters, page, size]);
+  }, [loadUsers]);
 
   const handleApplyFilters = () => {
     setPage(1);

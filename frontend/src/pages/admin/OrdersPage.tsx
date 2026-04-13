@@ -1,9 +1,10 @@
 import type { CSSProperties } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { downloadOrdersExport, getOrders } from "@/api/admin";
 import type { AdminOrderListItem } from "@/types/admin";
 import { getApiErrorMessage } from "@/utils/api-error";
+import { isRequestCanceled, useLatestRequest } from "@/utils/request-control";
 
 const formatOrderTimestamp = (isoTimestamp: string): string => {
   const date = new Date(isoTimestamp);
@@ -69,41 +70,41 @@ const OrdersPage = () => {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { beginRequest, isLatestRequest } = useLatestRequest();
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil(total / ORDERS_PAGE_SIZE)),
     [total],
   );
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadOrders = useCallback(async () => {
+    const { requestId, signal } = beginRequest();
+    setLoading(true);
+    setError(null);
 
-    const loadOrders = async () => {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const response = await getOrders(page, ORDERS_PAGE_SIZE);
-        if (cancelled) return;
-        setOrders(response.items);
-        setTotal(response.total);
-      } catch (loadError) {
-        if (cancelled) return;
-        setOrders([]);
-        setTotal(0);
-        setError(getApiErrorMessage(loadError, "Unable to load recent orders."));
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+    try {
+      const response = await getOrders(page, ORDERS_PAGE_SIZE, undefined, { signal });
+      if (!isLatestRequest(requestId)) {
+        return;
       }
-    };
+      setOrders(response.items);
+      setTotal(response.total);
+    } catch (loadError) {
+      if (!isLatestRequest(requestId) || isRequestCanceled(loadError)) {
+        return;
+      }
+      setOrders([]);
+      setTotal(0);
+      setError(getApiErrorMessage(loadError, "Unable to load recent orders."));
+    } finally {
+      if (isLatestRequest(requestId)) {
+        setLoading(false);
+      }
+    }
+  }, [beginRequest, isLatestRequest, page]);
 
+  useEffect(() => {
     void loadOrders();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [page]);
+  }, [loadOrders]);
 
   const handleExport = async () => {
     setExporting(true);

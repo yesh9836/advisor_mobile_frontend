@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { getAuditLogs, getDashboardStats } from "@/api/admin";
 import type { AuditLog, DashboardStats } from "@/types/admin";
 import { getApiErrorMessage } from "@/utils/api-error";
+import { isRequestCanceled, useLatestRequest } from "@/utils/request-control";
 
 const formatCurrency = (amountCents: number, currency: string): string => {
   return (amountCents / 100).toLocaleString("en-US", {
@@ -44,58 +45,56 @@ const AdminDashboard = () => {
   const [showAllRecentActivity, setShowAllRecentActivity] = useState(false);
   const [activityLoading, setActivityLoading] = useState(true);
   const [activityError, setActivityError] = useState<string | null>(null);
+  const { beginRequest, isLatestRequest } = useLatestRequest();
+
+  const loadDashboard = useCallback(async () => {
+    const { requestId, signal } = beginRequest();
+    setStatsLoading(true);
+    setStatsError(null);
+    setActivityLoading(true);
+    setActivityError(null);
+
+    const [statsResult, activityResult] = await Promise.allSettled([
+      getDashboardStats({ signal }),
+      getAuditLogs({}, 1, 20, { signal }),
+    ]);
+
+    if (!isLatestRequest(requestId)) {
+      return;
+    }
+
+    if (statsResult.status === "fulfilled") {
+      setStats(statsResult.value);
+    } else if (!isRequestCanceled(statsResult.reason)) {
+      setStats(null);
+      setStatsError(
+        getApiErrorMessage(
+          statsResult.reason,
+          "Unable to load admin dashboard.",
+        ),
+      );
+    }
+    setStatsLoading(false);
+
+    if (activityResult.status === "fulfilled") {
+      setRecentActivity(activityResult.value.items);
+      setShowAllRecentActivity(false);
+    } else if (!isRequestCanceled(activityResult.reason)) {
+      setRecentActivity([]);
+      setShowAllRecentActivity(false);
+      setActivityError(
+        getApiErrorMessage(
+          activityResult.reason,
+          "Unable to load recent activity.",
+        ),
+      );
+    }
+    setActivityLoading(false);
+  }, [beginRequest, isLatestRequest]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    const loadDashboard = async () => {
-      setStatsLoading(true);
-      setStatsError(null);
-      setActivityLoading(true);
-      setActivityError(null);
-
-      const [statsResult, activityResult] = await Promise.allSettled([
-        getDashboardStats(),
-        getAuditLogs({}, 1, 20),
-      ]);
-
-      if (cancelled) return;
-
-      if (statsResult.status === "fulfilled") {
-        setStats(statsResult.value);
-      } else {
-        setStats(null);
-        setStatsError(
-          getApiErrorMessage(
-            statsResult.reason,
-            "Unable to load admin dashboard.",
-          ),
-        );
-      }
-      setStatsLoading(false);
-
-      if (activityResult.status === "fulfilled") {
-        setRecentActivity(activityResult.value.items);
-        setShowAllRecentActivity(false);
-      } else {
-        setRecentActivity([]);
-        setShowAllRecentActivity(false);
-        setActivityError(
-          getApiErrorMessage(
-            activityResult.reason,
-            "Unable to load recent activity.",
-          ),
-        );
-      }
-      setActivityLoading(false);
-    };
-
     void loadDashboard();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  }, [loadDashboard]);
 
   const visibleRecentActivity = useMemo(() => {
     return showAllRecentActivity
