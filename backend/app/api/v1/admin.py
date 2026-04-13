@@ -24,6 +24,10 @@ from app.schemas.admin import (
     PaginatedAdminPlans,
     PaginatedLeadInventory,
     PaginatedOrders,
+    PaginatedUserDownloadHistory,
+    PaginatedUserLicenses,
+    PaginatedUserPurchaseHistory,
+    PaginatedUserRecentActivity,
     PaginatedUsers,
     UserDetails,
     UserListFilters,
@@ -178,6 +182,85 @@ def get_user_details(
 ) -> UserDetails:
     _ = current_admin
     return AdminService.get_user_details(db=db, user_id=user_id)
+
+
+@router.get(
+    "/users/{user_id}/licenses",
+    response_model=PaginatedUserLicenses,
+    summary="List licenses for a user",
+)
+def get_user_licenses(
+    user_id: int,
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> PaginatedUserLicenses:
+    _ = current_admin
+    return AdminService.get_user_licenses(db=db, user_id=user_id, page=page, size=size)
+
+
+@router.get(
+    "/users/{user_id}/purchase-history",
+    response_model=PaginatedUserPurchaseHistory,
+    summary="List purchase history for a user",
+)
+def get_user_purchase_history(
+    user_id: int,
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> PaginatedUserPurchaseHistory:
+    _ = current_admin
+    return AdminService.get_user_purchase_history(
+        db=db,
+        user_id=user_id,
+        page=page,
+        size=size,
+    )
+
+
+@router.get(
+    "/users/{user_id}/download-history",
+    response_model=PaginatedUserDownloadHistory,
+    summary="List download history for a user",
+)
+def get_user_download_history(
+    user_id: int,
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> PaginatedUserDownloadHistory:
+    _ = current_admin
+    return AdminService.get_user_download_history(
+        db=db,
+        user_id=user_id,
+        page=page,
+        size=size,
+    )
+
+
+@router.get(
+    "/users/{user_id}/recent-activity",
+    response_model=PaginatedUserRecentActivity,
+    summary="List recent activity for a user",
+)
+def get_user_recent_activity(
+    user_id: int,
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> PaginatedUserRecentActivity:
+    _ = current_admin
+    return AdminService.get_user_recent_activity(
+        db=db,
+        user_id=user_id,
+        page=page,
+        size=size,
+    )
 
 
 @router.post(
