@@ -252,6 +252,8 @@ const auditLogSchema = z
   .looseObject({
     id: z.number(),
     actor_user_id: z.number().nullable(),
+    actor_name: z.string().nullable().optional(),
+    actor_email: z.string().nullable().optional(),
     action: z.string(),
     entity_type: z.string(),
     entity_id: z.number().nullable(),
