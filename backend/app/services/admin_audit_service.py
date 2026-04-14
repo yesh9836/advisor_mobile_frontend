@@ -3,6 +3,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.audit_log import AuditLog
+from app.models.user import User
 from app.schemas.admin import AuditLogFilters, AuditLogItem, PaginatedAuditLogs
 
 
@@ -15,7 +16,7 @@ class AdminAuditService:
         size: int,
         filters: AuditLogFilters,
     ) -> PaginatedAuditLogs:
-        query = db.query(AuditLog)
+        query = db.query(AuditLog, User).outerjoin(User, User.id == AuditLog.actor_user_id)
 
         if filters.action:
             query = query.filter(AuditLog.action == filters.action)
@@ -57,16 +58,18 @@ class AdminAuditService:
 
         items = [
             AuditLogItem(
-                id=row.id,
-                actor_user_id=row.actor_user_id,
-                action=row.action,
-                entity_type=row.entity_type,
-                entity_id=row.entity_id,
-                meta_data=row.meta_data,
-                ip_address=row.ip_address,
-                created_at=row.created_at,
+                id=audit_log.id,
+                actor_user_id=audit_log.actor_user_id,
+                actor_name=actor.name if actor is not None else None,
+                actor_email=actor.email if actor is not None else None,
+                action=audit_log.action,
+                entity_type=audit_log.entity_type,
+                entity_id=audit_log.entity_id,
+                meta_data=audit_log.meta_data,
+                ip_address=audit_log.ip_address,
+                created_at=audit_log.created_at,
             )
-            for row in rows
+            for audit_log, actor in rows
         ]
 
         return PaginatedAuditLogs(items=items, total=total, page=page, size=size)

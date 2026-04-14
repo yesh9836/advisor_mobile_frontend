@@ -1530,10 +1530,15 @@ class AdminService:
         )
 
     @staticmethod
-    def _serialize_user_activity(activity: AuditLog) -> UserRecentActivityItem:
+    def _serialize_user_activity(
+        activity: AuditLog,
+        actor: Optional[User] = None,
+    ) -> UserRecentActivityItem:
         return UserRecentActivityItem(
             id=activity.id,
             actor_user_id=activity.actor_user_id,
+            actor_name=actor.name if actor is not None else None,
+            actor_email=actor.email if actor is not None else None,
             action=activity.action,
             entity_type=activity.entity_type,
             entity_id=activity.entity_id,
@@ -1635,7 +1640,7 @@ class AdminService:
         page: int,
         size: int,
     ) -> PaginatedUserRecentActivity:
-        AdminService._get_user_or_404(db, user_id)
+        user = AdminService._get_user_or_404(db, user_id)
 
         total = db.query(func.count(AuditLog.id)).filter(AuditLog.actor_user_id == user_id).scalar() or 0
         rows = (
@@ -1648,7 +1653,7 @@ class AdminService:
         )
 
         return PaginatedUserRecentActivity(
-            items=[AdminService._serialize_user_activity(activity) for activity in rows],
+            items=[AdminService._serialize_user_activity(activity, user) for activity in rows],
             total=int(total),
             page=page,
             size=size,
