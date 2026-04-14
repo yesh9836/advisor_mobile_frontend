@@ -60,6 +60,22 @@ const formatCurrency = (priceCents: number, currency: string): string => {
   });
 };
 
+const formatActorLabel = (item: AuditLog): string | null => {
+  const actorParts = [item.actor_name, item.actor_email].filter(
+    (value): value is string => typeof value === "string" && value.trim().length > 0,
+  );
+
+  if (actorParts.length > 0) {
+    return actorParts.join(" • ");
+  }
+
+  if (item.actor_user_id !== null) {
+    return `User #${item.actor_user_id}`;
+  }
+
+  return null;
+};
+
 const userStatusBadgeStyle = (isActive: boolean): CSSProperties => {
   if (isActive) {
     return {
@@ -344,6 +360,7 @@ const getActivityDetails = (item: AuditLog): string[] => {
 const renderActivityRow = (item: AuditLog) => {
   const summary = getActivitySummary(item);
   const details = getActivityDetails(item);
+  const actorLabel = formatActorLabel(item);
 
   return (
     <section
@@ -364,6 +381,12 @@ const renderActivityRow = (item: AuditLog) => {
         Affected: {formatTitleLabel(item.entity_type)}
         {item.entity_id !== null ? ` #${item.entity_id}` : ""}
       </div>
+
+      {actorLabel && (
+        <div style={{ marginTop: 8, color: "#334155", fontSize: 14 }}>
+          Performed by: {actorLabel}
+        </div>
+      )}
 
       <p style={{ margin: "8px 0 0 0", color: "#475569", fontSize: 14 }}>{summary}</p>
 

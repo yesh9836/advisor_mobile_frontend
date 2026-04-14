@@ -33,6 +33,22 @@ const formatTimestamp = (isoTimestamp: string): string => {
 const formatActionLabel = (value: string): string =>
   value.replace(/_/g, " ").trim().toUpperCase();
 
+const formatActorLabel = (entry: AuditLog): string | null => {
+  const actorParts = [entry.actor_name, entry.actor_email].filter(
+    (value): value is string => typeof value === "string" && value.trim().length > 0,
+  );
+
+  if (actorParts.length > 0) {
+    return actorParts.join(" • ");
+  }
+
+  if (entry.actor_user_id !== null) {
+    return `User #${entry.actor_user_id}`;
+  }
+
+  return null;
+};
+
 const ACTIVITY_PREVIEW_LIMIT = 5;
 
 const AdminDashboard = () => {
@@ -267,27 +283,35 @@ const AdminDashboard = () => {
 
         {!activityLoading && recentActivity.length > 0 && (
           <div className="stack">
-            {visibleRecentActivity.map((entry) => (
-              <section
-                key={entry.id}
-                className="panel"
-                style={{ background: "#f8fafc" }}
-              >
-                <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-                  <div style={{ color: "#0b1b49", fontWeight: 700 }}>
-                    {formatActionLabel(entry.action)}
+            {visibleRecentActivity.map((entry) => {
+              const actorLabel = formatActorLabel(entry);
+
+              return (
+                <section
+                  key={entry.id}
+                  className="panel"
+                  style={{ background: "#f8fafc" }}
+                >
+                  <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ color: "#0b1b49", fontWeight: 700 }}>
+                      {formatActionLabel(entry.action)}
+                    </div>
+                    <div style={{ color: "#64748b", fontSize: 13 }}>
+                      {formatTimestamp(entry.created_at)}
+                    </div>
                   </div>
-                  <div style={{ color: "#64748b", fontSize: 13 }}>
-                    {formatTimestamp(entry.created_at)}
-                  </div>
-                </div>
-                <p style={{ margin: "8px 0 0 0", color: "#475569" }}>
-                  {entry.entity_type}
-                  {entry.entity_id !== null ? ` #${entry.entity_id}` : ""}
-                  {entry.actor_user_id !== null ? ` • actor ${entry.actor_user_id}` : ""}
-                </p>
-              </section>
-            ))}
+                  <p style={{ margin: "8px 0 0 0", color: "#475569" }}>
+                    {entry.entity_type}
+                    {entry.entity_id !== null ? ` #${entry.entity_id}` : ""}
+                  </p>
+                  {actorLabel && (
+                    <p style={{ margin: "8px 0 0 0", color: "#475569" }}>
+                      Performed by: {actorLabel}
+                    </p>
+                  )}
+                </section>
+              );
+            })}
 
             {recentActivity.length > ACTIVITY_PREVIEW_LIMIT && (
               <button
