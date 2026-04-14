@@ -167,6 +167,8 @@ export interface UserDownloadHistoryItem {
 export interface AuditLog {
   id: number;
   actor_user_id: number | null;
+  actor_name?: string | null;
+  actor_email?: string | null;
   action: string;
   entity_type: string;
   entity_id: number | null;
