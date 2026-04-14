@@ -94,6 +94,8 @@ const buildUserDetails = () => ({
       {
         id: 810,
         actor_user_id: 7,
+        actor_name: "Detail Advisor",
+        actor_email: "detail@example.com",
         action: "lead_downloaded",
         entity_type: "Lead",
         entity_id: 150,
@@ -165,6 +167,8 @@ describe("UserDetailsPage", () => {
         items: Array.from({ length: 5 }, (_, index) => ({
           id: 900 + index,
           actor_user_id: 7,
+          actor_name: "Detail Advisor",
+          actor_email: "detail@example.com",
           action: `activity_${index + 1}`,
           entity_type: "Lead",
           entity_id: 5000 + index,
@@ -188,6 +192,7 @@ describe("UserDetailsPage", () => {
     expect(screen.queryByText("1011")).not.toBeInTheDocument();
     expect(screen.getByText("Affected: Lead #5000")).toBeInTheDocument();
     expect(screen.queryByText("Affected: Lead #5011")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Performed by: Detail Advisor • detail@example.com")).toHaveLength(5);
     expect(screen.getByText("Performed activity 1.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "View Full Purchase History (7 more)" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "View Full Licenses (7 more)" })).toBeInTheDocument();

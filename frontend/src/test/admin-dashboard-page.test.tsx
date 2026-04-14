@@ -43,6 +43,8 @@ describe("AdminDashboard", () => {
         {
           id: 1,
           actor_user_id: 8,
+          actor_name: "Admin Person",
+          actor_email: "admin@example.com",
           action: "lead_bulk_import",
           entity_type: "LeadImport",
           entity_id: 4,
@@ -66,6 +68,7 @@ describe("AdminDashboard", () => {
 
     expect(await screen.findByText("10")).toBeInTheDocument();
     expect(screen.getByText("LEAD BULK IMPORT")).toBeInTheDocument();
+    expect(screen.getByText("Performed by: Admin Person • admin@example.com")).toBeInTheDocument();
     expect(getDashboardStats).toHaveBeenCalledWith(
       expect.objectContaining({
         signal: expect.any(AbortSignal),
@@ -86,6 +89,8 @@ describe("AdminDashboard", () => {
       items: Array.from({ length: 7 }, (_, index) => ({
         id: index + 1,
         actor_user_id: 8,
+        actor_name: "Admin Person",
+        actor_email: "admin@example.com",
         action: `activity_${index + 1}`,
         entity_type: "LeadImport",
         entity_id: 100 + index,
