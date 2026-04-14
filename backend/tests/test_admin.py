@@ -2214,6 +2214,8 @@ def test_admin_user_details_200_and_404(
     assert payload["recent_activity_preview"]["has_more"] is True
     assert len(payload["recent_activity_preview"]["items"]) == 5
     assert payload["recent_activity_preview"]["items"][0]["actor_user_id"] == advisor.id
+    assert payload["recent_activity_preview"]["items"][0]["actor_name"] == advisor.name
+    assert payload["recent_activity_preview"]["items"][0]["actor_email"] == advisor.email
 
     licenses_response = client.get(
         f"/api/v1/admin/users/{advisor.id}/licenses?page=1&size=3",
@@ -2534,6 +2536,8 @@ def test_admin_audit_logs_filters_and_ordering(client, db, user_factory, auth_he
     assert len(filtered_payload["items"]) == 2
     assert all(item["action"] == "license_approved" for item in filtered_payload["items"])
     assert all(item["actor_user_id"] == admin.id for item in filtered_payload["items"])
+    assert all(item["actor_name"] == admin.name for item in filtered_payload["items"])
+    assert all(item["actor_email"] == admin.email for item in filtered_payload["items"])
 
     from_iso = (newer - timedelta(seconds=1)).isoformat()
     to_iso = (newer + timedelta(seconds=1)).isoformat()
