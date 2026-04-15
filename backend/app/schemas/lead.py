@@ -62,6 +62,7 @@ class LeadResponse(LeadBase):
     id: int
     source: Optional[str] = None
     created_at: datetime
+    received_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
     outcome_status: Optional[LeadOutcomeStatus] = None
