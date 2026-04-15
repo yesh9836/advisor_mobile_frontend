@@ -56,6 +56,7 @@ export const leadSchema: z.ZodType<Lead> = z
     outcome_updated_at: z.string().nullable().optional(),
     is_downloaded: z.boolean().optional(),
     downloaded_at: z.string().nullable().optional(),
+    pii_unlocked: z.boolean().optional(),
   });
 
 const paginatedLeadsSchema: z.ZodType<PaginatedLeads> = z
