@@ -349,10 +349,51 @@ class LeadService:
             db.query(LeadOwnership, Lead)
             .join(Lead, Lead.id == LeadOwnership.lead_id)
             .filter(LeadOwnership.user_id == user_id)
-            .order_by(LeadOwnership.assigned_at.desc(), LeadOwnership.id.desc())
+            .order_by(LeadOwnership.assigned_at.desc(), Lead.id.desc())
             .all()
         )
         return [lead for _ownership, lead in rows]
+
+    @staticmethod
+    def _get_delivered_leads_for_user(db: Session, user_id: int) -> List[Lead]:
+        latest_downloads = (
+            db.query(
+                LeadDownload.lead_id.label("lead_id"),
+                LeadDownload.downloaded_at.label("downloaded_at"),
+                LeadDownload.id.label("download_id"),
+                func.row_number().over(
+                    partition_by=LeadDownload.lead_id,
+                    order_by=(LeadDownload.downloaded_at.desc(), LeadDownload.id.desc()),
+                ).label("row_rank"),
+            )
+            .filter(LeadDownload.user_id == user_id)
+            .subquery()
+        )
+        ownership_alias = (
+            db.query(
+                LeadOwnership.lead_id.label("lead_id"),
+                LeadOwnership.assigned_at.label("assigned_at"),
+                LeadOwnership.id.label("ownership_id"),
+            )
+            .filter(LeadOwnership.user_id == user_id)
+            .subquery()
+        )
+        return (
+            db.query(Lead)
+            .join(latest_downloads, latest_downloads.c.lead_id == Lead.id)
+            .outerjoin(ownership_alias, ownership_alias.c.lead_id == Lead.id)
+            .filter(latest_downloads.c.row_rank == 1)
+            .order_by(
+                func.coalesce(
+                    ownership_alias.c.assigned_at,
+                    latest_downloads.c.downloaded_at,
+                    Lead.created_at,
+                ).desc(),
+                latest_downloads.c.download_id.desc(),
+                Lead.id.desc(),
+            )
+            .all()
+        )
 
     def _normalize_state_codes(state_codes: Optional[List[str]]) -> List[str]:
         if not state_codes:
@@ -1517,26 +1558,7 @@ class LeadService:
 
     @staticmethod
     def download_delivered_leads_csv(db: Session, user: User) -> str:
-        latest_downloads = (
-            db.query(
-                LeadDownload.lead_id.label("lead_id"),
-                LeadDownload.downloaded_at.label("downloaded_at"),
-                LeadDownload.id.label("download_id"),
-                func.row_number().over(
-                    partition_by=LeadDownload.lead_id,
-                    order_by=(LeadDownload.downloaded_at.desc(), LeadDownload.id.desc()),
-                ).label("row_rank"),
-            )
-            .filter(LeadDownload.user_id == user.id)
-            .subquery()
-        )
-        delivered_leads = (
-            db.query(Lead)
-            .join(latest_downloads, latest_downloads.c.lead_id == Lead.id)
-            .filter(latest_downloads.c.row_rank == 1)
-            .order_by(latest_downloads.c.downloaded_at.desc(), latest_downloads.c.download_id.desc())
-            .all()
-        )
+        delivered_leads = LeadService._get_delivered_leads_for_user(db=db, user_id=user.id)
         if not delivered_leads:
             raise HTTPException(status_code=404, detail="No delivered leads found")
         return generate_leads_csv_stream(
