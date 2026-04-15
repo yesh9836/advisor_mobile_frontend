@@ -322,7 +322,6 @@ const LeadsPage = () => {
                 aria-label="Lead filter"
               >
                 <option value="All">All</option>
-                <option value="New">New</option>
                 <option value="Contacted">Contacted</option>
                 <option value="Appointment Set">Appointment Set</option>
               </select>
