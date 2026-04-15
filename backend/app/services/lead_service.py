@@ -270,6 +270,52 @@ class LeadService:
             setattr(lead, "downloaded_at", download.downloaded_at if download else None)
 
     @staticmethod
+    def _attach_received_timestamps_to_leads(db: Session, user_id: int, leads: List[Lead]) -> None:
+        if not leads:
+            return
+
+        lead_ids = [lead.id for lead in leads]
+        ownerships = (
+            db.query(LeadOwnership)
+            .filter(LeadOwnership.user_id == user_id, LeadOwnership.lead_id.in_(lead_ids))
+            .all()
+        )
+        assigned_at_by_lead_id = {
+            int(ownership.lead_id): ownership.assigned_at
+            for ownership in ownerships
+            if ownership.assigned_at is not None
+        }
+
+        for lead in leads:
+            received_at = assigned_at_by_lead_id.get(int(lead.id))
+            if received_at is None:
+                received_at = getattr(lead, "downloaded_at", None)
+            setattr(lead, "received_at", received_at)
+
+    @staticmethod
+    def _latest_downloaded_at_subquery(user_id: int):
+        return (
+            select(func.max(LeadDownload.downloaded_at))
+            .where(
+                LeadDownload.user_id == user_id,
+                LeadDownload.lead_id == Lead.id,
+            )
+            .scalar_subquery()
+        )
+
+    @staticmethod
+    def _ownership_assigned_at_subquery(user_id: int):
+        return (
+            select(LeadOwnership.assigned_at)
+            .where(
+                LeadOwnership.user_id == user_id,
+                LeadOwnership.lead_id == Lead.id,
+            )
+            .limit(1)
+            .scalar_subquery()
+        )
+
+    @staticmethod
     def _user_has_outcome_write_access(db: Session, user_id: int, lead_id: int) -> bool:
         has_download_access = (
             db.query(LeadDownload.id)
@@ -369,6 +415,7 @@ class LeadService:
     @staticmethod
     def to_advisor_lead_list_item_payload(lead: Lead) -> Dict[str, object]:
         payload = LeadResponse.model_validate(lead).model_dump(mode="python")
+        payload["received_at"] = getattr(lead, "received_at", None)
         pii_unlocked = bool(getattr(lead, "pii_unlocked", False))
         payload["pii_unlocked"] = pii_unlocked
         if pii_unlocked:
@@ -1265,6 +1312,8 @@ class LeadService:
         search: Optional[str] = None,
     ) -> Dict[str, object]:
         downloaded_subquery = select(LeadDownload.lead_id).where(LeadDownload.user_id == user.id)
+        latest_downloaded_at = LeadService._latest_downloaded_at_subquery(user.id)
+        ownership_assigned_at = LeadService._ownership_assigned_at_subquery(user.id)
         query = db.query(Lead)
         has_owned_leads = LeadService._user_has_owned_leads(db, user.id)
         if has_owned_leads:
@@ -1333,7 +1382,13 @@ class LeadService:
         offset = max(0, (page - 1) * size)
 
         items = (
-            query.order_by(Lead.created_at.desc())
+            query.order_by(
+                func.coalesce(
+                    ownership_assigned_at if has_owned_leads else latest_downloaded_at,
+                    Lead.created_at,
+                ).desc(),
+                Lead.id.desc(),
+            )
             .offset(offset)
             .limit(size)
             .all()
@@ -1341,6 +1396,7 @@ class LeadService:
 
         LeadService._attach_outcomes_to_leads(db, user.id, items)
         LeadService._attach_downloads_to_leads(db, user.id, items)
+        LeadService._attach_received_timestamps_to_leads(db, user.id, items)
         LeadService._attach_pii_unlock_flags(db, user.id, items)
 
         return {"items": items, "total": total, "page": page, "size": size}
