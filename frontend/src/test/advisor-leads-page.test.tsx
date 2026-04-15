@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -214,6 +214,18 @@ describe("Advisor LeadsPage server query state", () => {
       await screen.findByText(formatDateTime("2026-01-09T18:45:00Z")),
     ).toBeInTheDocument();
     expect(document.querySelector(".badge-new")).toBeNull();
+  });
+
+  it("does not expose New in the inbox stage filter options", async () => {
+    renderRoute();
+
+    await screen.findByText("Leads (51)");
+    const filter = screen.getByLabelText("Lead filter");
+
+    expect(within(filter).queryByRole("option", { name: "New" })).not.toBeInTheDocument();
+    expect(filter).toHaveTextContent("All");
+    expect(filter).toHaveTextContent("Contacted");
+    expect(filter).toHaveTextContent("Appointment Set");
   });
 
   it("ignores stale inbox responses after a newer filter request", async () => {
