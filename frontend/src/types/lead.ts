@@ -50,6 +50,7 @@ export interface Lead {
   additional_notes: string | null;
 
   created_at: string;
+  received_at?: string | null;
   updated_at?: string | null;
 
   outcome_status?: LeadOutcomeStatus | null;
