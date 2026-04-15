@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import DashboardPage from "@/pages/advisor/DashboardPage";
+import { formatDateTime } from "@/pages/advisor/leadPresentation";
 
 vi.mock("@/api/leads", () => ({
   getLeadDashboardSummary: vi.fn(),
@@ -194,6 +195,64 @@ describe("Advisor Dashboard delivery settings editor", () => {
     expect(
       screen.getByText("Unexpected response format from /leads"),
     ).toBeInTheDocument();
+  });
+
+  it("renders recent lead received_at timestamps and hides the visible New badge", async () => {
+    getLeadDashboardSummaryMock.mockResolvedValue(summaryWithSettings(false, false));
+    getLeadsMock.mockResolvedValue({
+      items: [
+        {
+          id: 41,
+          source: "manual_entry",
+          state_code: "CA",
+          zip_code: "94107",
+          first_name: "Robin",
+          last_name: "Fresh",
+          mobile_phone: "555-111-4444",
+          preferred_follow_up_method: null,
+          best_time_to_reach: null,
+          retirement_timeline: null,
+          confidence_in_long_term_plan: null,
+          most_important_retirement_activity: "Travel",
+          planning_to_relocate_retirement: null,
+          expected_retirement_income_source: null,
+          overall_health: null,
+          money_management_style: null,
+          investor_profile_statement: null,
+          investment_comfort_level: null,
+          main_purpose_for_investing: null,
+          retirement_savings_range: null,
+          annual_household_income_range: null,
+          total_investable_assets_range: "$250k-$500k",
+          monthly_savings_range: null,
+          wants_to_improve_strategy_timing: null,
+          current_investment_strategies: null,
+          has_financial_advisor: null,
+          advisor_local_preference: null,
+          owns_annuity: null,
+          additional_notes: null,
+          created_at: "2026-01-01T12:00:00Z",
+          received_at: "2026-01-09T18:45:00Z",
+          updated_at: null,
+          outcome_status: null,
+          outcome_notes: null,
+          outcome_updated_at: null,
+          is_downloaded: true,
+          downloaded_at: "2026-01-09T18:45:00Z",
+          pii_unlocked: true,
+        },
+      ],
+      total: 1,
+      page: 1,
+      size: 3,
+    });
+
+    renderRoute();
+
+    expect(
+      await screen.findByText(formatDateTime("2026-01-09T18:45:00Z")),
+    ).toBeInTheDocument();
+    expect(document.querySelector(".badge-new")).toBeNull();
   });
 
   it("opens settings editor automatically when redirected with openDeliverySettings query", async () => {

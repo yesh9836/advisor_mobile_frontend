@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import LeadsPage from "@/pages/advisor/LeadsPage";
+import { formatDateTime } from "@/pages/advisor/leadPresentation";
 
 vi.mock("@/api/leads", () => ({
   downloadLeads: vi.fn(),
@@ -68,6 +69,7 @@ describe("Advisor LeadsPage server query state", () => {
           owns_annuity: null,
           additional_notes: null,
           created_at: "2026-01-01T12:00:00Z",
+          received_at: "2026-01-09T18:45:00Z",
           updated_at: null,
           outcome_status: null,
           outcome_notes: null,
@@ -205,6 +207,15 @@ describe("Advisor LeadsPage server query state", () => {
     ).toBeInTheDocument();
   });
 
+  it("renders received_at timestamps and hides the visible New badge", async () => {
+    renderRoute();
+
+    expect(
+      await screen.findByText(formatDateTime("2026-01-09T18:45:00Z")),
+    ).toBeInTheDocument();
+    expect(document.querySelector(".badge-new")).toBeNull();
+  });
+
   it("ignores stale inbox responses after a newer filter request", async () => {
     const firstResponse = deferred<Awaited<ReturnType<typeof getLeads>>>();
 
@@ -243,6 +254,7 @@ describe("Advisor LeadsPage server query state", () => {
             owns_annuity: null,
             additional_notes: null,
             created_at: "2026-01-02T12:00:00Z",
+            received_at: "2026-01-02T12:30:00Z",
             updated_at: null,
             outcome_status: "contacted",
             outcome_notes: null,
@@ -297,6 +309,7 @@ describe("Advisor LeadsPage server query state", () => {
           owns_annuity: null,
           additional_notes: null,
           created_at: "2026-01-01T12:00:00Z",
+          received_at: "2026-01-09T18:45:00Z",
           updated_at: null,
           outcome_status: null,
           outcome_notes: null,
