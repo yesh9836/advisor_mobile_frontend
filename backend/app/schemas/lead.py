@@ -69,6 +69,7 @@ class LeadResponse(LeadBase):
     outcome_updated_at: Optional[datetime] = None
     is_downloaded: bool = False
     downloaded_at: Optional[datetime] = None
+    pii_unlocked: bool = False
 
     model_config = {
         "from_attributes": True,
