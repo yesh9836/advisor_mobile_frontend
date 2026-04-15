@@ -838,6 +838,69 @@ def test_list_leads_delivery_status_filter_returns_expected_records(
 
 
 @pytest.mark.integration
+def test_list_leads_returns_received_at_and_orders_owned_results_by_assignment_time(
+    client,
+    db,
+    user_factory,
+    lead_factory,
+    auth_headers,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="AdvisorReceivedAt123!",
+        email="advisor.received.at@example.com",
+        name="Advisor Received At",
+    )
+    headers = auth_headers(advisor.email, "AdvisorReceivedAt123!")
+
+    first_delivered = lead_factory(
+        state_code="CA",
+        mobile_phone="555-RECEIVED-0001",
+        first_name="First",
+        last_name="Delivered",
+    )
+    second_delivered = lead_factory(
+        state_code="CA",
+        mobile_phone="555-RECEIVED-0002",
+        first_name="Second",
+        last_name="Delivered",
+    )
+    db.flush()
+
+    now = datetime.now(timezone.utc)
+    first_delivered.created_at = now - timedelta(days=14)
+    second_delivered.created_at = now - timedelta(days=1)
+    first_assigned_at = now
+    second_assigned_at = now - timedelta(hours=3)
+    db.add_all(
+        [
+            LeadOwnership(
+                user_id=advisor.id,
+                lead_id=first_delivered.id,
+                assigned_at=first_assigned_at,
+            ),
+            LeadOwnership(
+                user_id=advisor.id,
+                lead_id=second_delivered.id,
+                assigned_at=second_assigned_at,
+            ),
+        ]
+    )
+    db.commit()
+
+    response = client.get("/api/v1/leads/?delivery_status=all", headers=headers)
+    assert response.status_code == 200, response.text
+    payload = response.json()
+
+    assert [item["id"] for item in payload["items"]] == [
+        first_delivered.id,
+        second_delivered.id,
+    ]
+    assert datetime.fromisoformat(payload["items"][0]["received_at"].replace("Z", "+00:00")) == first_assigned_at
+    assert datetime.fromisoformat(payload["items"][1]["received_at"].replace("Z", "+00:00")) == second_assigned_at
+
+
+@pytest.mark.integration
 def test_list_leads_search_filters_delivered_results(
     client,
     user_factory,

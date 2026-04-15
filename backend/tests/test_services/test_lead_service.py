@@ -320,6 +320,65 @@ def test_get_available_leads_for_user_blocks_phone_search_for_undelivered_unsold
 
 
 @pytest.mark.unit
+def test_get_available_leads_for_user_orders_owned_leads_by_assigned_at_and_attaches_received_at(
+    db,
+    user_factory,
+    lead_factory,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LeadUnitAssignedAt123!",
+        email="lead.unit.assigned.at@example.com",
+    )
+    older_created = lead_factory(
+        state_code="CA",
+        mobile_phone="555-ASSIGNED-9001",
+        first_name="Older",
+        last_name="Created",
+    )
+    newer_created = lead_factory(
+        state_code="CA",
+        mobile_phone="555-ASSIGNED-9002",
+        first_name="Newer",
+        last_name="Created",
+    )
+    db.flush()
+
+    now = datetime.now(timezone.utc)
+    older_created.created_at = now - timedelta(days=10)
+    newer_created.created_at = now - timedelta(days=1)
+    latest_assignment = now
+    earlier_assignment = now - timedelta(hours=2)
+    db.add_all(
+        [
+            LeadOwnership(
+                user_id=advisor.id,
+                lead_id=older_created.id,
+                assigned_at=latest_assignment,
+            ),
+            LeadOwnership(
+                user_id=advisor.id,
+                lead_id=newer_created.id,
+                assigned_at=earlier_assignment,
+            ),
+        ]
+    )
+    db.commit()
+
+    data = LeadService.get_available_leads_for_user(
+        db=db,
+        user=advisor,
+        page=1,
+        size=20,
+        delivery_status="all",
+    )
+
+    assert [lead.id for lead in data["items"]] == [older_created.id, newer_created.id]
+    assert getattr(data["items"][0], "received_at") == latest_assignment
+    assert getattr(data["items"][1], "received_at") == earlier_assignment
+
+
+@pytest.mark.unit
 def test_can_user_download_leads_requires_available_new_inventory(
     db,
     user_factory,
