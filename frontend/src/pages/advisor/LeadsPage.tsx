@@ -23,6 +23,7 @@ interface InboxLead {
   name: string;
   state: string;
   isDownloaded: boolean;
+  piiUnlocked: boolean;
   stage: LeadStage;
   headline: string;
   assets: string;
@@ -60,18 +61,26 @@ const STAGE_FILTER_TO_QUERY: Record<
   "Appointment Set": "appointment_set",
 };
 
-const toInboxLead = (lead: Lead): InboxLead => ({
-  id: lead.id,
-  initials: toInitials(lead.first_name, lead.last_name),
-  name: toDisplayName(lead),
-  state: (lead.state_code || "NA").toUpperCase(),
-  isDownloaded: Boolean(lead.is_downloaded),
-  stage: toDisplayStage(lead.outcome_status),
-  headline: lead.most_important_retirement_activity || "No details available",
-  assets: lead.total_investable_assets_range || "0",
-  phone: lead.mobile_phone || "Not available",
-  dateTime: formatDateTime(lead.created_at),
-});
+const toInboxLead = (lead: Lead): InboxLead => {
+  const piiUnlocked = Boolean(lead.pii_unlocked ?? lead.is_downloaded);
+  return {
+    id: lead.id,
+    initials: piiUnlocked ? toInitials(lead.first_name, lead.last_name) : "LK",
+    name: piiUnlocked ? toDisplayName(lead) : "Locked Lead",
+    state: (lead.state_code || "NA").toUpperCase(),
+    isDownloaded: Boolean(lead.is_downloaded),
+    piiUnlocked,
+    stage: toDisplayStage(lead.outcome_status),
+    headline: piiUnlocked
+      ? lead.most_important_retirement_activity || "No details available"
+      : "Details unlock after delivery",
+    assets: piiUnlocked
+      ? lead.total_investable_assets_range || "0"
+      : "Locked",
+    phone: piiUnlocked ? lead.mobile_phone || "Not available" : "Unlock after delivery",
+    dateTime: formatDateTime(lead.created_at),
+  };
+};
 
 const LeadsPage = () => {
   const navigate = useNavigate();
@@ -453,6 +462,11 @@ const LeadsPage = () => {
                   <strong>{selectedLead.phone}</strong>
                 </div>
               </div>
+              {!selectedLead.piiUnlocked ? (
+                <p className="metric-note" style={{ margin: 0 }}>
+                  Contact details are available after delivery.
+                </p>
+              ) : null}
 
               <div className="field">
                 <label htmlFor="lead-status">Update Status</label>
