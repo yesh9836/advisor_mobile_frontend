@@ -57,6 +57,7 @@ export interface Lead {
   outcome_updated_at?: string | null;
   is_downloaded?: boolean;
   downloaded_at?: string | null;
+  pii_unlocked?: boolean;
 }
 
 export interface LeadFilters {
