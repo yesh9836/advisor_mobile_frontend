@@ -50,6 +50,7 @@ export const leadSchema: z.ZodType<Lead> = z
     owns_annuity: nullableString,
     additional_notes: nullableString,
     created_at: z.string(),
+    received_at: z.string().nullable().optional(),
     updated_at: z.string().nullable().optional(),
     outcome_status: z.string().nullable().optional(),
     outcome_notes: z.string().nullable().optional(),
