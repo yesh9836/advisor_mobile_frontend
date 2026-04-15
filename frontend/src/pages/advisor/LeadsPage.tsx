@@ -78,7 +78,7 @@ const toInboxLead = (lead: Lead): InboxLead => {
       ? lead.total_investable_assets_range || "0"
       : "Locked",
     phone: piiUnlocked ? lead.mobile_phone || "Not available" : "Unlock after delivery",
-    dateTime: formatDateTime(lead.created_at),
+    dateTime: formatDateTime(lead.received_at ?? lead.created_at),
   };
 };
 
@@ -382,7 +382,9 @@ const LeadsPage = () => {
                         >
                           {lead.isDownloaded ? "Delivered" : "Available"}
                         </span>
-                        <span className={stageClassName(stage)}>{stage}</span>
+                        {stage !== "New" ? (
+                          <span className={stageClassName(stage)}>{stage}</span>
+                        ) : null}
                       </div>
                       <div className="lead-sub">
                         {lead.headline} • <strong>{lead.assets}</strong>

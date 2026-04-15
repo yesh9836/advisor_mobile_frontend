@@ -71,7 +71,7 @@ const toRecentLead = (lead: Lead): RecentLeadItem => {
     stage: toDisplayStage(lead.outcome_status),
     headline: lead.most_important_retirement_activity || "No details available",
     assets: lead.total_investable_assets_range || "0",
-    dateTime: formatDateTime(lead.created_at),
+    dateTime: formatDateTime(lead.received_at ?? lead.created_at),
   };
 };
 
@@ -410,9 +410,11 @@ const DashboardPage = () => {
                       <span style={{ color: "#64748b", fontSize: 13 }}>
                         • {lead.state}
                       </span>
-                      <span className={stageClassName(lead.stage)}>
-                        {lead.stage}
-                      </span>
+                      {lead.stage !== "New" ? (
+                        <span className={stageClassName(lead.stage)}>
+                          {lead.stage}
+                        </span>
+                      ) : null}
                     </div>
                     <div className="lead-sub">
                       {lead.headline} • <strong>{lead.assets}</strong>
