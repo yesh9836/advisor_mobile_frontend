@@ -13,7 +13,7 @@ from app.models.lead import Lead, LeadDownload, LeadOutcome, LeadOwnership
 from app.models.license import License
 from app.models.purchase import LeadCreditLedger, LeadPackage, LeadPurchase
 from app.models.user import User
-from app.schemas.lead import LeadCreate, LeadOutcomeUpdateRequest
+from app.schemas.lead import LeadCreate, LeadOutcomeUpdateRequest, LeadResponse
 from app.services.audit_service import AuditService
 from app.services.delivery_settings_service import DeliverySettingsService
 from app.services.metrics_service import MetricsService
@@ -32,6 +32,34 @@ class LeadService:
     """Service for lead distribution and downloads."""
 
     _RECONCILIATION_MAX_ASSIGNMENTS_PER_ADVISOR_ROUND = 25
+    _PRE_DELIVERY_REDACTED_FIELDS: Tuple[str, ...] = (
+        "zip_code",
+        "first_name",
+        "last_name",
+        "mobile_phone",
+        "preferred_follow_up_method",
+        "best_time_to_reach",
+        "retirement_timeline",
+        "confidence_in_long_term_plan",
+        "most_important_retirement_activity",
+        "planning_to_relocate_retirement",
+        "expected_retirement_income_source",
+        "overall_health",
+        "money_management_style",
+        "investor_profile_statement",
+        "investment_comfort_level",
+        "main_purpose_for_investing",
+        "retirement_savings_range",
+        "annual_household_income_range",
+        "total_investable_assets_range",
+        "monthly_savings_range",
+        "wants_to_improve_strategy_timing",
+        "current_investment_strategies",
+        "has_financial_advisor",
+        "advisor_local_preference",
+        "owns_annuity",
+        "additional_notes",
+    )
 
     @staticmethod
     def _build_bulk_import_audit_metadata(
@@ -296,11 +324,9 @@ class LeadService:
         return [token for token in tokens if token]
 
     @staticmethod
-    def _build_search_token_filter(token: str):
+    def _build_non_pii_search_token_filter(token: str):
         prefix_pattern = f"{token}%"
         token_filters = [
-            Lead.first_name.ilike(prefix_pattern),
-            Lead.last_name.ilike(prefix_pattern),
             Lead.source.ilike(prefix_pattern),
         ]
 
@@ -309,10 +335,48 @@ class LeadService:
         else:
             token_filters.append(Lead.state_code.ilike(prefix_pattern))
 
+        return or_(*token_filters)
+
+    @staticmethod
+    def _build_pii_search_token_filter(token: str):
+        prefix_pattern = f"{token}%"
+        token_filters = [
+            Lead.first_name.ilike(prefix_pattern),
+            Lead.last_name.ilike(prefix_pattern),
+        ]
         if any(character.isdigit() for character in token):
             token_filters.append(Lead.mobile_phone.ilike(f"%{token}%"))
 
         return or_(*token_filters)
+
+    @staticmethod
+    def _attach_pii_unlock_flags(db: Session, user_id: int, leads: List[Lead]) -> None:
+        if not leads:
+            return
+
+        lead_ids = [lead.id for lead in leads]
+        owned_rows = (
+            db.query(LeadOwnership.lead_id)
+            .filter(LeadOwnership.user_id == user_id, LeadOwnership.lead_id.in_(lead_ids))
+            .all()
+        )
+        owned_lead_ids = {int(row[0]) for row in owned_rows}
+
+        for lead in leads:
+            is_downloaded = bool(getattr(lead, "is_downloaded", False))
+            setattr(lead, "pii_unlocked", is_downloaded or lead.id in owned_lead_ids)
+
+    @staticmethod
+    def to_advisor_lead_list_item_payload(lead: Lead) -> Dict[str, object]:
+        payload = LeadResponse.model_validate(lead).model_dump(mode="python")
+        pii_unlocked = bool(getattr(lead, "pii_unlocked", False))
+        payload["pii_unlocked"] = pii_unlocked
+        if pii_unlocked:
+            return payload
+
+        for field_name in LeadService._PRE_DELIVERY_REDACTED_FIELDS:
+            payload[field_name] = None
+        return payload
 
     @staticmethod
     def _compute_purchase_assignment_target(
@@ -1240,7 +1304,17 @@ class LeadService:
 
         normalized_search = (search or "").strip()
         for token in LeadService._tokenize_search_query(normalized_search):
-            query = query.filter(LeadService._build_search_token_filter(token))
+            non_pii_token_filter = LeadService._build_non_pii_search_token_filter(token)
+            pii_token_filter = LeadService._build_pii_search_token_filter(token)
+            if has_owned_leads:
+                query = query.filter(or_(non_pii_token_filter, pii_token_filter))
+            else:
+                query = query.filter(
+                    or_(
+                        non_pii_token_filter,
+                        and_(delivered_condition, pii_token_filter),
+                    )
+                )
 
         if delivery_status == "available":
             query = query.filter(available_condition)
@@ -1267,6 +1341,7 @@ class LeadService:
 
         LeadService._attach_outcomes_to_leads(db, user.id, items)
         LeadService._attach_downloads_to_leads(db, user.id, items)
+        LeadService._attach_pii_unlock_flags(db, user.id, items)
 
         return {"items": items, "total": total, "page": page, "size": size}
 
