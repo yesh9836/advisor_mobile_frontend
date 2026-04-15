@@ -115,6 +115,145 @@ def test_list_available_leads_filters_to_verified_states(
 
 
 @pytest.mark.integration
+def test_list_leads_redacts_pre_delivery_unsold_pii(
+    client,
+    db,
+    user_factory,
+    lead_factory,
+    license_factory,
+    plan_factory,
+    purchase_factory,
+    auth_headers,
+):
+    advisor, _, headers = _create_advisor_with_access(
+        user_factory,
+        license_factory,
+        plan_factory,
+        purchase_factory,
+        auth_headers,
+    )
+
+    delivered_lead = lead_factory(
+        state_code="CA",
+        mobile_phone="555-PII-DELIV-01",
+        first_name="Delivered",
+        last_name="Lead",
+    )
+    unsold_lead = lead_factory(
+        state_code="CA",
+        mobile_phone="555-PII-UNSOLD-01",
+        first_name="Unsold",
+        last_name="Lead",
+    )
+    delivered_lead.most_important_retirement_activity = "Travel"
+    unsold_lead.most_important_retirement_activity = "Golf"
+    db.add(delivered_lead)
+    db.add(unsold_lead)
+    db.add(
+        LeadDownload(
+            user_id=advisor.id,
+            lead_id=delivered_lead.id,
+            purchase_id=None,
+            csv_batch_id="batch_redaction_check",
+        )
+    )
+    db.commit()
+
+    response = client.get("/api/v1/leads/?delivery_status=all", headers=headers)
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["total"] == 2
+
+    items_by_id = {item["id"]: item for item in payload["items"]}
+    delivered_item = items_by_id[delivered_lead.id]
+    unsold_item = items_by_id[unsold_lead.id]
+
+    assert delivered_item["pii_unlocked"] is True
+    assert delivered_item["first_name"] == "Delivered"
+    assert delivered_item["last_name"] == "Lead"
+    assert delivered_item["mobile_phone"] == "555-PII-DELIV-01"
+    assert delivered_item["most_important_retirement_activity"] == "Travel"
+
+    assert unsold_item["pii_unlocked"] is False
+    assert unsold_item["first_name"] is None
+    assert unsold_item["last_name"] is None
+    assert unsold_item["mobile_phone"] is None
+    assert unsold_item["most_important_retirement_activity"] is None
+    assert unsold_item["is_downloaded"] is False
+
+
+@pytest.mark.integration
+def test_list_leads_blocks_undelivered_unsold_name_and_phone_search(
+    client,
+    db,
+    user_factory,
+    lead_factory,
+    license_factory,
+    plan_factory,
+    purchase_factory,
+    auth_headers,
+):
+    advisor, _, headers = _create_advisor_with_access(
+        user_factory,
+        license_factory,
+        plan_factory,
+        purchase_factory,
+        auth_headers,
+    )
+
+    delivered_casey = lead_factory(
+        state_code="CA",
+        mobile_phone="555-CA-SRCH-0001",
+        first_name="Casey",
+        last_name="Delivered",
+    )
+    lead_factory(
+        state_code="CA",
+        mobile_phone="555-CA-SRCH-9012",
+        first_name="Casey",
+        last_name="Unsold",
+    )
+    db.add(
+        LeadDownload(
+            user_id=advisor.id,
+            lead_id=delivered_casey.id,
+            purchase_id=None,
+            csv_batch_id="batch_search_gate",
+        )
+    )
+    db.commit()
+
+    available_name_response = client.get(
+        "/api/v1/leads/?delivery_status=available&search=casey",
+        headers=headers,
+    )
+    assert available_name_response.status_code == 200, available_name_response.text
+    assert available_name_response.json()["total"] == 0
+
+    available_phone_response = client.get(
+        "/api/v1/leads/?delivery_status=available&search=9012",
+        headers=headers,
+    )
+    assert available_phone_response.status_code == 200, available_phone_response.text
+    assert available_phone_response.json()["total"] == 0
+
+    all_response = client.get("/api/v1/leads/?delivery_status=all&search=casey", headers=headers)
+    assert all_response.status_code == 200, all_response.text
+    all_payload = all_response.json()
+    assert all_payload["total"] == 1
+    assert all_payload["items"][0]["id"] == delivered_casey.id
+
+    delivered_response = client.get(
+        "/api/v1/leads/?delivery_status=delivered&search=casey",
+        headers=headers,
+    )
+    assert delivered_response.status_code == 200, delivered_response.text
+    delivered_payload = delivered_response.json()
+    assert delivered_payload["total"] == 1
+    assert delivered_payload["items"][0]["id"] == delivered_casey.id
+
+
+@pytest.mark.integration
 def test_save_outcome_rejects_lead_outside_licensed_states(
     client,
     user_factory,

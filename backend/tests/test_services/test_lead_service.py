@@ -165,7 +165,7 @@ def test_get_available_leads_for_user_hides_unsold_inventory_without_remaining_c
 
 
 @pytest.mark.unit
-def test_get_available_leads_for_user_applies_search_filter(
+def test_get_available_leads_for_user_applies_search_filter_to_delivered_leads(
     db,
     user_factory,
     plan_factory,
@@ -199,12 +199,22 @@ def test_get_available_leads_for_user_applies_search_filter(
         first_name="Taylor",
         last_name="Advisor",
     )
+    db.add(
+        LeadDownload(
+            user_id=advisor.id,
+            lead_id=casey.id,
+            purchase_id=None,
+            csv_batch_id="batch_search_casey",
+        )
+    )
+    db.commit()
 
     data = LeadService.get_available_leads_for_user(
         db=db,
         user=advisor,
         page=1,
         size=20,
+        delivery_status="delivered",
         search=" casey ",
     )
 
@@ -214,7 +224,7 @@ def test_get_available_leads_for_user_applies_search_filter(
 
 
 @pytest.mark.unit
-def test_get_available_leads_for_user_search_supports_tokenized_name_and_state_matching(
+def test_get_available_leads_for_user_blocks_name_search_for_undelivered_unsold_inventory(
     db,
     user_factory,
     plan_factory,
@@ -236,7 +246,7 @@ def test_get_available_leads_for_user_search_supports_tokenized_name_and_state_m
         credits_remaining=5,
         status="completed",
     )
-    matching_lead = lead_factory(
+    lead_factory(
         state_code="CA",
         mobile_phone="555-333-9001",
         first_name="Casey",
@@ -257,13 +267,12 @@ def test_get_available_leads_for_user_search_supports_tokenized_name_and_state_m
         search="casey ca",
     )
 
-    assert data["total"] == 1
-    assert len(data["items"]) == 1
-    assert data["items"][0].id == matching_lead.id
+    assert data["total"] == 0
+    assert data["items"] == []
 
 
 @pytest.mark.unit
-def test_get_available_leads_for_user_search_supports_phone_digit_tokens(
+def test_get_available_leads_for_user_blocks_phone_search_for_undelivered_unsold_inventory(
     db,
     user_factory,
     plan_factory,
@@ -285,7 +294,7 @@ def test_get_available_leads_for_user_search_supports_phone_digit_tokens(
         credits_remaining=5,
         status="completed",
     )
-    matching_lead = lead_factory(
+    lead_factory(
         state_code="CA",
         mobile_phone="555-SEARCH-9012",
         first_name="Jordan",
@@ -306,9 +315,8 @@ def test_get_available_leads_for_user_search_supports_phone_digit_tokens(
         search="9012",
     )
 
-    assert data["total"] == 1
-    assert len(data["items"]) == 1
-    assert data["items"][0].id == matching_lead.id
+    assert data["total"] == 0
+    assert data["items"] == []
 
 
 @pytest.mark.unit
