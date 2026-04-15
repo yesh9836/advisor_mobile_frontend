@@ -841,6 +841,67 @@ def test_download_delivered_leads_csv_deduplicates_same_lead(
 
 
 @pytest.mark.unit
+def test_download_delivered_leads_csv_orders_owned_rows_by_assignment_time_before_download_time(
+    db,
+    user_factory,
+    lead_factory,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LeadUnitDeliveredOrder123!",
+        email="lead.unit.delivered.order@example.com",
+    )
+    older_assigned = lead_factory(
+        state_code="CA",
+        mobile_phone="555-DELIVERED-ORDER-0001",
+        first_name="Older",
+        last_name="Assigned",
+    )
+    newer_assigned = lead_factory(
+        state_code="CA",
+        mobile_phone="555-DELIVERED-ORDER-0002",
+        first_name="Newer",
+        last_name="Assigned",
+    )
+    db.flush()
+
+    now = datetime.now(timezone.utc)
+    db.add_all(
+        [
+            LeadOwnership(
+                user_id=advisor.id,
+                lead_id=older_assigned.id,
+                assigned_at=now - timedelta(days=5),
+            ),
+            LeadOwnership(
+                user_id=advisor.id,
+                lead_id=newer_assigned.id,
+                assigned_at=now - timedelta(days=1),
+            ),
+            LeadDownload(
+                user_id=advisor.id,
+                lead_id=older_assigned.id,
+                downloaded_at=now,
+                csv_batch_id="batch_delivered_order_a",
+            ),
+            LeadDownload(
+                user_id=advisor.id,
+                lead_id=newer_assigned.id,
+                downloaded_at=now - timedelta(days=2),
+                csv_batch_id="batch_delivered_order_b",
+            ),
+        ]
+    )
+    db.commit()
+
+    csv_text = "".join(LeadService.download_delivered_leads_csv(db=db, user=advisor))
+    first_lead_position = csv_text.index("555-DELIVERED-ORDER-0002")
+    second_lead_position = csv_text.index("555-DELIVERED-ORDER-0001")
+
+    assert first_lead_position < second_lead_position
+
+
+@pytest.mark.unit
 def test_upsert_lead_outcome_rejects_licensed_state_lead_without_delivery_or_ownership(
     db,
     user_factory,
@@ -1099,6 +1160,61 @@ def test_download_leads_csv_exports_owned_leads_without_consuming_credits(
     )
     assert len(audit_rows) == 4
     assert len({row.csv_batch_id for row in audit_rows}) == 2
+
+
+@pytest.mark.unit
+def test_download_leads_csv_orders_owned_rows_like_inbox_when_assignments_share_same_timestamp(
+    db,
+    user_factory,
+    plan_factory,
+    license_factory,
+    purchase_factory,
+    lead_factory,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LeadUnitOwnedExportOrder123!",
+        email="lead.unit.owned.export.order@example.com",
+    )
+    plan = plan_factory(
+        daily_download_limit=5,
+        state_limit=1,
+        stripe_price_id="price_owned_export_order",
+    )
+    license_factory(user_id=advisor.id, state="CA", status="verified")
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=2,
+        credits_remaining=2,
+        status="completed",
+    )
+    lower_id = lead_factory(state_code="CA", mobile_phone="555-OWN-EXPORT-ORDER-0001")
+    higher_id = lead_factory(state_code="CA", mobile_phone="555-OWN-EXPORT-ORDER-0002")
+    db.flush()
+
+    shared_assigned_at = datetime.now(timezone.utc)
+    db.add_all(
+        [
+            LeadOwnership(
+                user_id=advisor.id,
+                lead_id=higher_id.id,
+                purchase_id=purchase.id,
+                assigned_at=shared_assigned_at,
+            ),
+            LeadOwnership(
+                user_id=advisor.id,
+                lead_id=lower_id.id,
+                purchase_id=purchase.id,
+                assigned_at=shared_assigned_at,
+            ),
+        ]
+    )
+    db.commit()
+
+    csv_text = "".join(LeadService.download_leads_csv(db=db, user=advisor))
+
+    assert csv_text.index("555-OWN-EXPORT-ORDER-0002") < csv_text.index("555-OWN-EXPORT-ORDER-0001")
 
 
 @pytest.mark.unit
