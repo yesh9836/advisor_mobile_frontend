@@ -40,7 +40,10 @@ def list_available_leads(
         outcome_status=outcome_status,
         search=search,
     )
-    items = [LeadResponse.model_validate(lead) for lead in data["items"]]
+    items = [
+        LeadResponse.model_validate(LeadService.to_advisor_lead_list_item_payload(lead))
+        for lead in data["items"]
+    ]
     return LeadListResponse(
         items=items,
         total=data["total"],
