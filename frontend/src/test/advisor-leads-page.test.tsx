@@ -190,6 +190,21 @@ describe("Advisor LeadsPage server query state", () => {
     });
   });
 
+  it("hides contact details for locked available leads", async () => {
+    renderRoute();
+
+    expect((await screen.findAllByText("Locked Lead")).length).toBeGreaterThan(
+      0,
+    );
+    expect(screen.queryByText("Casey Advisor")).not.toBeInTheDocument();
+    expect(
+      screen.getAllByText("Unlock after delivery").length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getByText("Contact details are available after delivery."),
+    ).toBeInTheDocument();
+  });
+
   it("ignores stale inbox responses after a newer filter request", async () => {
     const firstResponse = deferred<Awaited<ReturnType<typeof getLeads>>>();
 
