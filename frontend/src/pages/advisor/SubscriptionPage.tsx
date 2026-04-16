@@ -540,21 +540,6 @@ const SubscriptionPage = () => {
             <h2 style={{ margin: 0, fontSize: 28, color: "#0b1b49" }}>
               No Packages Available
             </h2>
-            <p style={{ margin: 0, color: "#475569" }}>
-              Package values from DB are unavailable. Showing 0 until packages
-              are configured.
-            </p>
-            <div className="panel" style={{ background: "#fafcff" }}>
-              <div
-                className="metric-value"
-                style={{ fontSize: 38, marginTop: 0 }}
-              >
-                $0
-              </div>
-              <div style={{ color: "#475569" }}>
-                0 lead credits • instant inbox delivery
-              </div>
-            </div>
           </article>
         ) : (
           plans.map((entry) => (
