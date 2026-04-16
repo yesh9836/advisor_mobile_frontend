@@ -83,6 +83,19 @@ describe("SubscriptionPage checkout return messaging", () => {
   });
 });
 
+describe("SubscriptionPage empty catalog state", () => {
+  it("shows only the no-packages message when no packages are configured", async () => {
+    renderRoute("/subscription");
+
+    expect(await screen.findByText("No Packages Available")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Package values from DB are unavailable/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("$0")).not.toBeInTheDocument();
+    expect(screen.queryByText(/0 lead credits/i)).not.toBeInTheDocument();
+  });
+});
+
 describe("SubscriptionPage license gate", () => {
   it("does not render internal object feature metadata on package cards", async () => {
     const { getPackages } = await import("@/api/purchases");
