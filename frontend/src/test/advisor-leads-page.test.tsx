@@ -11,9 +11,10 @@ vi.mock("@/api/leads", () => ({
   saveLeadOutcome: vi.fn(),
 }));
 
-import { getLeads } from "@/api/leads";
+import { getLeads, saveLeadOutcome } from "@/api/leads";
 
 const getLeadsMock = vi.mocked(getLeads);
+const saveLeadOutcomeMock = vi.mocked(saveLeadOutcome);
 
 const renderRoute = () => {
   render(
@@ -36,6 +37,16 @@ describe("Advisor LeadsPage server query state", () => {
 
   beforeEach(() => {
     getLeadsMock.mockReset();
+    saveLeadOutcomeMock.mockReset();
+    saveLeadOutcomeMock.mockResolvedValue({
+      id: 91,
+      user_id: 7,
+      lead_id: 11,
+      status: "contacted",
+      notes: null,
+      created_at: "2026-01-09T18:45:00Z",
+      updated_at: "2026-01-09T18:46:00Z",
+    });
     getLeadsMock.mockResolvedValue({
       items: [
         {
@@ -226,6 +237,58 @@ describe("Advisor LeadsPage server query state", () => {
     expect(filter).toHaveTextContent("All");
     expect(filter).toHaveTextContent("Contacted");
     expect(filter).toHaveTextContent("Appointment Set");
+  });
+
+  it("defaults Update Status to blank and omits New from selectable options", async () => {
+    renderRoute();
+
+    await screen.findByText("Lead Details");
+    const statusSelect = screen.getByLabelText("Update Status") as HTMLSelectElement;
+
+    expect(statusSelect.value).toBe("");
+    expect(within(statusSelect).queryByRole("option", { name: "New" })).not.toBeInTheDocument();
+    expect(within(statusSelect).getAllByRole("option")).toHaveLength(3);
+    expect(statusSelect).toHaveTextContent("Contacted");
+    expect(statusSelect).toHaveTextContent("Appointment Set");
+  });
+
+  it("disables save until a real status is chosen for untouched leads", async () => {
+    renderRoute();
+
+    await screen.findByText("Lead Details");
+    const saveButton = screen.getByRole("button", { name: "Save" });
+
+    expect(saveButton).toBeDisabled();
+
+    fireEvent.click(saveButton);
+
+    expect(saveLeadOutcomeMock).not.toHaveBeenCalled();
+  });
+
+  it("saves once Contacted or Appointment Set is selected", async () => {
+    renderRoute();
+
+    await screen.findByText("Lead Details");
+    const statusSelect = screen.getByLabelText("Update Status");
+    const saveButton = screen.getByRole("button", { name: "Save" });
+
+    fireEvent.change(statusSelect, {
+      target: { value: "Contacted" },
+    });
+
+    expect(saveButton).not.toBeDisabled();
+
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(saveLeadOutcomeMock).toHaveBeenCalledWith(11, {
+        status: "contacted",
+        notes: null,
+      });
+    });
+    expect(
+      await screen.findByText("Lead updates saved for Locked Lead."),
+    ).toBeInTheDocument();
   });
 
   it("ignores stale inbox responses after a newer filter request", async () => {
