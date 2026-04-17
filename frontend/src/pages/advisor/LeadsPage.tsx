@@ -31,10 +31,14 @@ interface InboxLead {
   dateTime: string;
 }
 
-const STAGES: LeadStage[] = ["New", "Contacted", "Appointment Set"];
+type EditableLeadStage = "" | Exclude<LeadStage, "New">;
 
-const STAGE_TO_STATUS: Record<LeadStage, LeadOutcomeStatus> = {
-  New: "new",
+const EDITABLE_STAGES: EditableLeadStage[] = ["Contacted", "Appointment Set"];
+
+const EDITABLE_STAGE_TO_STATUS: Record<
+  Exclude<EditableLeadStage, "">,
+  LeadOutcomeStatus
+> = {
   Contacted: "contacted",
   "Appointment Set": "appointment_set",
 };
@@ -59,6 +63,14 @@ const STAGE_FILTER_TO_QUERY: Record<
   New: "new",
   Contacted: "contacted",
   "Appointment Set": "appointment_set",
+};
+
+const toEditableStage = (
+  status: LeadOutcomeStatus | null | undefined,
+): EditableLeadStage => {
+  if (status === "contacted") return "Contacted";
+  if (status === "appointment_set") return "Appointment Set";
+  return "";
 };
 
 const toInboxLead = (lead: Lead): InboxLead => {
@@ -88,7 +100,7 @@ const LeadsPage = () => {
   const [leads, setLeads] = useState<InboxLead[]>([]);
   const [selectedLeadId, setSelectedLeadId] = useState<number | null>(null);
   const [statusByLeadId, setStatusByLeadId] = useState<
-    Record<number, LeadStage>
+    Record<number, EditableLeadStage>
   >({});
   const [notesByLeadId, setNotesByLeadId] = useState<Record<number, string>>(
     {},
@@ -145,11 +157,11 @@ const LeadsPage = () => {
       }
 
       const mapped = response.items.map((lead) => toInboxLead(lead));
-      const nextStatusByLeadId: Record<number, LeadStage> = {};
+      const nextStatusByLeadId: Record<number, EditableLeadStage> = {};
       const nextNotesByLeadId: Record<number, string> = {};
 
       for (const lead of response.items) {
-        nextStatusByLeadId[lead.id] = toDisplayStage(lead.outcome_status);
+        nextStatusByLeadId[lead.id] = toEditableStage(lead.outcome_status);
         nextNotesByLeadId[lead.id] = lead.outcome_notes ?? "";
       }
 
@@ -201,8 +213,8 @@ const LeadsPage = () => {
   const totalPages = Math.max(1, Math.ceil(totalLeads / PAGE_SIZE));
 
   const selectedStatus = selectedLead
-    ? (statusByLeadId[selectedLead.id] ?? selectedLead.stage)
-    : "New";
+    ? (statusByLeadId[selectedLead.id] ?? "")
+    : "";
   const selectedNotes = selectedLead
     ? (notesByLeadId[selectedLead.id] ?? "")
     : "";
@@ -229,7 +241,7 @@ const LeadsPage = () => {
   };
 
   const handleSave = async () => {
-    if (!selectedLead) return;
+    if (!selectedLead || selectedStatus === "") return;
 
     setSaving(true);
     setError(null);
@@ -237,12 +249,12 @@ const LeadsPage = () => {
 
     try {
       const payload = {
-        status: STAGE_TO_STATUS[selectedStatus],
+        status: EDITABLE_STAGE_TO_STATUS[selectedStatus],
         notes: selectedNotes.trim() || null,
       };
 
       const outcome = await saveLeadOutcome(selectedLead.id, payload);
-      const savedStage = toDisplayStage(outcome.status);
+      const savedStage = toEditableStage(outcome.status);
 
       setStatusByLeadId((previous) => ({
         ...previous,
@@ -348,7 +360,8 @@ const LeadsPage = () => {
             <div className="metric-note">No leads available</div>
           ) : (
             leads.map((lead) => {
-              const stage = statusByLeadId[lead.id] ?? lead.stage;
+              const pendingStage = statusByLeadId[lead.id];
+              const stage = pendingStage || lead.stage;
 
               return (
                 <button
@@ -475,14 +488,17 @@ const LeadsPage = () => {
                   id="lead-status"
                   value={selectedStatus}
                   onChange={(event) => {
-                    const next = event.target.value as LeadStage;
+                    const next = event.target.value as EditableLeadStage;
                     setStatusByLeadId((previous) => ({
                       ...previous,
                       [selectedLead.id]: next,
                     }));
                   }}
                 >
-                  {STAGES.map((stage) => (
+                  <option value="" disabled>
+                    {""}
+                  </option>
+                  {EDITABLE_STAGES.map((stage) => (
                     <option key={stage} value={stage}>
                       {stage}
                     </option>
@@ -510,7 +526,7 @@ const LeadsPage = () => {
                 type="button"
                 className="btn btn-primary"
                 onClick={() => void handleSave()}
-                disabled={saving}
+                disabled={saving || !selectedLead || selectedStatus === ""}
               >
                 {saving ? "Saving..." : "Save"}
               </button>
