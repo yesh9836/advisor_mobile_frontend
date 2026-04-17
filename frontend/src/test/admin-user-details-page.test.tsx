@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -29,6 +29,29 @@ const renderPage = (path = "/admin/users/7") => {
     </MemoryRouter>,
   );
 };
+
+const buildPurchase = (overrides: Partial<{
+  id: number;
+  order_reference: string;
+  status: string;
+  package_name: string;
+  amount_cents: number;
+  currency: string;
+  credits_total: number;
+  credits_remaining: number;
+  purchased_at: string;
+}> = {}) => ({
+  id: 12,
+  order_reference: "cs_test_purchase_1",
+  status: "completed",
+  package_name: "Starter Pack",
+  amount_cents: 15000,
+  currency: "USD",
+  credits_total: 10,
+  credits_remaining: 4,
+  purchased_at: "2026-02-01T00:00:00Z",
+  ...overrides,
+});
 
 const buildUserDetails = () => ({
   id: 7,
@@ -61,19 +84,7 @@ const buildUserDetails = () => ({
     has_more: false,
   },
   purchase_history_preview: {
-    items: [
-      {
-        id: 12,
-        order_reference: "cs_test_purchase_1",
-        status: "completed",
-        package_name: "Starter Pack",
-        amount_cents: 15000,
-        currency: "USD",
-        credits_total: 10,
-        credits_remaining: 4,
-        purchased_at: "2026-02-01T00:00:00Z",
-      },
-    ],
+    items: [buildPurchase()],
     total: 1,
     has_more: false,
   },
@@ -139,17 +150,13 @@ describe("UserDetailsPage", () => {
         has_more: true,
       },
       purchase_history_preview: {
-        items: Array.from({ length: 5 }, (_, index) => ({
-          id: 3000 + index,
-          order_reference: `order-${1000 + index}`,
-          status: "completed",
-          package_name: "Starter Pack",
-          amount_cents: 15000,
-          currency: "USD",
-          credits_total: 10,
-          credits_remaining: 4,
-          purchased_at: `2026-02-${String(index + 1).padStart(2, "0")}T00:00:00Z`,
-        })),
+        items: Array.from({ length: 5 }, (_, index) =>
+          buildPurchase({
+            id: 3000 + index,
+            order_reference: `order-${1000 + index}`,
+            purchased_at: `2026-02-${String(index + 1).padStart(2, "0")}T00:00:00Z`,
+          }),
+        ),
         total: 12,
         has_more: true,
       },
@@ -200,6 +207,65 @@ describe("UserDetailsPage", () => {
     expect(screen.getByRole("button", { name: "View Full Recent Activity (7 more)" })).toBeInTheDocument();
   });
 
+  it("renders status-aware package and usable credit messaging for purchases", async () => {
+    getUser.mockResolvedValueOnce({
+      ...buildUserDetails(),
+      purchase_history_preview: {
+        items: [
+          buildPurchase({
+            id: 21,
+            order_reference: "order-completed-21",
+            package_name: "Completed Package",
+            status: "completed",
+            credits_total: 10,
+            credits_remaining: 4,
+          }),
+          buildPurchase({
+            id: 22,
+            order_reference: "order-pending-22",
+            package_name: "Pending Add-on",
+            status: "pending",
+            credits_total: 5,
+            credits_remaining: 0,
+          }),
+          buildPurchase({
+            id: 23,
+            order_reference: "order-canceled-23",
+            package_name: "Canceled Add-on",
+            status: "canceled",
+            credits_total: 5,
+            credits_remaining: 0,
+          }),
+        ],
+        total: 3,
+        has_more: false,
+      },
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("Detail Advisor")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Package Credits" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Usable Remaining" })).toBeInTheDocument();
+
+    const completedRow = screen.getByText("Completed Package").closest("tr");
+    const pendingRow = screen.getByText("Pending Add-on").closest("tr");
+    const canceledRow = screen.getByText("Canceled Add-on").closest("tr");
+
+    expect(completedRow).not.toBeNull();
+    expect(pendingRow).not.toBeNull();
+    expect(canceledRow).not.toBeNull();
+
+    expect(within(completedRow as HTMLElement).getByText("4")).toBeInTheDocument();
+    expect(within(completedRow as HTMLElement).queryByText("Not granted")).not.toBeInTheDocument();
+
+    expect(within(pendingRow as HTMLElement).getByText("Not granted")).toBeInTheDocument();
+    expect(within(pendingRow as HTMLElement).getByText("Awaiting Stripe outcome")).toBeInTheDocument();
+
+    expect(within(canceledRow as HTMLElement).getByText("Not granted")).toBeInTheDocument();
+    expect(within(canceledRow as HTMLElement).getByText("No credits granted")).toBeInTheDocument();
+  });
+
   it("deactivates active users and reloads details", async () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
 
@@ -226,50 +292,38 @@ describe("UserDetailsPage", () => {
     getUser.mockResolvedValueOnce({
       ...buildUserDetails(),
       purchase_history_preview: {
-        items: Array.from({ length: 5 }, (_, index) => ({
-          id: 3000 + index,
-          order_reference: `order-${1000 + index}`,
-          status: "completed",
-          package_name: "Starter Pack",
-          amount_cents: 15000,
-          currency: "USD",
-          credits_total: 10,
-          credits_remaining: 4,
-          purchased_at: `2026-02-${String(index + 1).padStart(2, "0")}T00:00:00Z`,
-        })),
+        items: Array.from({ length: 5 }, (_, index) =>
+          buildPurchase({
+            id: 3000 + index,
+            order_reference: `order-${1000 + index}`,
+            purchased_at: `2026-02-${String(index + 1).padStart(2, "0")}T00:00:00Z`,
+          }),
+        ),
         total: 25,
         has_more: true,
       },
     });
 
     getUserPurchaseHistory.mockResolvedValueOnce({
-      items: Array.from({ length: 20 }, (_, index) => ({
-        id: 3000 + index,
-        order_reference: `order-${1000 + index}`,
-        status: "completed",
-        package_name: "Starter Pack",
-        amount_cents: 15000,
-        currency: "USD",
-        credits_total: 10,
-        credits_remaining: 4,
-        purchased_at: `2026-02-${String(index + 1).padStart(2, "0")}T00:00:00Z`,
-      })),
+      items: Array.from({ length: 20 }, (_, index) =>
+        buildPurchase({
+          id: 3000 + index,
+          order_reference: `order-${1000 + index}`,
+          purchased_at: `2026-02-${String(index + 1).padStart(2, "0")}T00:00:00Z`,
+        }),
+      ),
       total: 25,
       page: 1,
       size: 20,
     });
     getUserPurchaseHistory.mockResolvedValueOnce({
-      items: Array.from({ length: 5 }, (_, index) => ({
-        id: 3020 + index,
-        order_reference: `order-${1020 + index}`,
-        status: "completed",
-        package_name: "Starter Pack",
-        amount_cents: 15000,
-        currency: "USD",
-        credits_total: 10,
-        credits_remaining: 4,
-        purchased_at: `2026-03-${String(index + 1).padStart(2, "0")}T00:00:00Z`,
-      })),
+      items: Array.from({ length: 5 }, (_, index) =>
+        buildPurchase({
+          id: 3020 + index,
+          order_reference: `order-${1020 + index}`,
+          purchased_at: `2026-03-${String(index + 1).padStart(2, "0")}T00:00:00Z`,
+        }),
+      ),
       total: 25,
       page: 2,
       size: 20,
