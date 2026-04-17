@@ -225,7 +225,49 @@ const renderLicense = (license: UserLicenseItem, index: number) => {
   );
 };
 
+const getPurchaseRemainingPresentation = (
+  purchase: UserPurchaseItem,
+): {
+  value: string;
+  helper: string | null;
+  color: string;
+} => {
+  const normalizedStatus = purchase.status.trim().toLowerCase();
+
+  if (normalizedStatus === "completed") {
+    return {
+      value: String(purchase.credits_remaining),
+      helper: null,
+      color: "#334155",
+    };
+  }
+
+  if (normalizedStatus === "pending") {
+    return {
+      value: "Not granted",
+      helper: "Awaiting Stripe outcome",
+      color: "#64748b",
+    };
+  }
+
+  if (normalizedStatus === "canceled" || normalizedStatus === "failed" || normalizedStatus === "refunded") {
+    return {
+      value: "Not granted",
+      helper: "No credits granted",
+      color: "#64748b",
+    };
+  }
+
+  return {
+    value: "Not granted",
+    helper: "Credits unavailable for this status",
+    color: "#64748b",
+  };
+};
+
 const renderPurchaseRow = (purchase: UserPurchaseItem, index: number) => {
+  const remainingPresentation = getPurchaseRemainingPresentation(purchase);
+
   return (
     <tr
       key={`${purchase.id}-${index}`}
@@ -246,8 +288,13 @@ const renderPurchaseRow = (purchase: UserPurchaseItem, index: number) => {
       <td style={{ padding: "10px 12px", color: "#334155" }}>
         {purchase.credits_total}
       </td>
-      <td style={{ padding: "10px 12px", color: "#334155" }}>
-        {purchase.credits_remaining}
+      <td style={{ padding: "10px 12px", color: remainingPresentation.color }}>
+        <div>{remainingPresentation.value}</div>
+        {remainingPresentation.helper && (
+          <div style={{ marginTop: 2, fontSize: 12, color: "#64748b" }}>
+            {remainingPresentation.helper}
+          </div>
+        )}
       </td>
       <td style={{ padding: "10px 12px", color: "#475569" }}>
         {formatDateTime(purchase.purchased_at)}
@@ -773,8 +820,8 @@ const UserDetailsPage = () => {
                         <th style={{ padding: "10px 12px" }}>Package</th>
                         <th style={{ padding: "10px 12px" }}>Status</th>
                         <th style={{ padding: "10px 12px" }}>Amount</th>
-                        <th style={{ padding: "10px 12px" }}>Credits</th>
-                        <th style={{ padding: "10px 12px" }}>Remaining</th>
+                        <th style={{ padding: "10px 12px" }}>Package Credits</th>
+                        <th style={{ padding: "10px 12px" }}>Usable Remaining</th>
                         <th style={{ padding: "10px 12px" }}>Purchased At</th>
                       </tr>
                     </thead>
