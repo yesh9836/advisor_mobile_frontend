@@ -5,12 +5,10 @@ import LeadInventoryPage from "@/pages/admin/LeadInventoryPage";
 
 const getLeadInventory = vi.fn();
 const getLicenseStatusSummary = vi.fn();
-const createLeadAsAdmin = vi.fn();
 
 vi.mock("@/api/admin", () => ({
   getLeadInventory: (...args: unknown[]) => getLeadInventory(...args),
   getLicenseStatusSummary: (...args: unknown[]) => getLicenseStatusSummary(...args),
-  createLeadAsAdmin: (...args: unknown[]) => createLeadAsAdmin(...args),
 }));
 
 vi.mock("@/components/admin/ImportModal", () => ({
@@ -81,8 +79,6 @@ describe("LeadInventoryPage", () => {
       { status: "verified", count: 5 },
       { status: "rejected", count: 1 },
     ]);
-
-    createLeadAsAdmin.mockResolvedValue({ id: 999 });
   });
 
   it("renders inventory rows and license status summary", async () => {
@@ -125,42 +121,6 @@ describe("LeadInventoryPage", () => {
     });
   });
 
-  it("creates a lead and shows success state", async () => {
-    render(<LeadInventoryPage />);
-
-    await screen.findByText("Alice North");
-
-    fireEvent.click(screen.getByRole("button", { name: "Add Lead" }));
-
-    fireEvent.change(screen.getByLabelText("State", { selector: "#lead-state" }), {
-      target: { value: "CA" },
-    });
-    fireEvent.change(screen.getByLabelText("Mobile Phone", { selector: "#lead-phone" }), {
-      target: { value: "555-222-3333" },
-    });
-    fireEvent.change(screen.getByLabelText("First Name", { selector: "#lead-first-name" }), {
-      target: { value: "New" },
-    });
-    fireEvent.change(screen.getByLabelText("Last Name", { selector: "#lead-last-name" }), {
-      target: { value: "Lead" },
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Create Lead" }));
-
-    await waitFor(() => {
-      expect(createLeadAsAdmin).toHaveBeenCalledWith(
-        expect.objectContaining({
-          state_code: "CA",
-          mobile_phone: "555-222-3333",
-          first_name: "New",
-          last_name: "Lead",
-        }),
-      );
-    });
-
-    expect(await screen.findByText("Lead created successfully.")).toBeInTheDocument();
-  });
-
   it("reports import success when modal callback completes", async () => {
     render(<LeadInventoryPage />);
 
@@ -174,6 +134,15 @@ describe("LeadInventoryPage", () => {
         "Import completed. Inserted 4 leads, 1 duplicates, 1 failed rows.",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("does not render the removed manual add lead controls", async () => {
+    render(<LeadInventoryPage />);
+
+    await screen.findByText("Alice North");
+
+    expect(screen.queryByRole("button", { name: "Add Lead" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Create a single lead entry directly from admin inventory.")).not.toBeInTheDocument();
   });
 
   it("ignores stale inventory responses after filters change quickly", async () => {

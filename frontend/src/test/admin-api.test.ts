@@ -7,7 +7,6 @@ import {
   approveLicense,
   bulkImportLeadsAsAdmin,
   createAdminPlan,
-  createLeadAsAdmin,
   deactivateAdminUser,
   deactivateUser,
   downloadOrdersExport,
@@ -431,66 +430,6 @@ describe("admin API contract", () => {
 
     expect(mockedApiClient.get).toHaveBeenCalledWith("/admin/license-status-summary", {
       signal: undefined,
-    });
-  });
-
-  it("createLeadAsAdmin posts normalized lead payload", async () => {
-    const created = {
-      id: 45,
-      source: "manual_entry",
-      state_code: "CA",
-      zip_code: null,
-      first_name: "Alice",
-      last_name: "Lane",
-      mobile_phone: "555-222-3000",
-      preferred_follow_up_method: null,
-      best_time_to_reach: null,
-      retirement_timeline: null,
-      confidence_in_long_term_plan: null,
-      most_important_retirement_activity: null,
-      planning_to_relocate_retirement: null,
-      expected_retirement_income_source: null,
-      overall_health: null,
-      money_management_style: null,
-      investor_profile_statement: null,
-      investment_comfort_level: null,
-      main_purpose_for_investing: null,
-      retirement_savings_range: null,
-      annual_household_income_range: null,
-      total_investable_assets_range: null,
-      monthly_savings_range: null,
-      wants_to_improve_strategy_timing: null,
-      current_investment_strategies: null,
-      has_financial_advisor: null,
-      advisor_local_preference: null,
-      owns_annuity: null,
-      additional_notes: null,
-      created_at: "2026-02-20T00:00:00Z",
-      updated_at: null,
-      outcome_status: null,
-      outcome_notes: null,
-      outcome_updated_at: null,
-      is_downloaded: false,
-      downloaded_at: null,
-    };
-    mockedApiClient.post.mockResolvedValueOnce({ data: created });
-
-    await expect(
-      createLeadAsAdmin({
-        state_code: " ca ",
-        mobile_phone: " 555-222-3000 ",
-        first_name: "  Alice ",
-        last_name: "  Lane ",
-        source: " manual_entry ",
-      }),
-    ).resolves.toEqual(created);
-
-    expect(mockedApiClient.post).toHaveBeenCalledWith("/leads/", {
-      state_code: "CA",
-      mobile_phone: "555-222-3000",
-      first_name: "Alice",
-      last_name: "Lane",
-      source: "manual_entry",
     });
   });
 
