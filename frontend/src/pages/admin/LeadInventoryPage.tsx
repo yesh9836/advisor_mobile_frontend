@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
-  createLeadAsAdmin,
   getLeadInventory,
   getLicenseStatusSummary,
 } from "@/api/admin";
@@ -83,18 +82,6 @@ const LeadInventoryPage = () => {
 
   const [licenseSummary, setLicenseSummary] = useState<LicenseStatusSummaryItem[]>([]);
 
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [createSubmitting, setCreateSubmitting] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [createSuccess, setCreateSuccess] = useState<string | null>(null);
-  const [createForm, setCreateForm] = useState({
-    state_code: "",
-    mobile_phone: "",
-    first_name: "",
-    last_name: "",
-    source: "manual_entry",
-  });
-
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
   const { beginRequest, isLatestRequest } = useLatestRequest();
@@ -160,44 +147,6 @@ const LeadInventoryPage = () => {
     setFilters(defaultFilters);
   };
 
-  const handleCreateLead = async () => {
-    if (!createForm.state_code.trim() || !createForm.mobile_phone.trim()) {
-      setCreateError("State and mobile phone are required.");
-      return;
-    }
-
-    setCreateSubmitting(true);
-    setCreateError(null);
-    setCreateSuccess(null);
-
-    try {
-      await createLeadAsAdmin({
-        state_code: createForm.state_code,
-        mobile_phone: createForm.mobile_phone,
-        first_name: createForm.first_name,
-        last_name: createForm.last_name,
-        source: createForm.source,
-      });
-
-      setCreateSuccess("Lead created successfully.");
-      setCreateForm((prev) => ({
-        ...prev,
-        state_code: "",
-        mobile_phone: "",
-        first_name: "",
-        last_name: "",
-      }));
-      setPage(1);
-      if (page === 1) {
-        await loadInventory();
-      }
-    } catch (submitError) {
-      setCreateError(getApiErrorMessage(submitError, "Failed to create lead."));
-    } finally {
-      setCreateSubmitting(false);
-    }
-  };
-
   return (
     <div className="page">
       <div className="page-header-row">
@@ -211,13 +160,6 @@ const LeadInventoryPage = () => {
         <div className="row" style={{ flexWrap: "wrap" }}>
           <button
             type="button"
-            className="btn btn-secondary"
-            onClick={() => setShowCreateForm((value) => !value)}
-          >
-            {showCreateForm ? "Hide Add Lead" : "Add Lead"}
-          </button>
-          <button
-            type="button"
             className="btn btn-primary"
             onClick={() => setImportModalOpen(true)}
           >
@@ -228,98 +170,6 @@ const LeadInventoryPage = () => {
 
       {error && <div className="alert">{error}</div>}
       {importSuccess && <div className="success">{importSuccess}</div>}
-
-      {showCreateForm && (
-        <section className="panel stack">
-          <div>
-            <h2 style={{ margin: 0, fontSize: 28, color: "#0b1b49" }}>Add Lead</h2>
-            <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
-              Create a single lead entry directly from admin inventory.
-            </p>
-          </div>
-
-          {createError && <div className="alert">{createError}</div>}
-          {createSuccess && <div className="success">{createSuccess}</div>}
-
-          <div className="grid-3">
-            <div className="field">
-              <label htmlFor="lead-state">State</label>
-              <input
-                id="lead-state"
-                value={createForm.state_code}
-                onChange={(event) =>
-                  setCreateForm((prev) => ({ ...prev, state_code: event.target.value }))
-                }
-                placeholder="CA"
-                maxLength={2}
-              />
-            </div>
-
-            <div className="field">
-              <label htmlFor="lead-phone">Mobile Phone</label>
-              <input
-                id="lead-phone"
-                value={createForm.mobile_phone}
-                onChange={(event) =>
-                  setCreateForm((prev) => ({ ...prev, mobile_phone: event.target.value }))
-                }
-                placeholder="555-123-4567"
-              />
-            </div>
-
-            <div className="field">
-              <label htmlFor="lead-source">Source</label>
-              <select
-                id="lead-source"
-                value={createForm.source}
-                onChange={(event) =>
-                  setCreateForm((prev) => ({ ...prev, source: event.target.value }))
-                }
-              >
-                <option value="manual_entry">Manual Entry</option>
-                <option value="csv_import">CSV Import</option>
-                <option value="wordpress_import">WordPress Import</option>
-                <option value="api_submission">API Submission</option>
-              </select>
-            </div>
-
-            <div className="field">
-              <label htmlFor="lead-first-name">First Name</label>
-              <input
-                id="lead-first-name"
-                value={createForm.first_name}
-                onChange={(event) =>
-                  setCreateForm((prev) => ({ ...prev, first_name: event.target.value }))
-                }
-                placeholder="Alex"
-              />
-            </div>
-
-            <div className="field">
-              <label htmlFor="lead-last-name">Last Name</label>
-              <input
-                id="lead-last-name"
-                value={createForm.last_name}
-                onChange={(event) =>
-                  setCreateForm((prev) => ({ ...prev, last_name: event.target.value }))
-                }
-                placeholder="Parker"
-              />
-            </div>
-          </div>
-
-          <div className="row" style={{ justifyContent: "flex-end" }}>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => void handleCreateLead()}
-              disabled={createSubmitting}
-            >
-              {createSubmitting ? "Creating..." : "Create Lead"}
-            </button>
-          </div>
-        </section>
-      )}
 
       <section className="grid-main">
         <article className="panel stack">
