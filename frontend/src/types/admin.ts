@@ -120,14 +120,6 @@ export interface LicenseStatusSummaryItem {
   count: number;
 }
 
-export interface AdminLeadCreatePayload {
-  state_code: string;
-  mobile_phone: string;
-  first_name?: string;
-  last_name?: string;
-  source?: string;
-}
-
 export interface UserLicenseItem {
   id: number;
   state: string;
