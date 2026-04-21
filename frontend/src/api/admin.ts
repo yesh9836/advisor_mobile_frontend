@@ -5,7 +5,6 @@ import {
   licenseSchema,
   licenseWithUserSchema,
 } from "@/api/license-contract";
-import { leadSchema } from "@/api/leads";
 import { normalizeQueryParams } from "@/api/query-params";
 import type {
   AdminPlanCreatePayload,
@@ -13,7 +12,6 @@ import type {
   AdminPlanItem,
   AdminPlanUpdatePayload,
   AdminAnalyticsOverview,
-  AdminLeadCreatePayload,
   AuditLogFilters,
   DashboardStats,
   DeactivateUserRequest,
@@ -33,7 +31,6 @@ import type {
     UserDetails,
     UserListFilters,
 } from "@/types/admin";
-import type { Lead } from "@/types/lead";
 import type {
   FirstPurchaseAddonOfferConfig,
   FirstPurchaseAddonOfferUpdatePayload,
@@ -713,21 +710,6 @@ export const getLicenseStatusSummary = async (
     response.data,
     "/admin/license-status-summary",
   );
-};
-
-export const createLeadAsAdmin = async (
-  payload: AdminLeadCreatePayload,
-): Promise<Lead> => {
-  const requestPayload = normalizeQueryParams({
-    state_code: payload.state_code.trim().toUpperCase(),
-    mobile_phone: payload.mobile_phone,
-    first_name: payload.first_name,
-    last_name: payload.last_name,
-    source: payload.source ?? "manual_entry",
-  });
-
-  const response = await apiClient.post<Lead>("/leads/", requestPayload);
-  return parseApiContract(leadSchema, response.data, "/leads/");
 };
 
 export const getUser = async (userId: number): Promise<UserDetails> => {
