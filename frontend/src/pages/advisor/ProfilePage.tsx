@@ -109,35 +109,35 @@ const ProfilePage = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-4xl font-semibold text-[#0a1633]">
+        <h1 className="text-4xl font-semibold text-[#202860]">
           Advisor Profile
         </h1>
-        <p className="mt-1 text-base text-[#4c628a]">
+        <p className="mt-1 text-base text-[#58707d]">
           Manage account details, licenses, purchases, and credits.
         </p>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title="User Info">
-          <div className="space-y-2 text-sm text-[#4c628a]">
+          <div className="space-y-2 text-sm text-[#58707d]">
             <p>
-              <span className="font-semibold text-[#0a1633]">Name:</span>{" "}
+              <span className="font-semibold text-[#202860]">Name:</span>{" "}
               {user?.name ?? "-"}
             </p>
             <p>
-              <span className="font-semibold text-[#0a1633]">Email:</span>{" "}
+              <span className="font-semibold text-[#202860]">Email:</span>{" "}
               {user?.email ?? "-"}
             </p>
             <p>
-              <span className="font-semibold text-[#0a1633]">Phone:</span>{" "}
+              <span className="font-semibold text-[#202860]">Phone:</span>{" "}
               {user?.phone ?? "-"}
             </p>
             <p>
-              <span className="font-semibold text-[#0a1633]">Role:</span>{" "}
+              <span className="font-semibold text-[#202860]">Role:</span>{" "}
               {user?.role ?? "-"}
             </p>
             <p>
-              <span className="font-semibold text-[#0a1633]">Joined:</span>{" "}
+              <span className="font-semibold text-[#202860]">Joined:</span>{" "}
               {formatDate(user?.created_at)}
             </p>
           </div>
@@ -145,54 +145,54 @@ const ProfilePage = () => {
 
         <Card title="Credits & Purchases">
           {billingLoading ? (
-            <p className="text-sm text-[#4c628a]">Loading purchase summary...</p>
+            <p className="text-sm text-[#58707d]">Loading purchase summary...</p>
           ) : billingError ? (
             <p className="text-sm text-[#8a1d1d]">{billingError}</p>
           ) : balance ? (
-            <div className="space-y-2 text-sm text-[#4c628a]">
+            <div className="space-y-2 text-sm text-[#58707d]">
               <p>
-                <span className="font-semibold text-[#0a1633]">Remaining credits:</span>{" "}
+                <span className="font-semibold text-[#202860]">Remaining credits:</span>{" "}
                 {balance.remaining_credits}
               </p>
               <p>
-                <span className="font-semibold text-[#0a1633]">Total credits purchased:</span>{" "}
+                <span className="font-semibold text-[#202860]">Total credits purchased:</span>{" "}
                 {balance.total_credits}
               </p>
               <p>
-                <span className="font-semibold text-[#0a1633]">Completed purchases:</span>{" "}
+                <span className="font-semibold text-[#202860]">Completed purchases:</span>{" "}
                 {balance.completed_purchases}
               </p>
               <p>
-                <span className="font-semibold text-[#0a1633]">Pending auto-delivery leads:</span>{" "}
+                <span className="font-semibold text-[#202860]">Pending auto-delivery leads:</span>{" "}
                 {pendingAutoDeliveryLeads}
               </p>
               {latestCompletedPurchase && (
                 <div className="space-y-1 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
                   <p>
-                    <span className="font-semibold text-[#0a1633]">Latest completed purchase:</span>{" "}
+                    <span className="font-semibold text-[#202860]">Latest completed purchase:</span>{" "}
                     {latestCompletedPurchase.package_name ?? "Package"} on{" "}
                     {formatDate(latestCompletedPurchase.purchased_at)}
                   </p>
                   <p>
-                    <span className="font-semibold text-[#0a1633]">Delivered now:</span>{" "}
+                    <span className="font-semibold text-[#202860]">Delivered now:</span>{" "}
                     {latestCompletedPurchase.assigned_count}/{latestCompletedPurchase.entitled_credits_total}
                   </p>
                   <p>
-                    <span className="font-semibold text-[#0a1633]">Pending auto-delivery:</span>{" "}
+                    <span className="font-semibold text-[#202860]">Pending auto-delivery:</span>{" "}
                     {Math.max(latestCompletedPurchase.unfulfilled_count, 0)}
                   </p>
                   <p>
-                    <span className="font-semibold text-[#0a1633]">Fulfillment:</span>{" "}
+                    <span className="font-semibold text-[#202860]">Fulfillment:</span>{" "}
                     {formatFulfillmentStatus(latestCompletedPurchase.fulfillment_status)}
                   </p>
                 </div>
               )}
-              <p className="text-xs text-[#64748b]">
+              <p className="text-xs text-[#6d7f89]">
                 New leads are assigned automatically when inventory is available in your licensed states.
               </p>
             </div>
           ) : (
-            <p className="text-sm text-[#4c628a]">
+            <p className="text-sm text-[#58707d]">
               No completed purchases found.
             </p>
           )}

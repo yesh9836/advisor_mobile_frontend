@@ -161,20 +161,20 @@ const renderCreditSummary = (summary: UserCreditSummary) => {
   return (
     <div className="grid-3">
       <div>
-        <div style={{ color: "#64748b", fontSize: 13 }}>Total Credits</div>
-        <div style={{ color: "#0b1b49", fontWeight: 700 }}>
+        <div style={{ color: "#6d7f89", fontSize: 13 }}>Total Credits</div>
+        <div style={{ color: "#202860", fontWeight: 700 }}>
           {summary.total_credits}
         </div>
       </div>
       <div>
-        <div style={{ color: "#64748b", fontSize: 13 }}>Remaining Credits</div>
-        <div style={{ color: "#0b1b49", fontWeight: 700 }}>
+        <div style={{ color: "#6d7f89", fontSize: 13 }}>Remaining Credits</div>
+        <div style={{ color: "#202860", fontWeight: 700 }}>
           {summary.remaining_credits}
         </div>
       </div>
       <div>
-        <div style={{ color: "#64748b", fontSize: 13 }}>Completed Purchases</div>
-        <div style={{ color: "#0b1b49", fontWeight: 700 }}>
+        <div style={{ color: "#6d7f89", fontSize: 13 }}>Completed Purchases</div>
+        <div style={{ color: "#202860", fontWeight: 700 }}>
           {summary.completed_purchases}
         </div>
       </div>
@@ -188,11 +188,11 @@ const renderLicense = (license: UserLicenseItem, index: number) => {
       key={license.id}
       className="panel"
       style={{
-        background: index % 2 === 0 ? "#f8fafc" : "#ffffff",
+        background: index % 2 === 0 ? "#f4fbfc" : "#ffffff",
       }}
     >
       <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-        <h3 style={{ margin: 0, fontSize: 22, color: "#0b1b49" }}>
+        <h3 style={{ margin: 0, fontSize: 22, color: "#202860" }}>
           {license.state} • {license.license_number}
         </h3>
         <span
@@ -208,11 +208,11 @@ const renderLicense = (license: UserLicenseItem, index: number) => {
         </span>
       </div>
 
-      <p style={{ margin: "8px 0 0 0", color: "#475569" }}>
+      <p style={{ margin: "8px 0 0 0", color: "#58707d" }}>
         Type: {license.license_type ?? "N/A"} • Created: {formatDateTime(license.created_at)}
       </p>
 
-      <p style={{ margin: "6px 0 0 0", color: "#475569" }}>
+      <p style={{ margin: "6px 0 0 0", color: "#58707d" }}>
         Verified: {formatDateTime(license.verified_at)}
       </p>
 
@@ -238,7 +238,7 @@ const getPurchaseRemainingPresentation = (
     return {
       value: String(purchase.credits_remaining),
       helper: null,
-      color: "#334155",
+      color: "#334a57",
     };
   }
 
@@ -246,7 +246,7 @@ const getPurchaseRemainingPresentation = (
     return {
       value: "Not granted",
       helper: "Awaiting Stripe outcome",
-      color: "#64748b",
+      color: "#6d7f89",
     };
   }
 
@@ -254,14 +254,14 @@ const getPurchaseRemainingPresentation = (
     return {
       value: "Not granted",
       helper: "No credits granted",
-      color: "#64748b",
+      color: "#6d7f89",
     };
   }
 
   return {
     value: "Not granted",
     helper: "Credits unavailable for this status",
-    color: "#64748b",
+    color: "#6d7f89",
   };
 };
 
@@ -271,32 +271,32 @@ const renderPurchaseRow = (purchase: UserPurchaseItem, index: number) => {
   return (
     <tr
       key={`${purchase.id}-${index}`}
-      style={{ borderTop: "1px solid #e2e8f0" }}
+      style={{ borderTop: "1px solid #d8e8ee" }}
     >
-      <td style={{ padding: "10px 12px", color: "#0b1b49", fontWeight: 700 }}>
+      <td style={{ padding: "10px 12px", color: "#202860", fontWeight: 700 }}>
         {purchase.order_reference}
       </td>
-      <td style={{ padding: "10px 12px", color: "#334155" }}>
+      <td style={{ padding: "10px 12px", color: "#334a57" }}>
         {purchase.package_name ?? "Unknown package"}
       </td>
-      <td style={{ padding: "10px 12px", color: "#334155" }}>
+      <td style={{ padding: "10px 12px", color: "#334a57" }}>
         {formatStatusLabel(purchase.status)}
       </td>
-      <td style={{ padding: "10px 12px", color: "#334155" }}>
+      <td style={{ padding: "10px 12px", color: "#334a57" }}>
         {formatCurrency(purchase.amount_cents, purchase.currency)}
       </td>
-      <td style={{ padding: "10px 12px", color: "#334155" }}>
+      <td style={{ padding: "10px 12px", color: "#334a57" }}>
         {purchase.credits_total}
       </td>
       <td style={{ padding: "10px 12px", color: remainingPresentation.color }}>
         <div>{remainingPresentation.value}</div>
         {remainingPresentation.helper && (
-          <div style={{ marginTop: 2, fontSize: 12, color: "#64748b" }}>
+          <div style={{ marginTop: 2, fontSize: 12, color: "#6d7f89" }}>
             {remainingPresentation.helper}
           </div>
         )}
       </td>
-      <td style={{ padding: "10px 12px", color: "#475569" }}>
+      <td style={{ padding: "10px 12px", color: "#58707d" }}>
         {formatDateTime(purchase.purchased_at)}
       </td>
     </tr>
@@ -305,11 +305,11 @@ const renderPurchaseRow = (purchase: UserPurchaseItem, index: number) => {
 
 const renderDownloadRow = (item: UserDownloadHistoryItem, index: number) => {
   return (
-    <tr key={`${item.lead_id}-${item.downloaded_at}-${index}`} style={{ borderTop: "1px solid #e2e8f0" }}>
-      <td style={{ padding: "10px 12px", color: "#0b1b49", fontWeight: 700 }}>{item.lead_id}</td>
-      <td style={{ padding: "10px 12px", color: "#334155" }}>{item.state_code}</td>
-      <td style={{ padding: "10px 12px", color: "#334155" }}>{formatDateTime(item.downloaded_at)}</td>
-      <td style={{ padding: "10px 12px", color: "#475569" }}>{item.csv_batch_id ?? "N/A"}</td>
+    <tr key={`${item.lead_id}-${item.downloaded_at}-${index}`} style={{ borderTop: "1px solid #d8e8ee" }}>
+      <td style={{ padding: "10px 12px", color: "#202860", fontWeight: 700 }}>{item.lead_id}</td>
+      <td style={{ padding: "10px 12px", color: "#334a57" }}>{item.state_code}</td>
+      <td style={{ padding: "10px 12px", color: "#334a57" }}>{formatDateTime(item.downloaded_at)}</td>
+      <td style={{ padding: "10px 12px", color: "#58707d" }}>{item.csv_batch_id ?? "N/A"}</td>
     </tr>
   );
 };
@@ -414,28 +414,28 @@ const renderActivityRow = (item: AuditLog) => {
       key={item.id}
       className="panel"
       style={{
-        background: "#f8fafc",
+        background: "#f4fbfc",
       }}
     >
       <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-        <div style={{ color: "#0b1b49", fontWeight: 700 }}>
+        <div style={{ color: "#202860", fontWeight: 700 }}>
           {formatTitleLabel(item.action)}
         </div>
-        <div style={{ color: "#64748b", fontSize: 13 }}>{formatDateTime(item.created_at)}</div>
+        <div style={{ color: "#6d7f89", fontSize: 13 }}>{formatDateTime(item.created_at)}</div>
       </div>
 
-      <div style={{ marginTop: 8, color: "#334155", fontSize: 14 }}>
+      <div style={{ marginTop: 8, color: "#334a57", fontSize: 14 }}>
         Affected: {formatTitleLabel(item.entity_type)}
         {item.entity_id !== null ? ` #${item.entity_id}` : ""}
       </div>
 
       {actorLabel && (
-        <div style={{ marginTop: 8, color: "#334155", fontSize: 14 }}>
+        <div style={{ marginTop: 8, color: "#334a57", fontSize: 14 }}>
           Performed by: {actorLabel}
         </div>
       )}
 
-      <p style={{ margin: "8px 0 0 0", color: "#475569", fontSize: 14 }}>{summary}</p>
+      <p style={{ margin: "8px 0 0 0", color: "#58707d", fontSize: 14 }}>{summary}</p>
 
       {details.length > 0 && (
         <div className="row" style={{ marginTop: 8, gap: 8, flexWrap: "wrap" }}>
@@ -447,8 +447,8 @@ const renderActivityRow = (item: AuditLog) => {
                 padding: "4px 10px",
                 fontSize: 12,
                 fontWeight: 600,
-                background: "#e2e8f0",
-                color: "#334155",
+                background: "#d8e8ee",
+                color: "#334a57",
               }}
             >
               {detail}
@@ -716,12 +716,12 @@ const UserDetailsPage = () => {
           <section className="grid-main">
             <article className="panel stack">
               <div>
-                <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>{details.name}</h2>
-                <p style={{ margin: "4px 0 0 0", color: "#475569" }}>{details.email}</p>
+                <h2 style={{ margin: 0, fontSize: 30, color: "#202860" }}>{details.name}</h2>
+                <p style={{ margin: "4px 0 0 0", color: "#58707d" }}>{details.email}</p>
               </div>
 
               <div className="row" style={{ flexWrap: "wrap", alignItems: "center" }}>
-                <span style={{ color: "#334155" }}>Role: {formatRole(details.role)}</span>
+                <span style={{ color: "#334a57" }}>Role: {formatRole(details.role)}</span>
                 <span
                   style={{
                     borderRadius: 999,
@@ -737,23 +737,23 @@ const UserDetailsPage = () => {
 
               <div className="grid-3">
                 <div>
-                  <div style={{ color: "#64748b", fontSize: 13 }}>Created</div>
-                  <div style={{ color: "#334155" }}>{formatDateTime(details.created_at)}</div>
+                  <div style={{ color: "#6d7f89", fontSize: 13 }}>Created</div>
+                  <div style={{ color: "#334a57" }}>{formatDateTime(details.created_at)}</div>
                 </div>
                 <div>
-                  <div style={{ color: "#64748b", fontSize: 13 }}>Deactivated At</div>
-                  <div style={{ color: "#334155" }}>{formatDateTime(details.deactivated_at)}</div>
+                  <div style={{ color: "#6d7f89", fontSize: 13 }}>Deactivated At</div>
+                  <div style={{ color: "#334a57" }}>{formatDateTime(details.deactivated_at)}</div>
                 </div>
                 <div>
-                  <div style={{ color: "#64748b", fontSize: 13 }}>Deactivated By</div>
-                  <div style={{ color: "#334155" }}>
+                  <div style={{ color: "#6d7f89", fontSize: 13 }}>Deactivated By</div>
+                  <div style={{ color: "#334a57" }}>
                     {details.deactivated_by === null ? "N/A" : details.deactivated_by}
                   </div>
                 </div>
               </div>
 
               <div>
-                <h3 style={{ margin: "4px 0 8px 0", fontSize: 24, color: "#0b1b49" }}>
+                <h3 style={{ margin: "4px 0 8px 0", fontSize: 24, color: "#202860" }}>
                   Credit Summary
                 </h3>
                 {renderCreditSummary(details.credit_summary)}
@@ -762,7 +762,7 @@ const UserDetailsPage = () => {
 
             <aside className="panel stack">
               <div>
-                <h2 style={{ margin: 0, fontSize: 28, color: "#0b1b49" }}>Account Actions</h2>
+                <h2 style={{ margin: 0, fontSize: 28, color: "#202860" }}>Account Actions</h2>
               </div>
 
               <div className="field">
@@ -794,8 +794,8 @@ const UserDetailsPage = () => {
 
           <section className="panel stack">
             <div>
-              <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>Purchase History</h2>
-              <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+              <h2 style={{ margin: 0, fontSize: 30, color: "#202860" }}>Purchase History</h2>
+              <p style={{ margin: "4px 0 0 0", color: "#58707d" }}>
                 Showing the latest 5 purchases first. Load fuller history on demand.
               </p>
             </div>
@@ -803,18 +803,18 @@ const UserDetailsPage = () => {
             {purchaseHistorySection.error && <div className="alert">{purchaseHistorySection.error}</div>}
 
             {visiblePurchaseHistory.length === 0 ? (
-              <p style={{ color: "#475569", margin: 0 }}>No purchases found.</p>
+              <p style={{ color: "#58707d", margin: 0 }}>No purchases found.</p>
             ) : (
               <>
                 <div
                   style={{
                     overflowX: "auto",
-                    border: "1px solid #dbe4f0",
+                    border: "1px solid #d8e8ee",
                     borderRadius: 12,
                   }}
                 >
                   <table className="min-w-full bg-white text-left text-sm">
-                    <thead style={{ background: "#f8fafc", color: "#1f3a6b" }}>
+                    <thead style={{ background: "#f4fbfc", color: "#202860" }}>
                       <tr>
                         <th style={{ padding: "10px 12px" }}>Order</th>
                         <th style={{ padding: "10px 12px" }}>Package</th>
@@ -830,7 +830,7 @@ const UserDetailsPage = () => {
                 </div>
 
                 {purchaseHistorySection.isExpanded && (
-                  <p style={{ margin: 0, color: "#475569" }}>
+                  <p style={{ margin: 0, color: "#58707d" }}>
                     Showing {purchaseHistorySection.items.length} of {purchaseHistorySection.total} purchase records.
                   </p>
                 )}
@@ -885,8 +885,8 @@ const UserDetailsPage = () => {
 
           <section className="panel stack">
             <div>
-              <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>Licenses</h2>
-              <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+              <h2 style={{ margin: 0, fontSize: 30, color: "#202860" }}>Licenses</h2>
+              <p style={{ margin: "4px 0 0 0", color: "#58707d" }}>
                 Showing the latest 5 licenses first. Load fuller history on demand.
               </p>
             </div>
@@ -894,13 +894,13 @@ const UserDetailsPage = () => {
             {licensesSection.error && <div className="alert">{licensesSection.error}</div>}
 
             {visibleLicenses.length === 0 ? (
-              <p style={{ color: "#475569", margin: 0 }}>No licenses found.</p>
+              <p style={{ color: "#58707d", margin: 0 }}>No licenses found.</p>
             ) : (
               <>
                 {visibleLicenses.map((license, index) => renderLicense(license, index))}
 
                 {licensesSection.isExpanded && (
-                  <p style={{ margin: 0, color: "#475569" }}>
+                  <p style={{ margin: 0, color: "#58707d" }}>
                     Showing {licensesSection.items.length} of {licensesSection.total} license records.
                   </p>
                 )}
@@ -953,8 +953,8 @@ const UserDetailsPage = () => {
 
           <section className="panel stack">
             <div>
-              <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>Download History</h2>
-              <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+              <h2 style={{ margin: 0, fontSize: 30, color: "#202860" }}>Download History</h2>
+              <p style={{ margin: "4px 0 0 0", color: "#58707d" }}>
                 Showing the latest 5 downloads first. Load fuller history on demand.
               </p>
             </div>
@@ -962,18 +962,18 @@ const UserDetailsPage = () => {
             {downloadHistorySection.error && <div className="alert">{downloadHistorySection.error}</div>}
 
             {visibleDownloadHistory.length === 0 ? (
-              <p style={{ color: "#475569", margin: 0 }}>No lead downloads recorded.</p>
+              <p style={{ color: "#58707d", margin: 0 }}>No lead downloads recorded.</p>
             ) : (
               <>
                 <div
                   style={{
                     overflowX: "auto",
-                    border: "1px solid #dbe4f0",
+                    border: "1px solid #d8e8ee",
                     borderRadius: 12,
                   }}
                 >
                   <table className="min-w-full bg-white text-left text-sm">
-                    <thead style={{ background: "#f8fafc", color: "#1f3a6b" }}>
+                    <thead style={{ background: "#f4fbfc", color: "#202860" }}>
                       <tr>
                         <th style={{ padding: "10px 12px" }}>Lead ID</th>
                         <th style={{ padding: "10px 12px" }}>State</th>
@@ -986,7 +986,7 @@ const UserDetailsPage = () => {
                 </div>
 
                 {downloadHistorySection.isExpanded && (
-                  <p style={{ margin: 0, color: "#475569" }}>
+                  <p style={{ margin: 0, color: "#58707d" }}>
                     Showing {downloadHistorySection.items.length} of {downloadHistorySection.total} download records.
                   </p>
                 )}
@@ -1041,8 +1041,8 @@ const UserDetailsPage = () => {
 
           <section className="panel stack">
             <div>
-              <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>Recent Activity</h2>
-              <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+              <h2 style={{ margin: 0, fontSize: 30, color: "#202860" }}>Recent Activity</h2>
+              <p style={{ margin: "4px 0 0 0", color: "#58707d" }}>
                 Showing the latest 5 audit events first. Load fuller history on demand.
               </p>
             </div>
@@ -1050,13 +1050,13 @@ const UserDetailsPage = () => {
             {recentActivitySection.error && <div className="alert">{recentActivitySection.error}</div>}
 
             {visibleRecentActivity.length === 0 ? (
-              <p style={{ color: "#475569", margin: 0 }}>No recent activity found.</p>
+              <p style={{ color: "#58707d", margin: 0 }}>No recent activity found.</p>
             ) : (
               <>
                 {visibleRecentActivity.map(renderActivityRow)}
 
                 {recentActivitySection.isExpanded && (
-                  <p style={{ margin: 0, color: "#475569" }}>
+                  <p style={{ margin: 0, color: "#58707d" }}>
                     Showing {recentActivitySection.items.length} of {recentActivitySection.total} activity records.
                   </p>
                 )}

@@ -145,7 +145,7 @@ const UsersPage = () => {
 
       <section className="panel stack">
         <div>
-          <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>Filters</h2>
+          <h2 style={{ margin: 0, fontSize: 30, color: "#202860" }}>Filters</h2>
         </div>
 
         <div className="grid-3">
@@ -238,15 +238,15 @@ const UsersPage = () => {
 
       <section className="panel stack">
         <div>
-          <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>User Directory</h2>
-          <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+          <h2 style={{ margin: 0, fontSize: 30, color: "#202860" }}>User Directory</h2>
+          <p style={{ margin: "4px 0 0 0", color: "#58707d" }}>
             Click a row to view user details and administrative history.
           </p>
         </div>
 
-        <div style={{ overflowX: "auto", border: "1px solid #dbe4f0", borderRadius: 12 }}>
+        <div style={{ overflowX: "auto", border: "1px solid #d8e8ee", borderRadius: 12 }}>
           <table className="min-w-full bg-white text-left text-sm">
-            <thead style={{ background: "#f8fafc", color: "#1f3a6b" }}>
+            <thead style={{ background: "#f4fbfc", color: "#202860" }}>
               <tr>
                 <th style={{ padding: "12px 14px" }}>Name</th>
                 <th style={{ padding: "12px 14px" }}>Email</th>
@@ -261,13 +261,13 @@ const UsersPage = () => {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={7} style={{ padding: 24, color: "#475569", textAlign: "center" }}>
+                  <td colSpan={7} style={{ padding: 24, color: "#58707d", textAlign: "center" }}>
                     Loading users...
                   </td>
                 </tr>
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ padding: 24, color: "#475569", textAlign: "center" }}>
+                  <td colSpan={7} style={{ padding: 24, color: "#58707d", textAlign: "center" }}>
                     No users found for the selected filters.
                   </td>
                 </tr>
@@ -285,16 +285,16 @@ const UsersPage = () => {
                       }
                     }}
                     style={{
-                      borderTop: "1px solid #e2e8f0",
+                      borderTop: "1px solid #d8e8ee",
                       cursor: "pointer",
                     }}
                     aria-label={`View details for ${user.name}`}
                   >
-                    <td style={{ padding: "12px 14px", color: "#0b1b49", fontWeight: 700 }}>
+                    <td style={{ padding: "12px 14px", color: "#202860", fontWeight: 700 }}>
                       {user.name}
                     </td>
-                    <td style={{ padding: "12px 14px", color: "#334155" }}>{user.email}</td>
-                    <td style={{ padding: "12px 14px", color: "#334155" }}>
+                    <td style={{ padding: "12px 14px", color: "#334a57" }}>{user.email}</td>
+                    <td style={{ padding: "12px 14px", color: "#334a57" }}>
                       {formatRole(user.role)}
                     </td>
                     <td style={{ padding: "12px 14px" }}>
@@ -310,13 +310,13 @@ const UsersPage = () => {
                         {user.is_active ? "ACTIVE" : "INACTIVE"}
                       </span>
                     </td>
-                    <td style={{ padding: "12px 14px", color: "#334155" }}>
+                    <td style={{ padding: "12px 14px", color: "#334a57" }}>
                       {user.license_count}
                     </td>
-                    <td style={{ padding: "12px 14px", color: "#334155" }}>
+                    <td style={{ padding: "12px 14px", color: "#334a57" }}>
                       {formatCreditSummary(user.current_credits, user.total_purchases)}
                     </td>
-                    <td style={{ padding: "12px 14px", color: "#475569" }}>
+                    <td style={{ padding: "12px 14px", color: "#58707d" }}>
                       {formatDateTime(user.created_at)}
                     </td>
                   </tr>
@@ -327,7 +327,7 @@ const UsersPage = () => {
         </div>
 
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ color: "#475569", fontSize: 14 }}>
+          <span style={{ color: "#58707d", fontSize: 14 }}>
             Page {page} of {totalPages} • {total} total users
           </span>
 

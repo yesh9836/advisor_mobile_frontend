@@ -370,7 +370,7 @@ const LeadsPage = () => {
                   className="lead-row"
                   style={{
                     width: "100%",
-                    background: selectedLeadId === lead.id ? "#f8fbff" : "#fff",
+                    background: selectedLeadId === lead.id ? "#f4fbfc" : "#fff",
                     border: 0,
                     textAlign: "left",
                     cursor: "pointer",
@@ -382,14 +382,14 @@ const LeadsPage = () => {
                     <div className="lead-text">
                       <div className="lead-name">
                         {lead.name}
-                        <span style={{ color: "#64748b", fontSize: 13 }}>
+                        <span style={{ color: "#6d7f89", fontSize: 13 }}>
                           • {lead.state}
                         </span>
                         <span
                           className="badge"
                           style={{
-                            background: lead.isDownloaded ? "#e2e8f0" : "#dcfce7",
-                            color: lead.isDownloaded ? "#334155" : "#166534",
+                            background: lead.isDownloaded ? "#d8e8ee" : "#dcfce7",
+                            color: lead.isDownloaded ? "#334a57" : "#166534",
                           }}
                         >
                           {lead.isDownloaded ? "Delivered" : "Available"}
@@ -444,15 +444,15 @@ const LeadsPage = () => {
             <p>Select a lead to see details.</p>
           ) : (
             <>
-              <h2 style={{ margin: 0, fontSize: 28, color: "#0b1b49" }}>
+              <h2 style={{ margin: 0, fontSize: 28, color: "#202860" }}>
                 Lead Details
               </h2>
               <h3
-                style={{ margin: "4px 0 0 0", fontSize: 32, color: "#0b1b49" }}
+                style={{ margin: "4px 0 0 0", fontSize: 32, color: "#202860" }}
               >
                 {selectedLead.name}
               </h3>
-              <p style={{ margin: 0, color: "#475569" }}>
+              <p style={{ margin: 0, color: "#58707d" }}>
                 {selectedLead.headline}
               </p>
 

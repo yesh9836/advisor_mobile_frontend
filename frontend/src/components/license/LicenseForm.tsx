@@ -95,11 +95,11 @@ const LicenseForm = ({ onSubmitted }: LicenseFormProps) => {
   return (
     <form
       onSubmit={handleSubmit}
-      className="space-y-4 rounded-3xl border border-[#d9e4f8] bg-white p-5 shadow-[0_2px_10px_rgba(10,34,79,0.06)]"
+      className="space-y-4 rounded-3xl border border-[#d8e8ee] bg-white p-5 shadow-[0_2px_10px_rgba(10,34,79,0.06)]"
     >
       <div>
-        <h2 className="text-xl font-semibold text-[#0a1633]">Submit License</h2>
-        <p className="mt-1 text-sm text-[#4c628a]">
+        <h2 className="text-xl font-semibold text-[#202860]">Submit License</h2>
+        <p className="mt-1 text-sm text-[#58707d]">
           Upload your state license for verification.
         </p>
       </div>
@@ -117,12 +117,12 @@ const LicenseForm = ({ onSubmitted }: LicenseFormProps) => {
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <label className="space-y-1 text-sm font-medium text-[#0a1633]">
+        <label className="space-y-1 text-sm font-medium text-[#202860]">
           <span>State</span>
           <select
             value={stateCode}
             onChange={(event) => setStateCode(event.target.value)}
-            className="w-full rounded-xl border border-[#d9e4f8] px-3 py-2 text-sm text-[#0a1633] focus:border-[#8ea4d8] focus:outline-none"
+            className="w-full rounded-xl border border-[#d8e8ee] px-3 py-2 text-sm text-[#202860] focus:border-[#18a0b8] focus:outline-none"
             required
           >
             <option value="">Select state</option>
@@ -134,38 +134,38 @@ const LicenseForm = ({ onSubmitted }: LicenseFormProps) => {
           </select>
         </label>
 
-        <label className="space-y-1 text-sm font-medium text-[#0a1633]">
+        <label className="space-y-1 text-sm font-medium text-[#202860]">
           <span>License number</span>
           <input
             type="text"
             value={licenseNumber}
             onChange={(event) => setLicenseNumber(event.target.value)}
-            className="w-full rounded-xl border border-[#d9e4f8] px-3 py-2 text-sm text-[#0a1633] focus:border-[#8ea4d8] focus:outline-none"
+            className="w-full rounded-xl border border-[#d8e8ee] px-3 py-2 text-sm text-[#202860] focus:border-[#18a0b8] focus:outline-none"
             placeholder="Enter license number"
             required
           />
         </label>
       </div>
 
-      <label className="space-y-1 text-sm font-medium text-[#0a1633]">
+      <label className="space-y-1 text-sm font-medium text-[#202860]">
         <span>License type (optional)</span>
         <input
           type="text"
           value={licenseType}
           onChange={(event) => setLicenseType(event.target.value)}
-          className="w-full rounded-xl border border-[#d9e4f8] px-3 py-2 text-sm text-[#0a1633] focus:border-[#8ea4d8] focus:outline-none"
+          className="w-full rounded-xl border border-[#d8e8ee] px-3 py-2 text-sm text-[#202860] focus:border-[#18a0b8] focus:outline-none"
           placeholder="Enter license type"
         />
       </label>
 
-      <label className="space-y-1 text-sm font-medium text-[#0a1633]">
+      <label className="space-y-1 text-sm font-medium text-[#202860]">
         <span>Document upload (PDF, JPG, JPEG, or PNG)</span>
         <input
           ref={fileInputRef}
           type="file"
           accept={LICENSE_DOCUMENT_ACCEPT}
           onChange={(event) => setDocument(event.target.files?.[0] ?? null)}
-          className="w-full rounded-xl border border-[#d9e4f8] px-3 py-2 text-sm text-[#0a1633] file:mr-3 file:rounded-full file:border-0 file:bg-[#eaf1ff] file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-[#0a1633]"
+          className="w-full rounded-xl border border-[#d8e8ee] px-3 py-2 text-sm text-[#202860] file:mr-3 file:rounded-full file:border-0 file:bg-[#e8fbff] file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-[#202860]"
           required
         />
       </label>

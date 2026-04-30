@@ -55,12 +55,12 @@ const formatCurrency = (amountCents: number): string =>
 const EmptyChart = ({ message }: { message: string }) => (
   <div
     style={{
-      border: "1px dashed #cbd5e1",
+      border: "1px dashed #c7d7dd",
       borderRadius: 12,
       padding: 16,
-      color: "#475569",
+      color: "#58707d",
       fontSize: 14,
-      background: "#f8fafc",
+      background: "#f4fbfc",
     }}
   >
     {message}
@@ -95,14 +95,14 @@ const RevenueTrendChart = ({ data }: { data: MonthlyRevenuePoint[] }) => {
         viewBox={`0 0 ${width} ${height}`}
         role="img"
         aria-label="Monthly revenue trend chart"
-        style={{ width: "100%", border: "1px solid #dbe4f0", borderRadius: 12, background: "#fff" }}
+        style={{ width: "100%", border: "1px solid #d8e8ee", borderRadius: 12, background: "#fff" }}
       >
         <line
           x1={padding}
           y1={height - padding}
           x2={width - padding}
           y2={height - padding}
-          stroke="#cbd5e1"
+          stroke="#c7d7dd"
           strokeWidth={1}
         />
         <line
@@ -110,13 +110,13 @@ const RevenueTrendChart = ({ data }: { data: MonthlyRevenuePoint[] }) => {
           y1={padding}
           x2={padding}
           y2={height - padding}
-          stroke="#cbd5e1"
+          stroke="#c7d7dd"
           strokeWidth={1}
         />
         <polyline
           points={polyline}
           fill="none"
-          stroke="#0b1b49"
+          stroke="#202860"
           strokeWidth={3}
           strokeLinejoin="round"
           strokeLinecap="round"
@@ -127,7 +127,7 @@ const RevenueTrendChart = ({ data }: { data: MonthlyRevenuePoint[] }) => {
             cx={entry.x}
             cy={entry.y}
             r={4}
-            fill="#0b1b49"
+            fill="#202860"
           />
         ))}
       </svg>
@@ -137,10 +137,10 @@ const RevenueTrendChart = ({ data }: { data: MonthlyRevenuePoint[] }) => {
           <div
             key={point.month}
             style={{
-              border: "1px solid #dbe4f0",
+              border: "1px solid #d8e8ee",
               borderRadius: 999,
               padding: "4px 10px",
-              color: "#334155",
+              color: "#334a57",
               fontSize: 12,
             }}
           >
@@ -175,24 +175,24 @@ const HorizontalBarChart = ({
 
   return (
     <div className="stack" role="img" aria-label={ariaLabel}>
-      <div style={{ color: "#475569", fontSize: 13 }}>{totalCountLabel}</div>
+      <div style={{ color: "#58707d", fontSize: 13 }}>{totalCountLabel}</div>
       {data.map((item) => {
         const widthPct = Math.max(4, (item.value / maxValue) * 100);
 
         return (
           <div key={item.key} className="stack" style={{ gap: 4 }}>
             <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
-              <strong style={{ color: "#0b1b49" }}>{item.label}</strong>
-              <span style={{ color: "#334155", fontSize: 13 }}>{valueLabel(item.value)}</span>
+              <strong style={{ color: "#202860" }}>{item.label}</strong>
+              <span style={{ color: "#334a57", fontSize: 13 }}>{valueLabel(item.value)}</span>
             </div>
             {item.secondary && (
-              <div style={{ color: "#64748b", fontSize: 12 }}>{item.secondary}</div>
+              <div style={{ color: "#6d7f89", fontSize: 12 }}>{item.secondary}</div>
             )}
             <div
               style={{
                 height: 10,
                 borderRadius: 999,
-                background: "#e2e8f0",
+                background: "#d8e8ee",
                 overflow: "hidden",
               }}
             >
@@ -225,10 +225,10 @@ const UserGrowthChart = ({ data }: { data: UserGrowthPoint[] }) => {
         return (
           <div key={item.month} className="stack" style={{ gap: 4 }}>
             <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ color: "#0b1b49", fontWeight: 700 }}>
+              <span style={{ color: "#202860", fontWeight: 700 }}>
                 {formatMonthLabel(item.month)}
               </span>
-              <span style={{ color: "#334155", fontSize: 13 }}>
+              <span style={{ color: "#334a57", fontSize: 13 }}>
                 {item.new_users} new advisors
               </span>
             </div>
@@ -236,7 +236,7 @@ const UserGrowthChart = ({ data }: { data: UserGrowthPoint[] }) => {
               style={{
                 height: 12,
                 borderRadius: 999,
-                background: "#e2e8f0",
+                background: "#d8e8ee",
                 overflow: "hidden",
               }}
             >
@@ -358,14 +358,14 @@ const AnalyticsPage = () => {
         <>
           <section className="panel stack">
             <div>
-              <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>Monthly Revenue</h2>
-              <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+              <h2 style={{ margin: 0, fontSize: 30, color: "#202860" }}>Monthly Revenue</h2>
+              <p style={{ margin: "4px 0 0 0", color: "#58707d" }}>
                 Revenue generated by completed package purchases per month.
               </p>
             </div>
             <RevenueTrendChart data={monthlyRevenueWindow} />
             {monthlyRevenueWindow.length > 0 && (
-              <div style={{ color: "#475569", fontSize: 13 }}>
+              <div style={{ color: "#58707d", fontSize: 13 }}>
                 {totalRevenueMonths > MONTHLY_REVENUE_WINDOW_SIZE
                   ? `Showing latest ${MONTHLY_REVENUE_WINDOW_SIZE} of ${totalRevenueMonths} months.`
                   : `Showing all ${totalRevenueMonths} months.`}
@@ -376,8 +376,8 @@ const AnalyticsPage = () => {
           <section className="grid-main">
             <article className="panel stack">
               <div>
-                <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>Package Breakdown</h2>
-                <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+                <h2 style={{ margin: 0, fontSize: 30, color: "#202860" }}>Package Breakdown</h2>
+                <p style={{ margin: "4px 0 0 0", color: "#58707d" }}>
                   Purchase distribution and credit usage by package.
                 </p>
               </div>
@@ -385,7 +385,7 @@ const AnalyticsPage = () => {
                 data={planBreakdownRows}
                 valueLabel={(value) => `${value} purchases`}
                 emptyMessage="No package breakdown data yet."
-                barColor="#0b1b49"
+                barColor="#202860"
                 ariaLabel="Plan breakdown chart"
                 totalCountLabel={`${planBreakdownRows.length} packages`}
               />
@@ -393,15 +393,15 @@ const AnalyticsPage = () => {
 
             <article className="panel stack">
               <div>
-                <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>User Growth</h2>
-                <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+                <h2 style={{ margin: 0, fontSize: 30, color: "#202860" }}>User Growth</h2>
+                <p style={{ margin: "4px 0 0 0", color: "#58707d" }}>
                   New advisor signups over time, shown in 6-month windows.
                 </p>
               </div>
               <UserGrowthChart data={visibleUserGrowth} />
               {visibleUserGrowth.length > 0 && (
                 <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ color: "#475569", fontSize: 13 }}>
+                  <span style={{ color: "#58707d", fontSize: 13 }}>
                     {visibleUserGrowthRangeLabel
                       ? `Showing ${visibleUserGrowthRangeLabel} • Page ${data?.user_growth_page ?? userGrowthPage} of ${userGrowthTotalPages} • ${totalUserGrowthMonths} total months`
                       : `Page ${data?.user_growth_page ?? userGrowthPage} of ${userGrowthTotalPages} • ${totalUserGrowthMonths} total months`}
@@ -433,8 +433,8 @@ const AnalyticsPage = () => {
 
           <section className="panel stack">
             <div>
-              <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>Lead State Distribution</h2>
-              <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+              <h2 style={{ margin: 0, fontSize: 30, color: "#202860" }}>Lead State Distribution</h2>
+              <p style={{ margin: "4px 0 0 0", color: "#58707d" }}>
                 Inventory footprint by state.
               </p>
             </div>

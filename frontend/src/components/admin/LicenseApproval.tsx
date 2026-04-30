@@ -456,8 +456,8 @@ const LicenseApproval = () => {
       header: "Advisor",
       cell: (license) => (
         <div>
-          <p className="font-semibold text-[#0a1633]">{license.user_name}</p>
-          <p className="text-xs text-[#4c628a]">{license.user_email}</p>
+          <p className="font-semibold text-[#202860]">{license.user_name}</p>
+          <p className="text-xs text-[#58707d]">{license.user_email}</p>
         </div>
       ),
     },
@@ -466,10 +466,10 @@ const LicenseApproval = () => {
       header: "License",
       cell: (license) => (
         <div>
-          <p className="font-semibold text-[#0a1633]">
+          <p className="font-semibold text-[#202860]">
             {license.state} • {license.license_number}
           </p>
-          <p className="text-xs text-[#4c628a]">
+          <p className="text-xs text-[#58707d]">
             {license.license_type?.trim() || "Type not provided"}
           </p>
         </div>
@@ -479,7 +479,7 @@ const LicenseApproval = () => {
       key: "submitted",
       header: "Submitted",
       cell: (license) => (
-        <span className="text-sm text-[#4c628a]">
+        <span className="text-sm text-[#58707d]">
           {formatDateTime(license.created_at)}
         </span>
       ),
@@ -549,7 +549,7 @@ const LicenseApproval = () => {
                 </label>
                 <textarea
                   id={`rejection-reason-${license.id}`}
-                  className="w-full rounded-xl border border-[#e8d1cf] px-3 py-2 text-sm text-[#0a1633] focus:border-[#b42318] focus:outline-none"
+                  className="w-full rounded-xl border border-[#e8d1cf] px-3 py-2 text-sm text-[#202860] focus:border-[#b42318] focus:outline-none"
                   rows={2}
                   value={rejectionReasons[license.id] ?? ""}
                   onChange={(event) =>
@@ -594,8 +594,8 @@ const LicenseApproval = () => {
       header: "Advisor",
       cell: (decision) => (
         <div>
-          <p className="font-semibold text-[#0a1633]">{decision.user_name}</p>
-          <p className="text-xs text-[#4c628a]">{decision.user_email}</p>
+          <p className="font-semibold text-[#202860]">{decision.user_name}</p>
+          <p className="text-xs text-[#58707d]">{decision.user_email}</p>
         </div>
       ),
     },
@@ -604,10 +604,10 @@ const LicenseApproval = () => {
       header: "License",
       cell: (decision) => (
         <div>
-          <p className="font-semibold text-[#0a1633]">
+          <p className="font-semibold text-[#202860]">
             {decision.state} • {decision.license_number}
           </p>
-          <p className="text-xs text-[#4c628a]">
+          <p className="text-xs text-[#58707d]">
             {decision.license_type?.trim() || "Type not provided"}
           </p>
         </div>
@@ -617,7 +617,7 @@ const LicenseApproval = () => {
       key: "submission",
       header: "Submission Type",
       cell: (decision) => (
-        <span className="text-sm text-[#4c628a]">
+        <span className="text-sm text-[#58707d]">
           {decision.submission_type === "resubmission"
             ? "Resubmission"
             : "First-time"}
@@ -628,7 +628,7 @@ const LicenseApproval = () => {
       key: "cycle",
       header: "Review Cycle",
       cell: (decision) => (
-        <span className="text-sm text-[#4c628a]">{decision.review_cycle}</span>
+        <span className="text-sm text-[#58707d]">{decision.review_cycle}</span>
       ),
     },
     {
@@ -650,7 +650,7 @@ const LicenseApproval = () => {
       key: "date",
       header: "Decision Date",
       cell: (decision) => (
-        <span className="text-sm text-[#4c628a]">
+        <span className="text-sm text-[#58707d]">
           {formatDateTime(decision.decision_at)}
         </span>
       ),
@@ -659,7 +659,7 @@ const LicenseApproval = () => {
       key: "reason",
       header: "Rejection Reason",
       cell: (decision) => (
-        <span className="text-sm text-[#4c628a]">
+        <span className="text-sm text-[#58707d]">
           {decision.decision_status === "rejected"
             ? decision.rejection_reason || "Not provided"
             : "N/A"}
@@ -755,12 +755,12 @@ const LicenseApproval = () => {
         subtitle="Current approved and rejected licenses with latest decision details."
       >
         <div className="mb-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto_auto]">
-          <label className="flex flex-col gap-1 text-sm text-[#4c628a]">
+          <label className="flex flex-col gap-1 text-sm text-[#58707d]">
             <span>Advisor</span>
             <select
               value={selectedAdvisorId}
               aria-label="Filter by advisor"
-              className="rounded-xl border border-[#d9e4f8] px-3 py-2 text-sm text-[#0a1633] focus:border-[#8ea4d8] focus:outline-none"
+              className="rounded-xl border border-[#d8e8ee] px-3 py-2 text-sm text-[#202860] focus:border-[#18a0b8] focus:outline-none"
               onChange={(event) => {
                 void handleAdvisorChange(event.target.value);
               }}
@@ -773,12 +773,12 @@ const LicenseApproval = () => {
               ))}
             </select>
           </label>
-          <label className="flex flex-col gap-1 text-sm text-[#4c628a]">
+          <label className="flex flex-col gap-1 text-sm text-[#58707d]">
             <span>Search name or email</span>
             <input
               value={advisorQueryInput}
               aria-label="Search advisor"
-              className="rounded-xl border border-[#d9e4f8] px-3 py-2 text-sm text-[#0a1633] focus:border-[#8ea4d8] focus:outline-none"
+              className="rounded-xl border border-[#d8e8ee] px-3 py-2 text-sm text-[#202860] focus:border-[#18a0b8] focus:outline-none"
               onChange={(event) => setAdvisorQueryInput(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
@@ -827,7 +827,7 @@ const LicenseApproval = () => {
           className="row"
           style={{ justifyContent: "space-between", alignItems: "center", marginTop: 8 }}
         >
-          <span style={{ color: "#475569", fontSize: 14 }}>
+          <span style={{ color: "#58707d", fontSize: 14 }}>
             Page {processedPage} of {processedTotalPages} •{" "}
             {processedLicenses.length} total processed licenses
           </span>
@@ -864,7 +864,7 @@ const LicenseApproval = () => {
 
       {preview.isOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-[#0a1633]/55 px-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#202860]/55 px-4"
           role="dialog"
           aria-modal="true"
           aria-label="License document preview"
@@ -872,10 +872,10 @@ const LicenseApproval = () => {
           <div className="w-full max-w-4xl rounded-2xl bg-white p-4 shadow-2xl">
             <div className="mb-3 flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-semibold text-[#0a1633]">
+                <h3 className="text-lg font-semibold text-[#202860]">
                   License Preview
                 </h3>
-                <p className="text-sm text-[#4c628a]">{preview.userName}</p>
+                <p className="text-sm text-[#58707d]">{preview.userName}</p>
               </div>
               <Button
                 variant="secondary"
@@ -886,9 +886,9 @@ const LicenseApproval = () => {
               </Button>
             </div>
 
-            <div className="h-[65vh] overflow-auto rounded-xl border border-[#d9e4f8] bg-[#f8fbff] p-3">
+            <div className="h-[65vh] overflow-auto rounded-xl border border-[#d8e8ee] bg-[#f4fbfc] p-3">
               {preview.loading && (
-                <p className="text-sm text-[#4c628a]">Loading preview...</p>
+                <p className="text-sm text-[#58707d]">Loading preview...</p>
               )}
 
               {!preview.loading && preview.error && (
@@ -929,7 +929,7 @@ const LicenseApproval = () => {
                   <iframe
                     src={preview.objectUrl}
                     title="License PDF preview"
-                    className="h-[60vh] w-full rounded-lg border border-[#d9e4f8]"
+                    className="h-[60vh] w-full rounded-lg border border-[#d8e8ee]"
                   />
                 )}
 
@@ -939,7 +939,7 @@ const LicenseApproval = () => {
                 !isImagePreview &&
                 !isPdfPreview && (
                   <div className="space-y-3">
-                    <p className="text-sm text-[#4c628a]">
+                    <p className="text-sm text-[#58707d]">
                       Inline preview is not available for this file type.
                     </p>
                     {preview.licenseId !== null && (

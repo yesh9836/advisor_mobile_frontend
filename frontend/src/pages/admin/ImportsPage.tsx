@@ -154,16 +154,16 @@ const ImportsPage = () => {
 
       <section className="panel stack">
         <div>
-          <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>Import Run History</h2>
-          <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+          <h2 style={{ margin: 0, fontSize: 30, color: "#202860" }}>Import Run History</h2>
+          <p style={{ margin: "4px 0 0 0", color: "#58707d" }}>
             Audit trail of scanned rows, inserts, duplicates, and failures.
           </p>
         </div>
 
-        {historyLoading && <div style={{ color: "#475569" }}>Loading import history...</div>}
+        {historyLoading && <div style={{ color: "#58707d" }}>Loading import history...</div>}
 
         {!historyLoading && history.length === 0 && (
-          <div style={{ color: "#475569" }}>No import runs yet.</div>
+          <div style={{ color: "#58707d" }}>No import runs yet.</div>
         )}
 
         {!historyLoading && history.map((entry) => (
@@ -171,7 +171,7 @@ const ImportsPage = () => {
             key={entry.id}
             className="panel"
             style={{
-              background: "#f8fafc",
+              background: "#f4fbfc",
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
@@ -179,19 +179,19 @@ const ImportsPage = () => {
             }}
           >
             <div>
-              <h3 style={{ margin: 0, fontSize: 24, color: "#0b1b49" }}>
+              <h3 style={{ margin: 0, fontSize: 24, color: "#202860" }}>
                 {formatImportDate(entry.created_at)}
               </h3>
-              <p style={{ margin: "8px 0 0 0", color: "#475569" }}>
+              <p style={{ margin: "8px 0 0 0", color: "#58707d" }}>
                 {entry.scanned.toLocaleString()} rows scanned
               </p>
             </div>
 
             <div style={{ textAlign: "right" }}>
-              <div style={{ color: "#0b1b49", fontWeight: 700 }}>
+              <div style={{ color: "#202860", fontWeight: 700 }}>
                 {entry.inserted.toLocaleString()} inserted
               </div>
-              <div style={{ marginTop: 6, color: "#64748b", fontSize: 14 }}>
+              <div style={{ marginTop: 6, color: "#6d7f89", fontSize: 14 }}>
                 {entry.skipped_duplicates.toLocaleString()} duplicates • {entry.failed.toLocaleString()} failed
               </div>
             </div>
@@ -199,7 +199,7 @@ const ImportsPage = () => {
         ))}
 
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ color: "#475569", fontSize: 14 }}>
+          <span style={{ color: "#58707d", fontSize: 14 }}>
             Page {historyPage} of {totalPages} • {historyTotal} total runs
           </span>
           <div className="row">

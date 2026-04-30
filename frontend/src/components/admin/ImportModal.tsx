@@ -167,10 +167,10 @@ const ImportModal = ({ isOpen, onClose, onImportSuccess }: ImportModalProps) => 
       >
         <div className="page-header-row">
           <div>
-            <h2 id="import-modal-title" style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>
+            <h2 id="import-modal-title" style={{ margin: 0, fontSize: 30, color: "#202860" }}>
               Run Lead Import
             </h2>
-            <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+            <p style={{ margin: "4px 0 0 0", color: "#58707d" }}>
               CSV schema below is synced from backend validation rules.
             </p>
           </div>
@@ -180,10 +180,10 @@ const ImportModal = ({ isOpen, onClose, onImportSuccess }: ImportModalProps) => 
           </button>
         </div>
 
-        <section className="panel stack" style={{ background: "#f8fafc", gap: 10 }}>
+        <section className="panel stack" style={{ background: "#f4fbfc", gap: 10 }}>
           <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-            <strong style={{ color: "#0b1b49" }}>CSV Schema</strong>
-            <span style={{ color: "#475569", fontSize: 13 }}>
+            <strong style={{ color: "#202860" }}>CSV Schema</strong>
+            <span style={{ color: "#58707d", fontSize: 13 }}>
               {schemaLoading
                 ? "Syncing..."
                 : importSchema
@@ -200,7 +200,7 @@ const ImportModal = ({ isOpen, onClose, onImportSuccess }: ImportModalProps) => 
 
           {importSchema ? (
             <>
-              <p style={{ margin: 0, color: "#334155", fontSize: 13 }}>
+              <p style={{ margin: 0, color: "#334a57", fontSize: 13 }}>
                 Header row must exactly match this order:
               </p>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -208,7 +208,7 @@ const ImportModal = ({ isOpen, onClose, onImportSuccess }: ImportModalProps) => 
                   <code
                     key={column}
                     style={{
-                      background: "#e2e8f0",
+                      background: "#d8e8ee",
                       borderRadius: 6,
                       padding: "4px 8px",
                       fontSize: 12,
@@ -220,7 +220,7 @@ const ImportModal = ({ isOpen, onClose, onImportSuccess }: ImportModalProps) => 
                 ))}
               </div>
 
-              <p style={{ margin: 0, color: "#334155", fontSize: 13 }}>
+              <p style={{ margin: 0, color: "#334a57", fontSize: 13 }}>
                 Required non-empty values per row:
               </p>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -240,16 +240,16 @@ const ImportModal = ({ isOpen, onClose, onImportSuccess }: ImportModalProps) => 
                 ))}
               </div>
 
-              <p style={{ margin: 0, color: "#334155", fontSize: 13 }}>
+              <p style={{ margin: 0, color: "#334a57", fontSize: 13 }}>
                 Set automatically by system:{" "}
-                <code style={{ background: "#e2e8f0", borderRadius: 6, padding: "2px 6px" }}>
+                <code style={{ background: "#d8e8ee", borderRadius: 6, padding: "2px 6px" }}>
                   source={importSchema.system_fields.source}
                 </code>
               </p>
             </>
           ) : (
             !schemaLoading && (
-              <p style={{ margin: 0, color: "#475569", fontSize: 13 }}>
+              <p style={{ margin: 0, color: "#58707d", fontSize: 13 }}>
                 Could not load schema preview. Import still enforces backend rules at upload time.
               </p>
             )
@@ -260,15 +260,15 @@ const ImportModal = ({ isOpen, onClose, onImportSuccess }: ImportModalProps) => 
 
         <div
           style={{
-            border: "2px dashed #cbd5e1",
+            border: "2px dashed #c7d7dd",
             borderRadius: 16,
             padding: 24,
             textAlign: "center",
-            background: "#f8fafc",
+            background: "#f4fbfc",
           }}
         >
           <p style={{ margin: 0, color: "#0f172a", fontSize: 22 }}>Upload CSV file</p>
-          <p style={{ margin: "8px 0 0 0", color: "#64748b" }}>Choose a file to run bulk lead import.</p>
+          <p style={{ margin: "8px 0 0 0", color: "#6d7f89" }}>Choose a file to run bulk lead import.</p>
 
           <label className="btn btn-primary" style={{ marginTop: 16, display: "inline-block" }}>
             Choose File
@@ -287,24 +287,24 @@ const ImportModal = ({ isOpen, onClose, onImportSuccess }: ImportModalProps) => 
           </label>
 
           {file && (
-            <div style={{ marginTop: 12, color: "#334155" }}>
+            <div style={{ marginTop: 12, color: "#334a57" }}>
               Selected: <strong>{file.name}</strong>
             </div>
           )}
         </div>
 
         {(importing || result || progress > 0) && (
-          <section className="panel stack" style={{ background: "#f8fafc" }}>
+          <section className="panel stack" style={{ background: "#f4fbfc" }}>
             <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-              <strong style={{ color: "#0b1b49" }}>Import Progress</strong>
-              <span style={{ color: "#475569", fontSize: 13 }}>{progress}%</span>
+              <strong style={{ color: "#202860" }}>Import Progress</strong>
+              <span style={{ color: "#58707d", fontSize: 13 }}>{progress}%</span>
             </div>
             <div
               style={{
                 width: "100%",
                 height: 10,
                 borderRadius: 999,
-                background: "#e2e8f0",
+                background: "#d8e8ee",
                 overflow: "hidden",
               }}
             >
@@ -312,40 +312,40 @@ const ImportModal = ({ isOpen, onClose, onImportSuccess }: ImportModalProps) => 
                 style={{
                   width: `${progress}%`,
                   height: "100%",
-                  background: "#0b1b49",
+                  background: "#202860",
                   transition: "width 0.2s ease",
                 }}
               />
             </div>
-            <p style={{ margin: 0, color: "#475569", fontSize: 13 }}>{progressLabel}</p>
+            <p style={{ margin: 0, color: "#58707d", fontSize: 13 }}>{progressLabel}</p>
           </section>
         )}
 
         {result && (
-          <section className="panel stack" style={{ background: "#f8fafc" }}>
+          <section className="panel stack" style={{ background: "#f4fbfc" }}>
             <div>
-              <h3 style={{ margin: 0, fontSize: 24, color: "#0b1b49" }}>Import Results</h3>
-              <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+              <h3 style={{ margin: 0, fontSize: 24, color: "#202860" }}>Import Results</h3>
+              <p style={{ margin: "4px 0 0 0", color: "#58707d" }}>
                 Summary for {file?.name ?? "uploaded file"}.
               </p>
             </div>
 
             <div className="grid-3">
               <div>
-                <div style={{ color: "#64748b", fontSize: 13 }}>Inserted</div>
-                <div style={{ color: "#0b1b49", fontWeight: 700, fontSize: 24 }}>
+                <div style={{ color: "#6d7f89", fontSize: 13 }}>Inserted</div>
+                <div style={{ color: "#202860", fontWeight: 700, fontSize: 24 }}>
                   {result.success}
                 </div>
               </div>
               <div>
-                <div style={{ color: "#64748b", fontSize: 13 }}>Failed</div>
-                <div style={{ color: "#0b1b49", fontWeight: 700, fontSize: 24 }}>
+                <div style={{ color: "#6d7f89", fontSize: 13 }}>Failed</div>
+                <div style={{ color: "#202860", fontWeight: 700, fontSize: 24 }}>
                   {result.failed}
                 </div>
               </div>
               <div>
-                <div style={{ color: "#64748b", fontSize: 13 }}>Duplicates</div>
-                <div style={{ color: "#0b1b49", fontWeight: 700, fontSize: 24 }}>
+                <div style={{ color: "#6d7f89", fontSize: 13 }}>Duplicates</div>
+                <div style={{ color: "#202860", fontWeight: 700, fontSize: 24 }}>
                   {summary?.duplicateCount ?? 0}
                 </div>
               </div>
@@ -353,14 +353,14 @@ const ImportModal = ({ isOpen, onClose, onImportSuccess }: ImportModalProps) => 
 
             {result.errors.length > 0 && (
               <div className="stack" style={{ gap: 6 }}>
-                <strong style={{ color: "#0b1b49" }}>Top Errors</strong>
+                <strong style={{ color: "#202860" }}>Top Errors</strong>
                 {result.errors.slice(0, 5).map((entry, index) => (
                   <p key={`${entry.row}-${entry.error}-${index}`} style={{ margin: 0, color: "#9f1239", fontSize: 13 }}>
                     Row {entry.row}: {entry.error}
                   </p>
                 ))}
                 {result.errors.length > 5 && (
-                  <p style={{ margin: 0, color: "#475569", fontSize: 12 }}>
+                  <p style={{ margin: 0, color: "#58707d", fontSize: 12 }}>
                     +{result.errors.length - 5} more errors not shown
                   </p>
                 )}

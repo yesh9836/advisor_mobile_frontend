@@ -354,10 +354,10 @@ const PlansPage = () => {
       <section className="panel stack">
         <div className="page-header-row">
           <div>
-            <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>
+            <h2 style={{ margin: 0, fontSize: 30, color: "#202860" }}>
               {editingPlan ? `Edit Plan #${editingPlan.id}` : "Create Plan"}
             </h2>
-            <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+            <p style={{ margin: "4px 0 0 0", color: "#58707d" }}>
               Commercial fields (price + credits) lock after purchases exist.
             </p>
           </div>
@@ -451,8 +451,8 @@ const PlansPage = () => {
       <section className="panel stack">
         <div className="page-header-row">
           <div>
-            <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>Existing Plans</h2>
-            <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+            <h2 style={{ margin: 0, fontSize: 30, color: "#202860" }}>Existing Plans</h2>
+            <p style={{ margin: "4px 0 0 0", color: "#58707d" }}>
               Filter and manage lifecycle state.
             </p>
           </div>
@@ -491,28 +491,28 @@ const PlansPage = () => {
           </button>
         </div>
 
-        {loading && <div style={{ color: "#475569" }}>Loading plans...</div>}
+        {loading && <div style={{ color: "#58707d" }}>Loading plans...</div>}
 
         {!loading && plans.length === 0 && (
-          <div style={{ color: "#475569" }}>No plans found for the selected filter.</div>
+          <div style={{ color: "#58707d" }}>No plans found for the selected filter.</div>
         )}
 
         {!loading && plans.map((plan) => (
-          <article key={plan.id} className="panel" style={{ background: "#f8fafc" }}>
+          <article key={plan.id} className="panel" style={{ background: "#f4fbfc" }}>
             <div className="page-header-row">
               <div>
-                <div style={{ fontSize: 20, fontWeight: 800, color: "#0b1b49" }}>
+                <div style={{ fontSize: 20, fontWeight: 800, color: "#202860" }}>
                   {plan.name}
                 </div>
-                <div style={{ marginTop: 4, color: "#475569" }}>
+                <div style={{ marginTop: 4, color: "#58707d" }}>
                   {formatMoney(plan.price_cents, plan.currency)} • {plan.credits_total} credits
                   {plan.state_limit ? ` • ${plan.state_limit} state limit` : " • no state limit"}
                 </div>
-                <div style={{ marginTop: 4, color: "#64748b", fontSize: 13 }}>
+                <div style={{ marginTop: 4, color: "#6d7f89", fontSize: 13 }}>
                   Lifecycle: {lifecycleLabel(plan)} • Catalog: {plan.catalog_visible ? "VISIBLE" : "HIDDEN"} •
                   Purchases: {plan.has_purchases ? "YES" : "NO"}
                 </div>
-                <div style={{ marginTop: 4, color: "#64748b", fontSize: 13 }}>
+                <div style={{ marginTop: 4, color: "#6d7f89", fontSize: 13 }}>
                   Effective: {formatDateTime(plan.effective_from)} → {formatDateTime(plan.effective_to)}
                 </div>
               </div>
@@ -536,7 +536,7 @@ const PlansPage = () => {
         ))}
 
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ color: "#475569", fontSize: 14 }}>
+          <span style={{ color: "#58707d", fontSize: 14 }}>
             Page {page} of {totalPages} • {total} total plans
           </span>
 
@@ -591,10 +591,10 @@ const PlansPage = () => {
             onClick={(event) => event.stopPropagation()}
           >
             <div>
-              <h3 id="plan-lifecycle-dialog-title" style={{ margin: 0, fontSize: 26, color: "#0b1b49" }}>
+              <h3 id="plan-lifecycle-dialog-title" style={{ margin: 0, fontSize: 26, color: "#202860" }}>
                 {pendingLifecycleAction.action === "archive" ? "Confirm Archive" : "Confirm Unarchive"}
               </h3>
-              <p style={{ margin: "8px 0 0 0", color: "#475569" }}>
+              <p style={{ margin: "8px 0 0 0", color: "#58707d" }}>
                 {pendingLifecycleAction.action === "archive"
                   ? `Archive "${pendingLifecycleAction.planName}"? This removes it from advisor catalog and checkout immediately.`
                   : `Unarchive "${pendingLifecycleAction.planName}"? This makes it available again if it is within its effective window.`}

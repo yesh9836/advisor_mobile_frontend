@@ -176,9 +176,9 @@ const LicenseList = ({ refreshKey = 0 }: LicenseListProps) => {
 
   if (loading) {
     return (
-      <section className="rounded-3xl border border-[#d9e4f8] bg-white p-5 shadow-[0_2px_10px_rgba(10,34,79,0.06)]">
-        <h2 className="text-xl font-semibold text-[#0a1633]">My Licenses</h2>
-        <p className="mt-3 text-sm text-[#4c628a]">Loading licenses...</p>
+      <section className="rounded-3xl border border-[#d8e8ee] bg-white p-5 shadow-[0_2px_10px_rgba(10,34,79,0.06)]">
+        <h2 className="text-xl font-semibold text-[#202860]">My Licenses</h2>
+        <p className="mt-3 text-sm text-[#58707d]">Loading licenses...</p>
       </section>
     );
   }
@@ -186,7 +186,7 @@ const LicenseList = ({ refreshKey = 0 }: LicenseListProps) => {
   if (error) {
     return (
       <section className="rounded-3xl border border-[#ffd6d2] bg-white p-5 shadow-[0_2px_10px_rgba(10,34,79,0.06)]">
-        <h2 className="text-xl font-semibold text-[#0a1633]">My Licenses</h2>
+        <h2 className="text-xl font-semibold text-[#202860]">My Licenses</h2>
         <p className="mt-3 text-sm text-[#8a1d1d]">{error}</p>
         <div className="mt-4">
           <Button variant="secondary" onClick={() => void loadLicenses()}>
@@ -198,8 +198,8 @@ const LicenseList = ({ refreshKey = 0 }: LicenseListProps) => {
   }
 
   return (
-    <section className="rounded-3xl border border-[#d9e4f8] bg-white p-5 shadow-[0_2px_10px_rgba(10,34,79,0.06)]">
-      <h2 className="text-xl font-semibold text-[#0a1633]">My Licenses</h2>
+    <section className="rounded-3xl border border-[#d8e8ee] bg-white p-5 shadow-[0_2px_10px_rgba(10,34,79,0.06)]">
+      <h2 className="text-xl font-semibold text-[#202860]">My Licenses</h2>
       {notice && (
         <div className="mt-3 rounded-xl border border-[#b7ebc6] bg-[#ebfff1] px-3 py-2 text-sm text-[#0f5132]">
           {notice}
@@ -207,7 +207,7 @@ const LicenseList = ({ refreshKey = 0 }: LicenseListProps) => {
       )}
 
       {licenses.length === 0 ? (
-        <p className="mt-3 text-sm text-[#4c628a]">
+        <p className="mt-3 text-sm text-[#58707d]">
           No licenses submitted yet.
         </p>
       ) : (
@@ -215,14 +215,14 @@ const LicenseList = ({ refreshKey = 0 }: LicenseListProps) => {
           {licenses.map((license) => (
             <article
               key={license.id}
-              className="rounded-2xl border border-[#e7eefc] p-4"
+              className="rounded-2xl border border-[#d8e8ee] p-4"
             >
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-base font-semibold text-[#0a1633]">
+                  <p className="text-base font-semibold text-[#202860]">
                     {license.state} • {license.license_number}
                   </p>
-                  <p className="text-sm text-[#4c628a]">
+                  <p className="text-sm text-[#58707d]">
                     Type: {license.license_type?.trim() || "Not provided"}
                   </p>
                 </div>
@@ -236,7 +236,7 @@ const LicenseList = ({ refreshKey = 0 }: LicenseListProps) => {
                 </span>
               </div>
 
-              <div className="mt-3 text-sm text-[#4c628a]">
+              <div className="mt-3 text-sm text-[#58707d]">
                 <p>Submitted: {formatDate(license.created_at)}</p>
                 {license.verification_status === "verified" && (
                   <p>Verified: {formatDate(license.verified_at)}</p>
@@ -261,10 +261,10 @@ const LicenseList = ({ refreshKey = 0 }: LicenseListProps) => {
                   </Button>
 
                   {openResubmitId === license.id && (
-                    <div className="space-y-2 rounded-xl border border-[#e7eefc] bg-[#f8fbff] p-3">
+                    <div className="space-y-2 rounded-xl border border-[#d8e8ee] bg-[#f4fbfc] p-3">
                       <label
                         htmlFor={`resubmit-document-${license.id}`}
-                        className="block text-xs font-semibold uppercase tracking-wide text-[#4c628a]"
+                        className="block text-xs font-semibold uppercase tracking-wide text-[#58707d]"
                       >
                         Upload replacement document (PDF, JPG, JPEG, or PNG)
                       </label>
@@ -278,7 +278,7 @@ const LicenseList = ({ refreshKey = 0 }: LicenseListProps) => {
                             event.target.files?.[0] ?? null,
                           )
                         }
-                        className="w-full rounded-xl border border-[#d9e4f8] px-3 py-2 text-sm text-[#0a1633] file:mr-3 file:rounded-full file:border-0 file:bg-[#eaf1ff] file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-[#0a1633]"
+                        className="w-full rounded-xl border border-[#d8e8ee] px-3 py-2 text-sm text-[#202860] file:mr-3 file:rounded-full file:border-0 file:bg-[#e8fbff] file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-[#202860]"
                       />
 
                       {resubmitErrors[license.id] && (

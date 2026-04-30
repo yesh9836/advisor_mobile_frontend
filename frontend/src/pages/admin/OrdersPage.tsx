@@ -56,8 +56,8 @@ const badgeStyle = (status: string): CSSProperties => {
 
   return {
     border: "1px solid #dbeafe",
-    background: "#f8fafc",
-    color: "#334155",
+    background: "#f4fbfc",
+    color: "#334a57",
   };
 };
 
@@ -140,12 +140,12 @@ const OrdersPage = () => {
           className="page-header-row"
           style={{
             padding: 16,
-            borderBottom: "1px solid #e2e8f0",
+            borderBottom: "1px solid #d8e8ee",
           }}
         >
           <div>
-            <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>Recent Orders</h2>
-            <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+            <h2 style={{ margin: 0, fontSize: 30, color: "#202860" }}>Recent Orders</h2>
+            <p style={{ margin: "4px 0 0 0", color: "#58707d" }}>
               Stripe checkout + webhook fulfillment status.
             </p>
           </div>
@@ -161,13 +161,13 @@ const OrdersPage = () => {
         </div>
 
         {loading && (
-          <div style={{ padding: 16, color: "#475569" }}>
+          <div style={{ padding: 16, color: "#58707d" }}>
             Loading orders...
           </div>
         )}
 
         {!loading && orders.length === 0 && (
-          <div style={{ padding: 16, color: "#475569" }}>
+          <div style={{ padding: 16, color: "#58707d" }}>
             No orders yet.
           </div>
         )}
@@ -176,7 +176,7 @@ const OrdersPage = () => {
           <div
             key={order.id}
             style={{
-              borderBottom: "1px solid #e2e8f0",
+              borderBottom: "1px solid #d8e8ee",
               padding: 16,
               display: "flex",
               justifyContent: "space-between",
@@ -185,14 +185,14 @@ const OrdersPage = () => {
             }}
           >
             <div>
-              <div style={{ fontSize: 18, color: "#0b1b49", fontWeight: 700 }}>
+              <div style={{ fontSize: 18, color: "#202860", fontWeight: 700 }}>
                 {order.advisor_name} • {order.package_name ?? "Unknown Plan"}
                 {order.quantity !== null ? ` (${order.quantity})` : ""}
               </div>
-              <div style={{ marginTop: 4, color: "#475569" }}>
+              <div style={{ marginTop: 4, color: "#58707d" }}>
                 {order.order_reference} • {formatOrderTimestamp(order.created_at)}
               </div>
-              <div style={{ marginTop: 4, color: "#475569" }}>
+              <div style={{ marginTop: 4, color: "#58707d" }}>
                 {(order.amount_cents / 100).toLocaleString("en-US", {
                   style: "currency",
                   currency: (order.currency || "USD").toUpperCase(),
@@ -224,7 +224,7 @@ const OrdersPage = () => {
               padding: 16,
             }}
           >
-            <span style={{ color: "#475569", fontSize: 14 }}>
+            <span style={{ color: "#58707d", fontSize: 14 }}>
               Page {page} of {totalPages} • {total} total orders
             </span>
             <div className="row">

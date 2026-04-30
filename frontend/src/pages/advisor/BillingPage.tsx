@@ -122,7 +122,7 @@ const BillingPage = () => {
       {message && <div className="success">{message}</div>}
 
       <section className="panel stack">
-        <h2 style={{ margin: 0, fontSize: 28, color: "#0b1b49" }}>
+        <h2 style={{ margin: 0, fontSize: 28, color: "#202860" }}>
           Recent Purchases
         </h2>
 
@@ -143,13 +143,13 @@ const BillingPage = () => {
                     margin: 0,
                     fontSize: 18,
                     fontWeight: 700,
-                    color: "#0b1b49",
+                    color: "#202860",
                   }}
                 >
                   {invoice.package_name?.trim()
                     || formatAmount(invoice.amount_paid_cents, invoice.currency)}
                 </p>
-                <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+                <p style={{ margin: "4px 0 0 0", color: "#58707d" }}>
                   {formatDate(invoice.created_at)} •{" "}
                   {invoice.invoice_pdf || invoice.hosted_invoice_url
                     ? "Stripe receipt available"

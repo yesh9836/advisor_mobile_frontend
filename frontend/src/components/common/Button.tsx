@@ -12,9 +12,9 @@ const cn = (...classes: Array<string | false | null | undefined>): string =>
   classes.filter(Boolean).join(" ");
 
 const variantClasses: Record<ButtonVariant, string> = {
-  primary: "bg-[#0a1633] text-white hover:bg-[#0f2149] focus:ring-[#0a1633]/30",
+  primary: "bg-[#202860] text-white hover:bg-[#26356f] focus:ring-[#202860]/30",
   secondary:
-    "border border-[#d9e4f8] bg-white text-[#0a1633] hover:bg-[#f7faff] focus:ring-[#8ea4d8]/30",
+    "border border-[#d8e8ee] bg-white text-[#202860] hover:bg-[#f4fbfc] focus:ring-[#18a0b8]/30",
   danger: "bg-[#b42318] text-white hover:bg-[#912018] focus:ring-[#b42318]/30",
 };
 

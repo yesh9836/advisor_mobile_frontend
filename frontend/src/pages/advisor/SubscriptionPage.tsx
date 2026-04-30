@@ -457,22 +457,22 @@ const SubscriptionPage = () => {
             }}
           >
             <div>
-              <h2 id="first-purchase-offer-title" style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>
+              <h2 id="first-purchase-offer-title" style={{ margin: 0, fontSize: 30, color: "#202860" }}>
                 {addOnOffer.headline}
               </h2>
-              <p style={{ margin: "8px 0 0 0", color: "#475569" }}>
+              <p style={{ margin: "8px 0 0 0", color: "#58707d" }}>
                 {addOnOffer.message}
               </p>
             </div>
 
-            <div className="panel" style={{ background: "#f8fafc" }}>
+            <div className="panel" style={{ background: "#f4fbfc" }}>
               <div className="metric-value" style={{ marginTop: 0, fontSize: 34 }}>
                 {formatMoney(
                   addOnOffer.offer_price_cents,
                   addOnOffer.offer_currency,
                 )}
               </div>
-              <div style={{ color: "#475569" }}>
+              <div style={{ color: "#58707d" }}>
                 {addOnOffer.offer_package_name} • {addOnOffer.offer_credits_total} lead credits
               </div>
             </div>
@@ -537,7 +537,7 @@ const SubscriptionPage = () => {
           </article>
         ) : plans.length === 0 ? (
           <article className="panel stack">
-            <h2 style={{ margin: 0, fontSize: 28, color: "#0b1b49" }}>
+            <h2 style={{ margin: 0, fontSize: 28, color: "#202860" }}>
               No Packages Available
             </h2>
           </article>
@@ -549,37 +549,37 @@ const SubscriptionPage = () => {
                 style={{ alignItems: "flex-start" }}
               >
                 <div>
-                  <h2 style={{ margin: 0, fontSize: 28, color: "#0b1b49" }}>
+                  <h2 style={{ margin: 0, fontSize: 28, color: "#202860" }}>
                     {entry.title}
                   </h2>
-                  <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+                  <p style={{ margin: "4px 0 0 0", color: "#58707d" }}>
                     {entry.subtitle}
                   </p>
                 </div>
                 <span
                   className="badge"
                   style={{
-                    background: "#0b1b49",
+                    background: "#202860",
                     color: "#fff",
-                    borderColor: "#0b1b49",
+                    borderColor: "#202860",
                   }}
                 >
                   Package
                 </span>
               </div>
 
-              <div className="panel" style={{ background: "#fafcff" }}>
+              <div className="panel" style={{ background: "#f4fbfc" }}>
                 <div
                   className="metric-value"
                   style={{ fontSize: 38, marginTop: 0 }}
                 >
                   {entry.priceLabel}
                 </div>
-                <div style={{ color: "#475569" }}>{entry.leadLine}</div>
+                <div style={{ color: "#58707d" }}>{entry.leadLine}</div>
               </div>
 
               {entry.features.length > 0 && (
-                <ul style={{ margin: 0, paddingLeft: 18, color: "#334155" }}>
+                <ul style={{ margin: 0, paddingLeft: 18, color: "#334a57" }}>
                   {entry.features.map((feature) => (
                     <li key={feature} style={{ marginBottom: 6 }}>
                       {feature}

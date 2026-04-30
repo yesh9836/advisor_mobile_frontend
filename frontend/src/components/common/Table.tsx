@@ -63,9 +63,9 @@ const Table = <T,>({
 
   return (
     <div className={cn("space-y-4", className)}>
-      <div className="overflow-x-auto rounded-2xl border border-[#d9e4f8]">
+      <div className="overflow-x-auto rounded-2xl border border-[#d8e8ee]">
         <table className="min-w-full bg-white text-left text-sm">
-          <thead className="bg-[#f8fbff] text-xs uppercase tracking-wide text-[#4c628a]">
+          <thead className="bg-[#f4fbfc] text-xs uppercase tracking-wide text-[#58707d]">
             <tr>
               {columns.map((column) => (
                 <th
@@ -86,7 +86,7 @@ const Table = <T,>({
               <tr>
                 <td
                   colSpan={columns.length}
-                  className="px-4 py-12 text-center text-sm text-[#4c628a]"
+                  className="px-4 py-12 text-center text-sm text-[#58707d]"
                 >
                   Loading...
                 </td>
@@ -95,7 +95,7 @@ const Table = <T,>({
               <tr>
                 <td
                   colSpan={columns.length}
-                  className="px-4 py-12 text-center text-sm text-[#4c628a]"
+                  className="px-4 py-12 text-center text-sm text-[#58707d]"
                 >
                   {emptyMessage}
                 </td>
@@ -104,7 +104,7 @@ const Table = <T,>({
               data.map((row, index) => (
                 <tr
                   key={rowKey ? rowKey(row, index) : index}
-                  className="border-t border-[#e7eefc] text-[#0a1633]"
+                  className="border-t border-[#d8e8ee] text-[#202860]"
                 >
                   {columns.map((column) => (
                     <td
@@ -122,7 +122,7 @@ const Table = <T,>({
       </div>
 
       {pagination && (
-        <div className="flex flex-col items-start justify-between gap-3 rounded-2xl border border-[#d9e4f8] bg-white p-3 text-sm text-[#4c628a] sm:flex-row sm:items-center">
+        <div className="flex flex-col items-start justify-between gap-3 rounded-2xl border border-[#d8e8ee] bg-white p-3 text-sm text-[#58707d] sm:flex-row sm:items-center">
           <div>
             Showing {showingFrom} to {showingTo} of {pagination.total}
           </div>
@@ -134,7 +134,7 @@ const Table = <T,>({
                 onChange={(event) =>
                   pagination.onPageSizeChange?.(Number(event.target.value))
                 }
-                className="rounded-full border border-[#d9e4f8] px-3 py-1.5 text-sm text-[#0a1633] focus:border-[#8ea4d8] focus:outline-none"
+                className="rounded-full border border-[#d8e8ee] px-3 py-1.5 text-sm text-[#202860] focus:border-[#18a0b8] focus:outline-none"
                 aria-label="Rows per page"
               >
                 {(pagination.pageSizeOptions ?? DEFAULT_PAGE_SIZES).map(
@@ -156,7 +156,7 @@ const Table = <T,>({
               Previous
             </Button>
 
-            <span className="px-2 text-xs font-semibold text-[#4c628a]">
+            <span className="px-2 text-xs font-semibold text-[#58707d]">
               Page {pagination.page} / {totalPages}
             </span>
 

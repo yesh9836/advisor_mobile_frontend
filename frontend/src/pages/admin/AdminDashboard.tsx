@@ -168,8 +168,8 @@ const AdminDashboard = () => {
       <section className="grid-main">
         <article className="panel stack">
           <div>
-            <h2 style={{ margin: 0, fontSize: 28, color: "#0b1b49" }}>Admin Workflows</h2>
-            <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+            <h2 style={{ margin: 0, fontSize: 28, color: "#202860" }}>Admin Workflows</h2>
+            <p style={{ margin: "4px 0 0 0", color: "#58707d" }}>
               Navigate operational flows for lead inventory, order monitoring, and imports.
             </p>
           </div>
@@ -229,9 +229,9 @@ const AdminDashboard = () => {
 
         <aside className="panel stack">
           <div>
-            <h2 style={{ margin: 0, fontSize: 28, color: "#0b1b49" }}>Queue Snapshot</h2>
+            <h2 style={{ margin: 0, fontSize: 28, color: "#202860" }}>Queue Snapshot</h2>
           </div>
-          <div style={{ color: "#334155" }}>
+          <div style={{ color: "#334a57" }}>
             <div
               style={{
                 display: "flex",
@@ -261,8 +261,8 @@ const AdminDashboard = () => {
       <section className="panel stack">
         <div className="page-header-row">
           <div>
-            <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>Recent Activity</h2>
-            <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+            <h2 style={{ margin: 0, fontSize: 30, color: "#202860" }}>Recent Activity</h2>
+            <p style={{ margin: "4px 0 0 0", color: "#58707d" }}>
               Latest audit events across admin and advisor actions.
             </p>
           </div>
@@ -275,10 +275,10 @@ const AdminDashboard = () => {
           </button>
         </div>
 
-        {activityLoading && <p style={{ margin: 0, color: "#475569" }}>Loading recent activity...</p>}
+        {activityLoading && <p style={{ margin: 0, color: "#58707d" }}>Loading recent activity...</p>}
 
         {!activityLoading && recentActivity.length === 0 && (
-          <p style={{ margin: 0, color: "#475569" }}>No recent activity found.</p>
+          <p style={{ margin: 0, color: "#58707d" }}>No recent activity found.</p>
         )}
 
         {!activityLoading && recentActivity.length > 0 && (
@@ -290,22 +290,22 @@ const AdminDashboard = () => {
                 <section
                   key={entry.id}
                   className="panel"
-                  style={{ background: "#f8fafc" }}
+                  style={{ background: "#f4fbfc" }}
                 >
                   <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-                    <div style={{ color: "#0b1b49", fontWeight: 700 }}>
+                    <div style={{ color: "#202860", fontWeight: 700 }}>
                       {formatActionLabel(entry.action)}
                     </div>
-                    <div style={{ color: "#64748b", fontSize: 13 }}>
+                    <div style={{ color: "#6d7f89", fontSize: 13 }}>
                       {formatTimestamp(entry.created_at)}
                     </div>
                   </div>
-                  <p style={{ margin: "8px 0 0 0", color: "#475569" }}>
+                  <p style={{ margin: "8px 0 0 0", color: "#58707d" }}>
                     {entry.entity_type}
                     {entry.entity_id !== null ? ` #${entry.entity_id}` : ""}
                   </p>
                   {actorLabel && (
-                    <p style={{ margin: "8px 0 0 0", color: "#475569" }}>
+                    <p style={{ margin: "8px 0 0 0", color: "#58707d" }}>
                       Performed by: {actorLabel}
                     </p>
                   )}

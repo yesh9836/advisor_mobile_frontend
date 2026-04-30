@@ -20,7 +20,7 @@ const Card = ({
   return (
     <section
       className={cn(
-        "rounded-3xl border border-[#d9e4f8] bg-white p-5 shadow-[0_2px_10px_rgba(10,34,79,0.06)]",
+        "rounded-3xl border border-[#d8e8ee] bg-white p-5 shadow-[0_2px_10px_rgba(10,34,79,0.06)]",
         className,
       )}
       {...props}
@@ -29,10 +29,10 @@ const Card = ({
         <header className="mb-4 flex items-start justify-between gap-3">
           <div>
             {title && (
-              <h2 className="text-xl font-semibold text-[#0a1633]">{title}</h2>
+              <h2 className="text-xl font-semibold text-[#202860]">{title}</h2>
             )}
             {subtitle && (
-              <p className="mt-1 text-sm text-[#4c628a]">{subtitle}</p>
+              <p className="mt-1 text-sm text-[#58707d]">{subtitle}</p>
             )}
           </div>
           {action}

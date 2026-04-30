@@ -379,10 +379,10 @@ const DashboardPage = () => {
         <article className="panel">
           <div className="page-header-row">
             <div>
-              <h2 style={{ margin: 0, fontSize: 28, color: "#0b1b49" }}>
+              <h2 style={{ margin: 0, fontSize: 28, color: "#202860" }}>
                 Recent Leads
               </h2>
-              <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+              <p style={{ margin: "4px 0 0 0", color: "#58707d" }}>
                 Most recent deliveries across your states.
               </p>
             </div>
@@ -407,7 +407,7 @@ const DashboardPage = () => {
                   <div className="lead-text">
                     <div className="lead-name">
                       {lead.name}
-                      <span style={{ color: "#64748b", fontSize: 13 }}>
+                      <span style={{ color: "#6d7f89", fontSize: 13 }}>
                         • {lead.state}
                       </span>
                       {lead.stage !== "New" ? (
@@ -429,19 +429,19 @@ const DashboardPage = () => {
 
         <aside className="panel stack">
           <div>
-            <h2 style={{ margin: 0, fontSize: 28, color: "#0b1b49" }}>
+            <h2 style={{ margin: 0, fontSize: 28, color: "#202860" }}>
               Delivery Settings
             </h2>
-            <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+            <p style={{ margin: "4px 0 0 0", color: "#58707d" }}>
               Manage your notification preferences for lead delivery.
             </p>
           </div>
 
           <section className="panel" style={{ padding: 12 }}>
-            <h3 style={{ margin: 0, fontSize: 16, color: "#0b1b49" }}>
+            <h3 style={{ margin: 0, fontSize: 16, color: "#202860" }}>
               Notifications
             </h3>
-            <div style={{ marginTop: 8, color: "#334155" }}>
+            <div style={{ marginTop: 8, color: "#334a57" }}>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span>Email alerts</span>
                 <strong data-testid="delivery-email-status">
@@ -458,10 +458,10 @@ const DashboardPage = () => {
           </section>
 
           <section className="panel" style={{ padding: 12 }}>
-            <h3 style={{ margin: 0, fontSize: 16, color: "#0b1b49" }}>
+            <h3 style={{ margin: 0, fontSize: 16, color: "#202860" }}>
               Targeting
             </h3>
-            <div style={{ marginTop: 8, color: "#334155" }}>
+            <div style={{ marginTop: 8, color: "#334a57" }}>
               <div>
                 States:{" "}
                 <strong>
@@ -493,8 +493,8 @@ const DashboardPage = () => {
           </button>
 
           {isSettingsEditorOpen && (
-            <section className="panel stack" style={{ padding: 12, background: "#f8fafc" }}>
-              <h3 style={{ margin: 0, fontSize: 16, color: "#0b1b49" }}>
+            <section className="panel stack" style={{ padding: 12, background: "#f4fbfc" }}>
+              <h3 style={{ margin: 0, fontSize: 16, color: "#202860" }}>
                 Notification Preferences
               </h3>
               {settingsEditorLoading ? (

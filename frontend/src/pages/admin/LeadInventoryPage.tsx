@@ -174,13 +174,13 @@ const LeadInventoryPage = () => {
       <section className="grid-main">
         <article className="panel stack">
           <div>
-            <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>Inventory List</h2>
-            <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+            <h2 style={{ margin: 0, fontSize: 30, color: "#202860" }}>Inventory List</h2>
+            <p style={{ margin: "4px 0 0 0", color: "#58707d" }}>
               Single source of truth for all admin lead records.
             </p>
           </div>
 
-          <section className="panel stack" style={{ background: "#f8fafc" }}>
+          <section className="panel stack" style={{ background: "#f4fbfc" }}>
             <div className="grid-3">
               <div className="field">
                 <label htmlFor="inventory-search">Search</label>
@@ -248,10 +248,10 @@ const LeadInventoryPage = () => {
             </div>
           </section>
 
-          {loading && <div style={{ color: "#475569" }}>Loading lead inventory...</div>}
+          {loading && <div style={{ color: "#58707d" }}>Loading lead inventory...</div>}
 
           {!loading && items.length === 0 && (
-            <div style={{ color: "#475569" }}>No leads found for current filters.</div>
+            <div style={{ color: "#58707d" }}>No leads found for current filters.</div>
           )}
 
           {!loading && items.map((lead) => {
@@ -265,7 +265,7 @@ const LeadInventoryPage = () => {
                 key={lead.id}
                 className="panel"
                 style={{
-                  background: "#f8fafc",
+                  background: "#f4fbfc",
                   display: "flex",
                   justifyContent: "space-between",
                   gap: 12,
@@ -273,19 +273,19 @@ const LeadInventoryPage = () => {
                 }}
               >
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ color: "#0b1b49", fontSize: 18, fontWeight: 700 }}>
+                  <div style={{ color: "#202860", fontSize: 18, fontWeight: 700 }}>
                     {formatLeadName(lead)}
                   </div>
-                  <div style={{ marginTop: 4, color: "#475569", fontSize: 14 }}>
+                  <div style={{ marginTop: 4, color: "#58707d", fontSize: 14 }}>
                     {lead.state_code} • {lead.mobile_phone || "No phone"} • {formatSourceLabel(lead.source)}
                   </div>
-                  <div style={{ marginTop: 4, color: "#64748b", fontSize: 13 }}>
+                  <div style={{ marginTop: 4, color: "#6d7f89", fontSize: 13 }}>
                     Created {formatLeadTimestamp(lead.created_at)}
                   </div>
-                  <div style={{ marginTop: 4, color: "#64748b", fontSize: 13 }}>
+                  <div style={{ marginTop: 4, color: "#6d7f89", fontSize: 13 }}>
                     Assigned: {assignedAdvisorLabel ?? "Unassigned"}
                   </div>
-                  <div style={{ marginTop: 4, color: "#64748b", fontSize: 13 }}>
+                  <div style={{ marginTop: 4, color: "#6d7f89", fontSize: 13 }}>
                     Purchase: {lead.purchase_reference ?? "N/A"}
                   </div>
                 </div>
@@ -302,7 +302,7 @@ const LeadInventoryPage = () => {
                   >
                     {isSold ? "SOLD" : "UNSOLD"}
                   </span>
-                  <div style={{ marginTop: 6, color: "#475569", fontSize: 13 }}>
+                  <div style={{ marginTop: 6, color: "#58707d", fontSize: 13 }}>
                     Downloads: {lead.download_count}
                   </div>
                 </div>
@@ -311,7 +311,7 @@ const LeadInventoryPage = () => {
           })}
 
           <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ color: "#475569", fontSize: 14 }}>
+            <span style={{ color: "#58707d", fontSize: 14 }}>
               Page {page} of {totalPages} • {total} total leads
             </span>
             <div className="row">
@@ -337,19 +337,19 @@ const LeadInventoryPage = () => {
 
         <aside className="panel stack">
           <div>
-            <h2 style={{ margin: 0, fontSize: 28, color: "#0b1b49" }}>License Status</h2>
-            <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+            <h2 style={{ margin: 0, fontSize: 28, color: "#202860" }}>License Status</h2>
+            <p style={{ margin: "4px 0 0 0", color: "#58707d" }}>
               Snapshot of advisor license verification queue.
             </p>
           </div>
 
           {licenseSummary.map((entry) => (
-            <section key={entry.status} className="panel" style={{ background: "#f8fafc" }}>
+            <section key={entry.status} className="panel" style={{ background: "#f4fbfc" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ color: "#334155", textTransform: "capitalize", fontWeight: 700 }}>
+                <span style={{ color: "#334a57", textTransform: "capitalize", fontWeight: 700 }}>
                   {entry.status}
                 </span>
-                <strong style={{ color: "#0b1b49" }}>{entry.count}</strong>
+                <strong style={{ color: "#202860" }}>{entry.count}</strong>
               </div>
             </section>
           ))}

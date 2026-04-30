@@ -322,10 +322,10 @@ const FirstPurchaseOfferPage = () => {
           <section className="panel stack">
           <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
             <div>
-              <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>
+              <h2 style={{ margin: 0, fontSize: 30, color: "#202860" }}>
                 {isEditingExistingOffer ? "Edit Offer" : "Create Offer"}
               </h2>
-              <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+              <p style={{ margin: "4px 0 0 0", color: "#58707d" }}>
                 Advisors qualify only on the redirect from their first completed checkout.
               </p>
             </div>
@@ -504,11 +504,11 @@ const FirstPurchaseOfferPage = () => {
           </div>
 
           {form.offer_credits_total && form.offer_price_dollars && (
-            <div className="panel" style={{ background: "#f8fafc" }}>
-              <div style={{ color: "#334155" }}>
+            <div className="panel" style={{ background: "#f4fbfc" }}>
+              <div style={{ color: "#334a57" }}>
                 Preview add-on: <strong>{form.offer_credits_total} leads</strong>
               </div>
-              <div style={{ color: "#334155" }}>
+              <div style={{ color: "#334a57" }}>
                 {formatMoney(
                   previewPriceCents ?? 0,
                   "USD",
@@ -546,37 +546,37 @@ const FirstPurchaseOfferPage = () => {
           <section className="panel stack">
             <div className="page-header-row">
               <div>
-                <h2 style={{ margin: 0, fontSize: 30, color: "#0b1b49" }}>Existing Offers</h2>
-                <p style={{ margin: "4px 0 0 0", color: "#475569" }}>
+                <h2 style={{ margin: 0, fontSize: 30, color: "#202860" }}>Existing Offers</h2>
+                <p style={{ margin: "4px 0 0 0", color: "#58707d" }}>
                   Manage existing first-purchase offer configuration.
                 </p>
               </div>
             </div>
 
             {config?.id ? (
-              <article className="panel" style={{ background: "#f8fafc" }}>
+              <article className="panel" style={{ background: "#f4fbfc" }}>
                 <div className="page-header-row">
                   <div>
-                    <div style={{ fontSize: 20, fontWeight: 800, color: "#0b1b49" }}>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: "#202860" }}>
                       Offer #{config.id}
                     </div>
-                    <div style={{ marginTop: 4, color: "#475569" }}>
+                    <div style={{ marginTop: 4, color: "#58707d" }}>
                       Status: {config.is_enabled ? "ACTIVE" : "ARCHIVED"} • Trigger:{" "}
                       {config.trigger_package_name ?? "Not set"}
                     </div>
-                    <div style={{ marginTop: 4, color: "#475569" }}>
+                    <div style={{ marginTop: 4, color: "#58707d" }}>
                       Add-on:{" "}
                       {config.offer_price_cents !== null
                         ? formatMoney(config.offer_price_cents, config.offer_currency ?? "USD")
                         : "Not set"}{" "}
                       • {config.offer_credits_total ?? 0} leads
                     </div>
-                    <div style={{ marginTop: 4, color: "#64748b", fontSize: 13 }}>
+                    <div style={{ marginTop: 4, color: "#6d7f89", fontSize: 13 }}>
                       Window: {config.starts_at ? formatDateTime(config.starts_at) : "Not set"} →{" "}
                       {config.ends_at ? formatDateTime(config.ends_at) : "Not set"}
                     </div>
                     {config.updated_at && (
-                      <div style={{ marginTop: 4, color: "#64748b", fontSize: 13 }}>
+                      <div style={{ marginTop: 4, color: "#6d7f89", fontSize: 13 }}>
                         Last updated: {new Date(config.updated_at).toLocaleString("en-US")}
                       </div>
                     )}
@@ -605,7 +605,7 @@ const FirstPurchaseOfferPage = () => {
                 </div>
               </article>
             ) : (
-              <div style={{ color: "#475569" }}>No offer config exists yet.</div>
+              <div style={{ color: "#58707d" }}>No offer config exists yet.</div>
             )}
           </section>
         </>

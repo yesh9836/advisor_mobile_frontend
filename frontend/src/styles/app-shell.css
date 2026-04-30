@@ -1,6 +1,6 @@
 .app-shell {
   min-height: 100vh;
-  background: #f5f7fb;
+  background: #f4f8fa;
   color: #0f172a;
 }
 
@@ -11,7 +11,7 @@
   right: 0;
   z-index: 100;
   height: 64px;
-  border-bottom: 1px solid #dbe4f0;
+  border-bottom: 1px solid #d8e8ee;
   background: #fff;
 }
 
@@ -26,7 +26,7 @@
 }
 
 .header-menu {
-  border: 1px solid #cbd5e1;
+  border: 1px solid #c7d7dd;
   background: #fff;
   color: #1e293b;
   border-radius: 8px;
@@ -60,9 +60,9 @@
 }
 
 .logout-btn {
-  border: 1px solid #d6deea;
+  border: 1px solid #d8e8ee;
   background: #fff;
-  color: #0b1b49;
+  color: #202860;
   border-radius: 999px;
   padding: 8px 14px;
   font-size: 13px;
@@ -88,13 +88,13 @@
 .app-sidebar {
   width: 260px;
   flex: 0 0 260px;
-  border-right: 1px solid #dbe4f0;
+  border-right: 1px solid #d8e8ee;
   background: #fff;
   padding: 16px;
 }
 
 .nav-panel {
-  border: 1px solid #dbe4f0;
+  border: 1px solid #d8e8ee;
   border-radius: 16px;
   padding: 8px;
   background: #fff;
@@ -106,7 +106,7 @@
   gap: 10px;
   border-radius: 12px;
   padding: 10px 12px;
-  color: #1e3a6b;
+  color: #202860;
   text-decoration: none;
   font-weight: 600;
   font-size: 15px;
@@ -118,18 +118,18 @@
 }
 
 .nav-link.active {
-  background: #0b1b49;
+  background: #202860;
   color: #fff;
 }
 
 .nav-link:hover {
-  background: #eff4ff;
+  background: #e8fbff;
 }
 
 .next-step {
   margin-top: 12px;
   border-radius: 16px;
-  background: #0b1b49;
+  background: #202860;
   color: #fff;
   padding: 16px;
 }
@@ -137,7 +137,7 @@
 .next-step-kicker {
   font-size: 11px;
   letter-spacing: 0.06em;
-  color: #b9c8eb;
+  color: #8ed6df;
   font-weight: 700;
 }
 
@@ -150,7 +150,7 @@
 .next-step p {
   margin: 0;
   font-size: 15px;
-  color: #dbe6ff;
+  color: #d8f4f8;
 }
 
 .next-step button {
@@ -159,7 +159,7 @@
   border: 0;
   border-radius: 999px;
   background: #fff;
-  color: #0b1b49;
+  color: #202860;
   padding: 10px 12px;
   font-size: 14px;
   font-weight: 700;
@@ -182,12 +182,12 @@
   margin: 0;
   font-size: 34px;
   line-height: 1.1;
-  color: #0b1b49;
+  color: #202860;
 }
 
 .page-subtitle {
   margin-top: 4px;
-  color: #475569;
+  color: #58707d;
   font-size: 16px;
 }
 
@@ -200,7 +200,7 @@
 }
 
 .panel {
-  border: 1px solid #dbe4f0;
+  border: 1px solid #d8e8ee;
   border-radius: 16px;
   background: #fff;
   padding: 16px;
@@ -219,7 +219,7 @@
 }
 
 .metric-title {
-  color: #64748b;
+  color: #6d7f89;
   font-size: 15px;
   font-weight: 600;
 }
@@ -228,12 +228,12 @@
   margin-top: 8px;
   font-size: 44px;
   font-weight: 800;
-  color: #0b1b49;
+  color: #202860;
 }
 
 .metric-note {
   margin-top: 6px;
-  color: #475569;
+  color: #58707d;
   font-size: 14px;
 }
 
@@ -251,15 +251,15 @@
 }
 
 .btn-primary {
-  border: 1px solid #0b1b49;
-  background: #0b1b49;
+  border: 1px solid #202860;
+  background: #202860;
   color: #fff;
 }
 
 .btn-secondary {
-  border: 1px solid #d6deea;
+  border: 1px solid #d8e8ee;
   background: #fff;
-  color: #0b1b49;
+  color: #202860;
 }
 
 .lead-row {
@@ -268,7 +268,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 12px 0;
-  border-top: 1px solid #e7edf8;
+  border-top: 1px solid #e4eef2;
 }
 
 .lead-row:first-child {
@@ -288,8 +288,8 @@
   border-radius: 999px;
   display: grid;
   place-items: center;
-  background: #eff4ff;
-  color: #1f3a6b;
+  background: #e8fbff;
+  color: #202860;
   font-size: 13px;
   font-weight: 700;
   flex: 0 0 auto;
@@ -306,11 +306,11 @@
   flex-wrap: wrap;
   font-size: 18px;
   font-weight: 700;
-  color: #0b1b49;
+  color: #202860;
 }
 
 .lead-sub {
-  color: #334155;
+  color: #334a57;
   font-size: 14px;
   white-space: nowrap;
   overflow: hidden;
@@ -318,7 +318,7 @@
 }
 
 .lead-time {
-  color: #64748b;
+  color: #6d7f89;
   font-size: 13px;
   white-space: nowrap;
 }
@@ -360,14 +360,14 @@
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  border-bottom: 1px solid #e7edf8;
+  border-bottom: 1px solid #e4eef2;
   padding-bottom: 10px;
 }
 
 .list-title {
   font-size: 24px;
   font-weight: 800;
-  color: #0b1b49;
+  color: #202860;
 }
 
 .field {
@@ -379,13 +379,13 @@
 .field label {
   font-size: 14px;
   font-weight: 700;
-  color: #0b1b49;
+  color: #202860;
 }
 
 .field input,
 .field select,
 .field textarea {
-  border: 1px solid #d6deea;
+  border: 1px solid #d8e8ee;
   border-radius: 10px;
   padding: 10px 12px;
   font-size: 14px;
@@ -412,13 +412,13 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  color: #334155;
+  color: #334a57;
 }
 
 .settings-toggle-row label {
   font-size: 14px;
   font-weight: 700;
-  color: #0b1b49;
+  color: #202860;
 }
 
 .settings-toggle-row input[type="checkbox"] {
@@ -486,12 +486,12 @@
     margin: 0;
     font-size: 13px;
     font-weight: 700;
-    color: #0b1b49;
+    color: #202860;
   }
 
   .user-meta-email {
     margin: 0;
     font-size: 12px;
-    color: #64748b;
+    color: #6d7f89;
   }
 }
