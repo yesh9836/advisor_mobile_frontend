@@ -45,6 +45,8 @@ const EDITABLE_STAGE_TO_STATUS: Record<
 
 const PAGE_SIZE = 25;
 const SEARCH_DEBOUNCE_MS = 300;
+const EMPTY_INBOX_REFRESH_DELAY_MS = 5000;
+const EMPTY_INBOX_REFRESH_MAX_ATTEMPTS = 12;
 
 const DELIVERY_FILTER_TO_QUERY: Record<
   DeliveryFilter,
@@ -118,6 +120,7 @@ const LeadsPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
+  const [emptyInboxRefreshAttempts, setEmptyInboxRefreshAttempts] = useState(0);
   const { beginRequest, isLatestRequest } = useLatestRequest();
 
   useEffect(() => {
@@ -202,6 +205,56 @@ const LeadsPage = () => {
   useEffect(() => {
     void loadInbox();
   }, [loadInbox, reloadTick]);
+
+  useEffect(() => {
+    setEmptyInboxRefreshAttempts(0);
+  }, [currentPage, debouncedSearchQuery, deliveryFilter, stageFilter]);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      setReloadTick((previous) => previous + 1);
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, []);
+
+  useEffect(() => {
+    const canPollEmptyInbox =
+      !loading &&
+      !error &&
+      leads.length === 0 &&
+      totalLeads === 0 &&
+      currentPage === 1 &&
+      deliveryFilter === "All" &&
+      stageFilter === "All" &&
+      debouncedSearchQuery === "" &&
+      emptyInboxRefreshAttempts < EMPTY_INBOX_REFRESH_MAX_ATTEMPTS;
+
+    if (!canPollEmptyInbox) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setEmptyInboxRefreshAttempts((previous) => previous + 1);
+      setReloadTick((previous) => previous + 1);
+    }, EMPTY_INBOX_REFRESH_DELAY_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [
+    currentPage,
+    debouncedSearchQuery,
+    deliveryFilter,
+    emptyInboxRefreshAttempts,
+    error,
+    leads.length,
+    loading,
+    stageFilter,
+    totalLeads,
+  ]);
 
   const selectedLead = useMemo(() => {
     if (selectedLeadId === null) {

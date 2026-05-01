@@ -103,10 +103,15 @@ const resolveOfferCheckoutErrorMessage = (error: unknown): string => {
   return parsed.message;
 };
 
-const CHECKOUT_SYNC_MAX_ATTEMPTS = 6;
+const CHECKOUT_SYNC_MAX_ATTEMPTS = 40;
 const CHECKOUT_SYNC_RETRY_DELAY_MS = 1500;
 const CHECKOUT_RETRY_TOKEN_STORAGE_PREFIX = "advisor_checkout_retry_token_v1";
 const CHECKOUT_RETRY_TOKEN_TTL_MS = 45 * 60 * 1000;
+const OFFER_ELIGIBILITY_RETRY_CODES = new Set([
+  "OFFER_NOT_FIRST_PURCHASE",
+  "OFFER_CHECKOUT_MISMATCH",
+  "INVENTORY_UNAVAILABLE",
+]);
 
 interface CheckoutRetryTokenRecord {
   token: string;
@@ -310,6 +315,16 @@ const SubscriptionPage = () => {
     let retryTimerId: ReturnType<typeof setTimeout> | null = null;
 
     const loadCheckoutNotice = async () => {
+      const scheduleRetry = () => {
+        if (syncAttempt >= CHECKOUT_SYNC_MAX_ATTEMPTS - 1) {
+          return;
+        }
+        syncAttempt += 1;
+        retryTimerId = setTimeout(() => {
+          void loadCheckoutNotice();
+        }, CHECKOUT_SYNC_RETRY_DELAY_MS);
+      };
+
       if (checkoutState === "success" || checkoutState === "cancel") {
         clearPersistedCheckoutRetryTokens();
       }
@@ -339,22 +354,14 @@ const SubscriptionPage = () => {
         setCheckoutNotice(buildCheckoutFulfillmentNotice(matched ?? null, checkoutSessionId));
         if (!matched) {
           setAddOnOffer(null);
-          if (syncAttempt < CHECKOUT_SYNC_MAX_ATTEMPTS - 1) {
-            syncAttempt += 1;
-            retryTimerId = setTimeout(() => {
-              void loadCheckoutNotice();
-            }, CHECKOUT_SYNC_RETRY_DELAY_MS);
-          }
+          scheduleRetry();
           return;
         }
 
         if (matched.status !== "completed") {
           setAddOnOffer(null);
-          if (matched.status === "pending" && syncAttempt < CHECKOUT_SYNC_MAX_ATTEMPTS - 1) {
-            syncAttempt += 1;
-            retryTimerId = setTimeout(() => {
-              void loadCheckoutNotice();
-            }, CHECKOUT_SYNC_RETRY_DELAY_MS);
+          if (matched.status === "pending") {
+            scheduleRetry();
           }
           return;
         }
@@ -366,16 +373,17 @@ const SubscriptionPage = () => {
           return;
         }
         setAddOnOffer(null);
+        if (
+          eligibility.rejection_code &&
+          OFFER_ELIGIBILITY_RETRY_CODES.has(eligibility.rejection_code)
+        ) {
+          scheduleRetry();
+        }
       } catch {
         if (!active) return;
         setCheckoutNotice(buildCheckoutFulfillmentNotice(null, checkoutSessionId));
         setAddOnOffer(null);
-        if (syncAttempt < CHECKOUT_SYNC_MAX_ATTEMPTS - 1) {
-          syncAttempt += 1;
-          retryTimerId = setTimeout(() => {
-            void loadCheckoutNotice();
-          }, CHECKOUT_SYNC_RETRY_DELAY_MS);
-        }
+        scheduleRetry();
       }
     };
 

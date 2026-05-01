@@ -408,6 +408,85 @@ describe("SubscriptionPage license gate", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps checking offer eligibility when checkout completion briefly races the offer gate", async () => {
+    const { getPurchaseHistory, getFirstPurchaseOfferEligibility } =
+      await import("@/api/purchases");
+    const { getMyLicenses } = await import("@/api/licenses");
+    vi.mocked(getMyLicenses).mockResolvedValueOnce([
+      {
+        id: 104,
+        user_id: 1,
+        state: "GA",
+        license_number: "GA-VERIFIED-002",
+        license_type: "Series 65",
+        has_document: true,
+        verification_status: "verified",
+        verified_at: "2026-02-19T00:00:00Z",
+        verified_by: 5,
+        rejection_reason: null,
+        created_at: "2026-02-19T00:00:00Z",
+      },
+    ]);
+    vi.mocked(getPurchaseHistory).mockResolvedValue({
+      items: [
+        {
+          id: 1,
+          order_reference: "cs_test_offer_race",
+          package_name: "Starter",
+          amount_cents: 20000,
+          currency: "USD",
+          credits_total: 10,
+          entitled_credits_total: 10,
+          credits_remaining: 10,
+          status: "completed",
+          assigned_count: 10,
+          unfulfilled_count: 0,
+          fulfillment_status: "fulfilled",
+          purchased_at: "2026-02-19T00:00:00Z",
+          stripe_checkout_session_id: "cs_test_offer_race",
+          stripe_payment_intent_id: "pi_test_offer_race",
+        },
+      ],
+    });
+    vi.mocked(getFirstPurchaseOfferEligibility)
+      .mockResolvedValueOnce({
+        eligible: false,
+        offer: null,
+        rejection_code: "OFFER_NOT_FIRST_PURCHASE",
+        rejection_message: "First-purchase add-on is only available after your first completed checkout.",
+      })
+      .mockResolvedValueOnce({
+        eligible: true,
+        offer: {
+          trigger_package_id: 1,
+          offer_package_id: 2,
+          offer_package_name: "Starter Plus",
+          offer_price_cents: 25000,
+          offer_currency: "USD",
+          offer_credits_total: 14,
+          headline: "First order bonus",
+          message: "Upgrade now for extra credits.",
+          cta_label: "Upgrade package",
+        },
+      });
+
+    const eligibilityCallsBeforeRender =
+      vi.mocked(getFirstPurchaseOfferEligibility).mock.calls.length;
+    renderRoute("/subscription?checkout=success&session_id=cs_test_offer_race");
+
+    await waitFor(
+      () => {
+        expect(
+          vi.mocked(getFirstPurchaseOfferEligibility).mock.calls.length,
+        ).toBeGreaterThanOrEqual(eligibilityCallsBeforeRender + 2);
+      },
+      { timeout: 7000 },
+    );
+    expect(
+      await screen.findByRole("heading", { name: "First order bonus" }),
+    ).toBeInTheDocument();
+  }, 10000);
+
   it("maps structured inventory rejection codes for add-on checkout", async () => {
     const { getPurchaseHistory, getFirstPurchaseOfferEligibility, createCheckout } =
       await import("@/api/purchases");
