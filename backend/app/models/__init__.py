@@ -20,6 +20,7 @@ from .audit_log import AuditLog
 from .auth_session import RefreshTokenSession
 from .password_reset import PasswordResetRequestAttempt, PasswordResetToken
 from .notification import NotificationOutbox, NotificationOutboxWorkerHeartbeat
+from .advisor_intake import AdvisorIntakeWebhookEvent
 
 __all__ = [
     "Base",
@@ -49,4 +50,5 @@ __all__ = [
     "PasswordResetToken",
     "NotificationOutbox",
     "NotificationOutboxWorkerHeartbeat",
+    "AdvisorIntakeWebhookEvent",
 ]

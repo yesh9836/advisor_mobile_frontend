@@ -527,8 +527,15 @@ wpforms_webhook_rate_limit_dependency = _build_rate_limit_dependency(
     seconds_setting="RATE_LIMIT_WPFORMS_WEBHOOK_SECONDS",
 )
 
+advisor_intake_webhook_rate_limit_dependency = _build_rate_limit_dependency(
+    endpoint="webhooks.advisor_intake",
+    times_setting="RATE_LIMIT_ADVISOR_INTAKE_WEBHOOK_TIMES",
+    seconds_setting="RATE_LIMIT_ADVISOR_INTAKE_WEBHOOK_SECONDS",
+)
+
 
 __all__ = [
+    "advisor_intake_webhook_rate_limit_dependency",
     "client_ip_identifier",
     "get_rate_limiter_status_snapshot",
     "get_rate_limit_metrics_snapshot",

@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from .license import License
     from .purchase import LeadCreditLedger, LeadPurchase
     from .lead import LeadDownload, LeadOutcome, LeadOwnership
+    from .advisor_intake import AdvisorIntakeWebhookEvent
     from .delivery_settings import AdvisorDeliverySettings
     from .audit_log import AuditLog
     from .auth_session import RefreshTokenSession
@@ -157,6 +158,10 @@ class User(Base):
     )
     notification_outbox_entries: Mapped[List["NotificationOutbox"]] = relationship(
         "NotificationOutbox",
+    )
+    advisor_intake_events: Mapped[List["AdvisorIntakeWebhookEvent"]] = relationship(
+        "AdvisorIntakeWebhookEvent",
+        back_populates="user",
     )
 
     def __repr__(self) -> str:

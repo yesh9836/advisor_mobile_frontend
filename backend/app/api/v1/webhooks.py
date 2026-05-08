@@ -8,8 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.rate_limit import wpforms_webhook_rate_limit_dependency
+from app.core.rate_limit import (
+    advisor_intake_webhook_rate_limit_dependency,
+    wpforms_webhook_rate_limit_dependency,
+)
 from app.api.deps import get_db
+from app.services.advisor_intake_webhook_service import AdvisorIntakeWebhookService
 from app.services.lead_intake_webhook_service import LeadIntakeWebhookService
 from app.services.metrics_service import MetricsService
 from app.services.stripe_webhook_inbox_service import StripeWebhookInboxService
@@ -22,6 +26,61 @@ from app.services.subscription_service import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
+
+
+@router.post(
+    "/advisor-intake",
+    status_code=status.HTTP_200_OK,
+    summary="Advisor account intake webhook endpoint",
+    dependencies=[Depends(advisor_intake_webhook_rate_limit_dependency)],
+)
+async def advisor_intake_webhook(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    raw_body = await request.body()
+    try:
+        result = AdvisorIntakeWebhookService.process_submission(
+            db=db,
+            raw_body=raw_body,
+            headers=request.headers,
+            content_type=request.headers.get("content-type"),
+        )
+    except HTTPException as exc:
+        MetricsService.increment(
+            "advisor_intake_webhook_requests_total",
+            tags={
+                "outcome": "rejected",
+                "status_code": str(exc.status_code),
+            },
+        )
+        raise
+    except Exception as exc:
+        logger.exception("Unexpected advisor intake webhook failure: %s", exc)
+        MetricsService.increment(
+            "advisor_intake_webhook_requests_total",
+            tags={
+                "outcome": "failed",
+                "status_code": "500",
+            },
+        )
+        raise HTTPException(status_code=500, detail="Advisor intake webhook processing failed")
+
+    MetricsService.increment(
+        "advisor_intake_webhook_requests_total",
+        tags={
+            "outcome": "idempotent_replay" if result["idempotent_replay"] else "accepted",
+            "status_code": "200",
+        },
+    )
+    return {
+        "status": "ok",
+        "idempotent_replay": bool(result["idempotent_replay"]),
+        "user_id": result["user_id"],
+        "account_created": bool(result["account_created"]),
+        "existing_user": bool(result["existing_user"]),
+        "setup_email_queued": False,
+    }
 
 
 @router.post(
