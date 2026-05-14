@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import { requestPasswordReset } from "@/api/auth";
 import brandLogo from "@/assets/Spectaculeads-logo.jpeg";
+import loginBackground from "@/assets/login-background-1920.png";
 import { getApiErrorMessage } from "@/utils/api-error";
 
 const forgotPasswordSchema = z.object({
@@ -18,7 +19,10 @@ type ForgotPasswordFormValues = z.infer<typeof forgotPasswordSchema>;
 const inputClass =
   "mt-1 w-full rounded-xl border border-[#d8e8ee] bg-white px-3 py-2.5 text-sm text-[#202860] placeholder:text-[#8aa0aa] focus:border-[#18a0b8] focus:outline-none focus:ring-2 focus:ring-[#18a0b8]/25";
 const authPageClass =
-  "flex min-h-screen items-center justify-center bg-[#182048] px-4 py-8";
+  "flex min-h-screen items-center justify-center bg-[#182048] bg-cover bg-center bg-no-repeat px-4 py-8";
+const authPageStyle = {
+  backgroundImage: `url(${loginBackground})`,
+};
 const authCardClass =
   "w-full max-w-md rounded-2xl border border-[#d8e8ee] border-t-4 border-t-[#18a0b8] bg-white p-6 shadow-[0_24px_60px_rgba(17,23,53,0.35)]";
 
@@ -84,7 +88,7 @@ const ForgotPasswordPage = () => {
   };
 
   return (
-    <div className={authPageClass}>
+    <div className={authPageClass} style={authPageStyle}>
       <div className={authCardClass}>
         <div className="mb-6">
           <img
