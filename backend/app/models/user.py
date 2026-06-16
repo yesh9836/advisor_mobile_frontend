@@ -10,6 +10,7 @@ from .base import Base
 
 if TYPE_CHECKING:
     from .license import License
+    from .goal import AdvisorGoal
     from .purchase import LeadCreditLedger, LeadPurchase
     from .lead import LeadDownload, LeadOutcome, LeadOwnership
     from .advisor_intake import AdvisorIntakeWebhookEvent
@@ -162,6 +163,11 @@ class User(Base):
     advisor_intake_events: Mapped[List["AdvisorIntakeWebhookEvent"]] = relationship(
         "AdvisorIntakeWebhookEvent",
         back_populates="user",
+    )
+    advisor_goals: Mapped[List["AdvisorGoal"]] = relationship(
+        "AdvisorGoal",
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:

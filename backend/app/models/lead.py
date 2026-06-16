@@ -359,7 +359,13 @@ class LeadOutcome(Base):
     )
 
     status: Mapped[str] = mapped_column(
-        SQLEnum("new", "contacted", "appointment_set", name="lead_outcome_status_enum"),
+        SQLEnum(
+            "new",
+            "contacted",
+            "appointment_set",
+            "closed_deal",
+            name="lead_outcome_status_enum",
+        ),
         nullable=False,
         default="new",
         server_default=text("'new'"),

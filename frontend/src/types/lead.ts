@@ -9,6 +9,7 @@ export type LeadOutcomeStatus =
   | "new"
   | "contacted"
   | "appointment_set"
+  | "closed_deal"
   | (string & {});
 
 export interface Lead {
@@ -63,7 +64,7 @@ export interface Lead {
 
 export interface LeadFilters {
   delivery_status?: "all" | "available" | "delivered";
-  outcome_status?: "all" | "new" | "contacted" | "appointment_set";
+  outcome_status?: "all" | "new" | "contacted" | "appointment_set" | "closed_deal";
   state_code?: string;
   zip_code?: string;
   retirement_timeline?: string;

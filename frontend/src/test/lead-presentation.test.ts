@@ -14,6 +14,7 @@ describe("leadPresentation helpers", () => {
     expect(toDisplayStage("new")).toBe("New");
     expect(toDisplayStage("contacted")).toBe("Contacted");
     expect(toDisplayStage("appointment_set")).toBe("Appointment Set");
+    expect(toDisplayStage("closed_deal")).toBe("Closed Deal");
     expect(toDisplayStage(null)).toBe("New");
   });
 
@@ -45,5 +46,6 @@ describe("leadPresentation helpers", () => {
     expect(stageClassName("New")).toBe("badge badge-new");
     expect(stageClassName("Contacted")).toBe("badge badge-contacted");
     expect(stageClassName("Appointment Set")).toBe("badge badge-set");
+    expect(stageClassName("Closed Deal")).toBe("badge badge-closed");
   });
 });

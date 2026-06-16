@@ -67,6 +67,7 @@ describe("Sidebar role-based navigation", () => {
     renderSidebar();
 
     expect(screen.getByText("Dashboard")).toBeInTheDocument();
+    expect(screen.getByText("Goals")).toBeInTheDocument();
     expect(screen.getByText("Buy Leads")).toBeInTheDocument();
     expect(screen.getByText("Lead Inbox")).toBeInTheDocument();
     expect(screen.getByText("Profile")).toBeInTheDocument();
@@ -189,6 +190,7 @@ describe("Sidebar role-based navigation", () => {
     expect(screen.getByText("First Purchase Offer")).toBeInTheDocument();
     expect(screen.getByText("License Reviews")).toBeInTheDocument();
     expect(screen.queryByText("Buy Leads")).not.toBeInTheDocument();
+    expect(screen.queryByText("Goals")).not.toBeInTheDocument();
     expect(screen.queryByText("Lead Inbox")).not.toBeInTheDocument();
     expect(screen.queryByText("Billing")).not.toBeInTheDocument();
     expect(screen.queryByText("Profile")).not.toBeInTheDocument();

@@ -33,7 +33,11 @@ interface InboxLead {
 
 type EditableLeadStage = "" | Exclude<LeadStage, "New">;
 
-const EDITABLE_STAGES: EditableLeadStage[] = ["Contacted", "Appointment Set"];
+const EDITABLE_STAGES: EditableLeadStage[] = [
+  "Contacted",
+  "Appointment Set",
+  "Closed Deal",
+];
 
 const EDITABLE_STAGE_TO_STATUS: Record<
   Exclude<EditableLeadStage, "">,
@@ -41,6 +45,7 @@ const EDITABLE_STAGE_TO_STATUS: Record<
 > = {
   Contacted: "contacted",
   "Appointment Set": "appointment_set",
+  "Closed Deal": "closed_deal",
 };
 
 const PAGE_SIZE = 25;
@@ -65,6 +70,7 @@ const STAGE_FILTER_TO_QUERY: Record<
   New: "new",
   Contacted: "contacted",
   "Appointment Set": "appointment_set",
+  "Closed Deal": "closed_deal",
 };
 
 const toEditableStage = (
@@ -72,6 +78,7 @@ const toEditableStage = (
 ): EditableLeadStage => {
   if (status === "contacted") return "Contacted";
   if (status === "appointment_set") return "Appointment Set";
+  if (status === "closed_deal") return "Closed Deal";
   return "";
 };
 
@@ -389,6 +396,7 @@ const LeadsPage = () => {
                 <option value="All">All</option>
                 <option value="Contacted">Contacted</option>
                 <option value="Appointment Set">Appointment Set</option>
+                <option value="Closed Deal">Closed Deal</option>
               </select>
               <select
                 value={deliveryFilter}

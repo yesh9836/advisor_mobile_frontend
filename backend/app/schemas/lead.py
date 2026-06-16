@@ -3,7 +3,7 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
-LeadOutcomeStatus = Literal["new", "contacted", "appointment_set"]
+LeadOutcomeStatus = Literal["new", "contacted", "appointment_set", "closed_deal"]
 
 
 class LeadBase(BaseModel):

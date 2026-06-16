@@ -1,12 +1,13 @@
 import type { Lead, LeadOutcomeStatus } from "@/types/lead";
 
-export type LeadStage = "New" | "Contacted" | "Appointment Set";
+export type LeadStage = "New" | "Contacted" | "Appointment Set" | "Closed Deal";
 
 export const toDisplayStage = (
   status: LeadOutcomeStatus | null | undefined,
 ): LeadStage => {
   if (status === "contacted") return "Contacted";
   if (status === "appointment_set") return "Appointment Set";
+  if (status === "closed_deal") return "Closed Deal";
   return "New";
 };
 
@@ -50,5 +51,6 @@ export const formatDateTime = (value: string): string => {
 export const stageClassName = (stage: LeadStage): string => {
   if (stage === "New") return "badge badge-new";
   if (stage === "Contacted") return "badge badge-contacted";
-  return "badge badge-set";
+  if (stage === "Appointment Set") return "badge badge-set";
+  return "badge badge-closed";
 };

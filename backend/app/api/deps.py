@@ -177,3 +177,24 @@ def require_admin(
         )
     
     return current_user
+
+
+def require_advisor(
+    current_user: Annotated[User, Depends(get_current_active_user)]
+) -> User:
+    """
+    Require current user to be an advisor.
+    """
+    if current_user.role != "advisor":
+        logger.warning(
+            "Unauthorized advisor access attempt by user %s (%s) with role '%s'",
+            current_user.id,
+            current_user.email,
+            current_user.role,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Advisor access required",
+        )
+
+    return current_user

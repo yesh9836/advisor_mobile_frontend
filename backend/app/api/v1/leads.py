@@ -26,7 +26,7 @@ def list_available_leads(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     delivery_status: Literal["all", "available", "delivered"] = Query("all"),
-    outcome_status: Literal["all", "new", "contacted", "appointment_set"] = Query("all"),
+    outcome_status: Literal["all", "new", "contacted", "appointment_set", "closed_deal"] = Query("all"),
     search: str | None = Query(default=None),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),

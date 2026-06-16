@@ -15,6 +15,7 @@ from .purchase import (
 from .license import License
 from .license_resubmission import LicenseResubmission
 from .lead import Lead, LeadDownload, LeadIntakeWebhookEvent, LeadOutcome, LeadOwnership
+from .goal import AdvisorGoal
 from .delivery_settings import AdvisorDeliverySettings
 from .audit_log import AuditLog
 from .auth_session import RefreshTokenSession
@@ -43,6 +44,7 @@ __all__ = [
     "LeadIntakeWebhookEvent",
     "LeadOwnership",
     "LeadOutcome",
+    "AdvisorGoal",
     "AdvisorDeliverySettings",
     "AuditLog",
     "RefreshTokenSession",

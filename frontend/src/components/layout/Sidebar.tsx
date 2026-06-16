@@ -36,6 +36,14 @@ const BuyIcon = () => (
   </svg>
 );
 
+const GoalsIcon = () => (
+  <svg viewBox="0 0 20 20" aria-hidden="true">
+    <circle cx="10" cy="10" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    <circle cx="10" cy="10" r="3" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    <circle cx="10" cy="10" r="0.8" fill="currentColor" />
+  </svg>
+);
+
 const InboxIcon = () => (
   <svg viewBox="0 0 20 20" aria-hidden="true">
     <path d="M3 4h14l-4.5 5h-5L3 4Z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
@@ -125,6 +133,7 @@ const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
 
   const advisorItems: SidebarItem[] = [
     { to: "/dashboard", label: "Dashboard", icon: <DashboardIcon />, end: true },
+    { to: "/goals", label: "Goals", icon: <GoalsIcon /> },
     { to: "/subscription", label: "Buy Leads", icon: <BuyIcon /> },
     { to: "/leads", label: "Lead Inbox", icon: <InboxIcon /> },
     { to: "/profile", label: "Profile", icon: <ProfileIcon /> },

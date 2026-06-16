@@ -1349,7 +1349,7 @@ class LeadService:
         page: int = 1,
         size: int = 20,
         delivery_status: Literal["all", "available", "delivered"] = "all",
-        outcome_status: Literal["all", "new", "contacted", "appointment_set"] = "all",
+        outcome_status: Literal["all", "new", "contacted", "appointment_set", "closed_deal"] = "all",
         search: Optional[str] = None,
     ) -> Dict[str, object]:
         downloaded_subquery = select(LeadDownload.lead_id).where(LeadDownload.user_id == user.id)

@@ -8,6 +8,7 @@ import { getHomeRouteByRole } from "@/utils/role-routing";
 
 const BillingPage = lazy(() => import("@/pages/advisor/BillingPage"));
 const DashboardPage = lazy(() => import("@/pages/advisor/DashboardPage"));
+const GoalsPage = lazy(() => import("@/pages/advisor/GoalsPage"));
 const LeadsPage = lazy(() => import("@/pages/advisor/LeadsPage"));
 const ProfilePage = lazy(() => import("@/pages/advisor/ProfilePage"));
 const SubscriptionPage = lazy(() => import("@/pages/advisor/SubscriptionPage"));
@@ -94,6 +95,14 @@ export const AppRoutes = () => {
               element={
                 <ProtectedRoute allowedRoles={["advisor"]}>
                   <DashboardPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/goals"
+              element={
+                <ProtectedRoute allowedRoles={["advisor"]}>
+                  <GoalsPage />
                 </ProtectedRoute>
               }
             />

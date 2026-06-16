@@ -237,6 +237,7 @@ describe("Advisor LeadsPage server query state", () => {
     expect(filter).toHaveTextContent("All");
     expect(filter).toHaveTextContent("Contacted");
     expect(filter).toHaveTextContent("Appointment Set");
+    expect(filter).toHaveTextContent("Closed Deal");
   });
 
   it("defaults Update Status to blank and omits New from selectable options", async () => {
@@ -247,9 +248,10 @@ describe("Advisor LeadsPage server query state", () => {
 
     expect(statusSelect.value).toBe("");
     expect(within(statusSelect).queryByRole("option", { name: "New" })).not.toBeInTheDocument();
-    expect(within(statusSelect).getAllByRole("option")).toHaveLength(3);
+    expect(within(statusSelect).getAllByRole("option")).toHaveLength(4);
     expect(statusSelect).toHaveTextContent("Contacted");
     expect(statusSelect).toHaveTextContent("Appointment Set");
+    expect(statusSelect).toHaveTextContent("Closed Deal");
   });
 
   it("disables save until a real status is chosen for untouched leads", async () => {
@@ -289,6 +291,25 @@ describe("Advisor LeadsPage server query state", () => {
     expect(
       await screen.findByText("Lead updates saved for Locked Lead."),
     ).toBeInTheDocument();
+  });
+
+  it("saves Closed Deal as an explicit lead outcome", async () => {
+    renderRoute();
+
+    await screen.findByText("Lead Details");
+    const statusSelect = screen.getByLabelText("Update Status");
+
+    fireEvent.change(statusSelect, {
+      target: { value: "Closed Deal" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(saveLeadOutcomeMock).toHaveBeenCalledWith(11, {
+        status: "closed_deal",
+        notes: null,
+      });
+    });
   });
 
   it("ignores stale inbox responses after a newer filter request", async () => {
