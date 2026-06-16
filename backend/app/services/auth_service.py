@@ -1,7 +1,3 @@
-"""
-Authentication service containing business logic for user registration and authentication.
-"""
-
 import logging
 import hashlib
 import hmac
@@ -46,10 +42,6 @@ class IssuedAuthTokens(NamedTuple):
 
 
 class AuthService:
-    """
-    Service class for authentication operations.
-    """
-
     @staticmethod
     def _normalize_email(email: str) -> str:
         return (email or "").strip().lower()
@@ -91,23 +83,9 @@ class AuthService:
 
     @staticmethod
     def register_user(db: Session, user_data: UserRegister) -> User:
-        """
-        Register a new user.
-        
-        Args:
-            db: Database session
-            user_data: User registration data
-            
-        Returns:
-            Created User object
-            
-        Raises:
-            HTTPException: If email already exists or registration fails
-        """
         try:
             normalized_email = AuthService._normalize_email(str(user_data.email))
 
-            # Check if email already exists
             existing_user = AuthService._find_user_by_email(db, normalized_email)
             if existing_user:
                 raise HTTPException(
@@ -115,10 +93,8 @@ class AuthService:
                     detail="Email already registered"
                 )
             
-            # Hash password
             password_hash = get_password_hash(user_data.password)
             
-            # Create user
             new_user = User(
                 email=normalized_email,
                 name=user_data.name,
@@ -159,28 +135,15 @@ class AuthService:
     
     @staticmethod
     def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
-        """
-        Authenticate a user by email and password.
-        
-        Args:
-            db: Database session
-            email: User's email address
-            password: User's plain text password
-            
-        Returns:
-            User object if authentication successful, None otherwise
-        """
         try:
             normalized_email = AuthService._normalize_email(email)
 
-            # Get user by email
             user = AuthService._find_user_by_email(db, normalized_email)
             
             if not user:
                 logger.warning(f"Authentication failed: User not found - {normalized_email}")
                 return None
             
-            # Verify password
             if not verify_password(password, user.password_hash):
                 logger.warning(f"Authentication failed: Invalid password - {normalized_email}")
                 return None

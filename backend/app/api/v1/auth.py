@@ -1,7 +1,3 @@
-"""
-Authentication API endpoints.
-"""
-
 import logging
 from typing import Annotated
 
@@ -101,19 +97,6 @@ def register(
     user_data: UserRegister,
     db: Annotated[Session, Depends(get_db)]
 ) -> User:
-    """
-    Register a new user account.
-    
-    Args:
-        user_data: User registration data
-        db: Database session
-        
-    Returns:
-        Created user (without password)
-        
-    Raises:
-        HTTPException: If email already exists or registration fails
-    """
     logger.info(f"Registration attempt for email: {user_data.email}")
     return AuthService.register_user(db, user_data)
 
@@ -131,16 +114,6 @@ def login(
     response: Response,
     db: Annotated[Session, Depends(get_db)]
 ) -> Response:
-    """
-    Authenticate user and return JWT access token.
-    
-    Args:
-        credentials: User login credentials
-        db: Database session
-        
-    Returns:
-        Empty response with refreshed auth cookies
-    """
     logger.info(f"Login attempt for email: {credentials.email}")
     issued_tokens = AuthService.login_and_issue_tokens(
         db,
@@ -251,13 +224,4 @@ def logout(
 def get_current_user_info(
     current_user: Annotated[User, Depends(get_current_active_user)]
 ) -> User:
-    """
-    Get current authenticated user information.
-    
-    Args:
-        current_user: Current authenticated user from JWT token
-        
-    Returns:
-        Current user information (without password)
-    """
     return current_user

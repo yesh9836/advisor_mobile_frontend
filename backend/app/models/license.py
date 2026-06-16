@@ -39,14 +39,12 @@ class License(Base):
         UniqueConstraint("user_id", "state", name="uq_licenses_user_state"),
     )
 
-    # Primary key
     id: Mapped[int] = mapped_column(
         BigInteger,
         primary_key=True,
         autoincrement=True,
     )
 
-    # Foreign keys
     user_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("users.id", onupdate="CASCADE", ondelete="CASCADE"),
@@ -68,19 +66,16 @@ class License(Base):
         index=True,
     )
 
-    # License details
     state: Mapped[str] = mapped_column(String(2), nullable=False)
     license_number: Mapped[str] = mapped_column(String(80), nullable=False)
     license_type: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
 
-    # Document storage
     document_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
     @property
     def has_document(self) -> bool:
         return bool(self.document_path)
 
-    # Verification workflow
     verification_status: Mapped[str] = mapped_column(
         SQLEnum("pending", "verified", "rejected", name="license_verification_status_enum"),
         nullable=False,
@@ -90,18 +85,14 @@ class License(Base):
 
     verified_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime(), nullable=True)
 
-    # Rejection reason (if applicable)
     rejection_reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
-    # Latest admin review metadata
     reviewed_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime(), nullable=True)
 
-    # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(), nullable=False, default=utcnow, server_default=text("CURRENT_TIMESTAMP")
     )
 
-    # Relationships
     user: Mapped["User"] = relationship(
         "User",
         back_populates="licenses",

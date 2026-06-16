@@ -15,9 +15,6 @@ def _normalize_email_value(value: object) -> object:
 
 
 class UserRegister(BaseModel):
-    """
-    Schema for user registration.
-    """
     email: EmailStr
     password: str = Field(..., min_length=8, description="Password must be at least 8 characters")
     name: str = Field(..., min_length=1, max_length=150)
@@ -58,9 +55,6 @@ class UserRegister(BaseModel):
 
 
 class UserLogin(BaseModel):
-    """
-    Schema for user login.
-    """
     email: EmailStr
     password: str
     
@@ -82,9 +76,6 @@ class UserLogin(BaseModel):
 
 
 class TokenData(BaseModel):
-    """
-    Schema for decoded token data.
-    """
     email: Optional[str] = None
     user_id: Optional[int] = Field(default=None, alias="uid")
     family_id: Optional[str] = Field(default=None, alias="fid")
@@ -96,8 +87,6 @@ class TokenData(BaseModel):
 
 
 class PasswordResetRequest(BaseModel):
-    """Schema for forgot-password request."""
-
     email: EmailStr
 
     @field_validator("email", mode="before")
@@ -107,13 +96,9 @@ class PasswordResetRequest(BaseModel):
 
 
 class PasswordResetRequestResponse(BaseModel):
-    """Generic response for password reset requests."""
-
     message: str
 
 
 class PasswordResetConfirm(BaseModel):
-    """Schema for reset-password confirmation."""
-
     token: str = Field(..., min_length=16, max_length=512)
     new_password: str = Field(..., min_length=8, description="Password must be at least 8 characters")

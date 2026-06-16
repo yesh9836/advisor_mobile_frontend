@@ -85,19 +85,15 @@ def generate_leads_csv_stream(leads: List[Lead], prepend_message: str = "") -> G
     buffer = io.StringIO(newline="")
     writer = csv.DictWriter(buffer, fieldnames=LEAD_CSV_HEADERS)
 
-    # 1. Yield Prepend Message (if any)
     if prepend_message:
         yield prepend_message + "\n"
 
-    # 2. Write Header
     writer.writeheader()
     yield buffer.getvalue()
     
-    # Clear buffer
     buffer.seek(0)
     buffer.truncate(0)
 
-    # 3. Write Rows
     for lead in leads:
         row = {}
         for field in LEAD_CSV_HEADERS:
@@ -110,15 +106,11 @@ def generate_leads_csv_stream(leads: List[Lead], prepend_message: str = "") -> G
         writer.writerow(neutralize_csv_row(row))
         yield buffer.getvalue()
         
-        # Clear buffer for next row
         buffer.seek(0)
         buffer.truncate(0)
 
 
 def parse_leads_csv(file: UploadFile) -> List[dict]:
-    """
-    Parse uploaded CSV file into list of dicts.
-    """
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided")
 

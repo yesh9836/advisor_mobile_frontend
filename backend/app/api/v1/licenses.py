@@ -37,18 +37,6 @@ async def submit_license(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ) -> LicenseResponse:
-    """
-    Submit a new license for admin verification.
-    
-    The license document will be reviewed by an administrator.
-    
-    Requirements:
-    - State must be a valid 2-letter code
-    - License number is required
-    - Document must be PDF, JPG, JPEG, or PNG
-    - Maximum file size: 10 MB
-    """
-    # Create schema for validation
     try:
         license_data = LicenseCreate(
             state=state,
@@ -61,7 +49,6 @@ async def submit_license(
             detail=exc.errors(include_url=False, include_context=False),
         ) from exc
 
-    # Submit license
     license = await LicenseService.submit_license(
         db=db,
         user_id=current_user.id,
@@ -81,11 +68,6 @@ def get_my_licenses(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ) -> List[LicenseResponse]:
-    """
-    Get all licenses for the current user.
-    
-    Returns licenses ordered by submission date (newest first).
-    """
     licenses = LicenseService.get_user_licenses(db=db, user_id=current_user.id)
     return [LicenseResponse.model_validate(license) for license in licenses]
 
@@ -99,14 +81,8 @@ def get_pending_licenses(
     current_admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> List[LicenseWithUser]:
-    """
-    Get all pending licenses awaiting admin review.
-    
-    Admin only. Returns licenses ordered by submission date (oldest first).
-    """
     licenses = LicenseService.get_pending_licenses(db=db)
     
-    # Convert to response schema with user details
     response = []
     for license in licenses:
         license_dict = LicenseResponse.model_validate(license).model_dump()
@@ -128,11 +104,6 @@ def get_processed_licenses(
     current_admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> List[AdminLicenseDecisionRow]:
-    """
-    Get licenses currently in approved/rejected states for admin visibility.
-
-    Admin only. Returns licenses ordered by latest decision timestamp (newest first).
-    """
     rows = LicenseService.get_processed_licenses(
         db=db,
         advisor_id=advisor_id,
@@ -173,12 +144,6 @@ def approve_license(
     current_admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> LicenseResponse:
-    """
-    Approve a pending license.
-    
-    Admin only. Sets the license status to 'verified' and records
-    the approving admin and timestamp.
-    """
     license = LicenseService.approve_license(
         db=db,
         license_id=license_id,
@@ -199,12 +164,6 @@ def reject_license(
     current_admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> LicenseResponse:
-    """
-    Reject a pending license.
-    
-    Admin only. Sets the license status to 'rejected' and records
-    the rejection reason.
-    """
     license = LicenseService.reject_license(
         db=db,
         license_id=license_id,
@@ -227,11 +186,6 @@ async def resubmit_license(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ) -> LicenseResponse:
-    """
-    Resubmit a rejected license for another admin review cycle.
-
-    Advisors can only resubmit their own rejected licenses.
-    """
     if current_user.role != "advisor":
         raise HTTPException(status_code=403, detail="Only advisors can resubmit licenses")
 
@@ -256,17 +210,11 @@ def get_license(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ) -> LicenseResponse:
-    """
-    Get a specific license by ID.
-    
-    Users can only view their own licenses unless they are admin.
-    """
     license = LicenseService.get_license_by_id(db=db, license_id=license_id)
     
     if not license:
         raise HTTPException(status_code=404, detail="License not found")
     
-    # Check permissions: user can only view their own licenses, admins can view all
     if license.user_id != current_user.id and current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized to view this license")
     
@@ -286,13 +234,6 @@ def download_license_document(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ) -> FileResponse:
-    """
-    Download the uploaded document for a license.
-
-    Access rules:
-    - Admin users can download any license document
-    - Advisors can download only their own license documents
-    """
     license = LicenseService.get_license_by_id(db=db, license_id=license_id)
     if not license:
         raise HTTPException(status_code=404, detail="License not found")

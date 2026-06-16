@@ -7,8 +7,6 @@ from app.utils.us_states import normalize_and_validate_us_state_code
 
 
 class LicenseCreate(BaseModel):
-    """Schema for creating a new license submission."""
-    
     state: str = Field(
         ...,
         min_length=2,
@@ -30,24 +28,19 @@ class LicenseCreate(BaseModel):
     @field_validator("state")
     @classmethod
     def validate_state_uppercase(cls, v: str) -> str:
-        """Normalize and validate a US state code."""
         return normalize_and_validate_us_state_code(v)
 
     @field_validator("license_number")
     @classmethod
     def validate_license_number(cls, v: str) -> str:
-        """Trim whitespace from license number."""
         return v.strip()
 
 
 class LicenseApprove(BaseModel):
-    """Schema for approving a license (no body needed)."""
     pass
 
 
 class LicenseReject(BaseModel):
-    """Schema for rejecting a license."""
-    
     rejection_reason: str = Field(
         ...,
         min_length=1,
@@ -57,8 +50,6 @@ class LicenseReject(BaseModel):
 
 
 class LicenseResponse(BaseModel):
-    """Schema for license response."""
-    
     id: int
     user_id: int
     state: str
@@ -77,8 +68,6 @@ class LicenseResponse(BaseModel):
 
 
 class LicenseWithUser(LicenseResponse):
-    """Schema for license with user details (for admin views)."""
-    
     user_name: str
     user_email: str
 
@@ -88,8 +77,6 @@ class LicenseWithUser(LicenseResponse):
 
 
 class AdminLicenseDecisionRow(BaseModel):
-    """Schema for admin processed-license decision table rows."""
-
     license_id: int
     user_id: int
     user_name: str

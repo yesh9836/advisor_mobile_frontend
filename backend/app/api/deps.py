@@ -1,7 +1,3 @@
-"""
-API dependencies for database session management and authentication.
-"""
-
 import logging
 from typing import Annotated, Generator
 
@@ -40,12 +36,6 @@ def validate_csrf_for_cookie_auth(
 
 
 def get_db() -> Generator[Session, None, None]:
-    """
-    Get database session.
-    
-    Yields:
-        Database session
-    """
     db = SessionLocal()
     try:
         yield db
@@ -57,19 +47,6 @@ def get_current_user(
     request: Request,
     db: Annotated[Session, Depends(get_db)]
 ) -> User:
-    """
-    Get current authenticated user from JWT token.
-    
-    Args:
-        request: Incoming request with auth cookies
-        db: Database session
-        
-    Returns:
-        Current authenticated User
-        
-    Raises:
-        HTTPException: If token is invalid or user not found
-    """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -83,7 +60,6 @@ def get_current_user(
 
         validate_csrf_for_cookie_auth(request)
         
-        # Decode JWT token
         payload = decode_access_token(token)
         token_data = TokenData.model_validate(payload)
         if token_data.token_type != "access":
@@ -97,7 +73,6 @@ def get_current_user(
         logger.warning(f"JWT validation failed: {e}")
         raise credentials_exception
     
-    # Get user from database
     user = db.query(User).filter(User.id == token_data.user_id).first()
     
     if user is None:
@@ -128,15 +103,6 @@ def get_current_user(
 def get_current_active_user(
     current_user: Annotated[User, Depends(get_current_user)]
 ) -> User:
-    """
-    Get current active user.
-    
-    Args:
-        current_user: Current authenticated user
-        
-    Returns:
-        Current active User
-    """
     if not current_user.is_active:
         logger.warning(
             "Inactive account access attempt by user %s (%s)",
@@ -154,18 +120,6 @@ def get_current_active_user(
 def require_admin(
     current_user: Annotated[User, Depends(get_current_active_user)]
 ) -> User:
-    """
-    Require current user to be an admin.
-    
-    Args:
-        current_user: Current authenticated user
-        
-    Returns:
-        Current user if they are an admin
-        
-    Raises:
-        HTTPException: If user is not an admin (403 Forbidden)
-    """
     if current_user.role != "admin":
         logger.warning(
             f"Unauthorized admin access attempt by user {current_user.id} "
@@ -182,9 +136,6 @@ def require_admin(
 def require_advisor(
     current_user: Annotated[User, Depends(get_current_active_user)]
 ) -> User:
-    """
-    Require current user to be an advisor.
-    """
     if current_user.role != "advisor":
         logger.warning(
             "Unauthorized advisor access attempt by user %s (%s) with role '%s'",

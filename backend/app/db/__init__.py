@@ -1,9 +1,3 @@
-"""
-Database package.
-
-Provides database session and initialization utilities.
-"""
-
 from .session import engine, SessionLocal, get_db
 
 __all__ = [

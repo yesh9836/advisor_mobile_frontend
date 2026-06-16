@@ -13,7 +13,6 @@ from app.core.security import get_password_hash
 from app.models.purchase import LeadPackage
 from app.models.user import User
 
-# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -64,7 +63,6 @@ def seed_plans(db: Session):
     _warn_if_placeholder_price_id("Pro", "PRO", pro_price_id)
     _warn_if_placeholder_price_id("Unlimited", "UNLIMITED", unlimited_price_id)
 
-    # Define your plans based on Business Rules
     plans = [
         {
             "name": "Basic",

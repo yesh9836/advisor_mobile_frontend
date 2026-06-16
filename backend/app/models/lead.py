@@ -64,58 +64,48 @@ class Lead(Base):
 
     __tablename__ = "leads"
 
-    # Primary key
     id: Mapped[int] = mapped_column(
         BigInteger,
         primary_key=True,
         autoincrement=True,
     )
 
-    # Source tracking
     source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
 
-    # Location (state_code is required)
     state_code: Mapped[str] = mapped_column(String(2), nullable=False, index=True)
     zip_code: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
 
-    # Contact info
     first_name: Mapped[Optional[str]] = mapped_column(String(80), nullable=True, index=True)
     last_name: Mapped[Optional[str]] = mapped_column(String(80), nullable=True, index=True)
     mobile_phone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, index=True)
     preferred_follow_up_method: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
     best_time_to_reach: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
 
-    # Retirement timeline / goals
     retirement_timeline: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
     confidence_in_long_term_plan: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
     most_important_retirement_activity: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
     planning_to_relocate_retirement: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     expected_retirement_income_source: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
 
-    # Personal / risk / preferences
     overall_health: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
     money_management_style: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     investor_profile_statement: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     investment_comfort_level: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
     main_purpose_for_investing: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
-    # Financial snapshot (ranges)
     retirement_savings_range: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
     annual_household_income_range: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
     total_investable_assets_range: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
     monthly_savings_range: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
     wants_to_improve_strategy_timing: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
 
-    # Current strategies / products
     current_investment_strategies: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     has_financial_advisor: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
     advisor_local_preference: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     owns_annuity: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
 
-    # Free text
     additional_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(),
         nullable=False, 
@@ -131,7 +121,6 @@ class Lead(Base):
         server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"),
     )
 
-    # Relationships
     downloads: Mapped[list["LeadDownload"]] = relationship(
         "LeadDownload",
         back_populates="lead",
@@ -220,14 +209,12 @@ class LeadDownload(Base):
 
     __tablename__ = "lead_downloads"
 
-    # Primary key
     id: Mapped[int] = mapped_column(
         BigInteger,
         primary_key=True,
         autoincrement=True,
     )
 
-    # Foreign keys
     user_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("users.id", onupdate="CASCADE", ondelete="CASCADE"),
@@ -248,7 +235,6 @@ class LeadDownload(Base):
         index=True,
     )
 
-    # Download tracking
     downloaded_at: Mapped[datetime] = mapped_column(
         UTCDateTime(),
         nullable=False,
@@ -257,10 +243,8 @@ class LeadDownload(Base):
         index=True,
     )
 
-    # Batch tracking (for grouping downloads from same CSV export)
     csv_batch_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
 
-    # Relationships
     user: Mapped["User"] = relationship("User", back_populates="lead_downloads")
     lead: Mapped["Lead"] = relationship("Lead", back_populates="downloads")
     purchase: Mapped[Optional["LeadPurchase"]] = relationship("LeadPurchase", back_populates="funded_downloads")

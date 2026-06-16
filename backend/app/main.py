@@ -1,7 +1,3 @@
-"""
-FastAPI application entry point.
-"""
-
 from contextlib import asynccontextmanager
 import logging
 from typing import Any, Optional
@@ -117,7 +113,6 @@ app.include_router(api_router, prefix="/api/v1")
 
 @app.get("/")
 def root():
-    """Root endpoint."""
     return {
         "name": settings.APP_NAME,
         "version": "1.0.0",
@@ -127,19 +122,16 @@ def root():
 
 @app.get("/health")
 def health_check():
-    """Backward-compatible liveness endpoint."""
     return {"status": "healthy"}
 
 
 @app.get("/health/live")
 def health_live():
-    """Liveness endpoint."""
     return {"status": "healthy"}
 
 
 @app.get("/health/ready")
 def health_ready():
-    """Readiness endpoint."""
     limiter_status = get_rate_limiter_status_snapshot()
     status_text = "unhealthy" if is_rate_limiter_critical_unavailable() else "healthy"
     database_status = _check_database_readiness()

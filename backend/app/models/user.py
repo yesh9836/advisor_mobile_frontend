@@ -37,20 +37,17 @@ class User(Base):
 
     __tablename__ = "users"
 
-    # Primary key
     id: Mapped[int] = mapped_column(
         BigInteger,
         primary_key=True,
         autoincrement=True,
     )
 
-    # User details
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
-    # Role
     role: Mapped[str] = mapped_column(
         SQLEnum("advisor", "admin", name="user_role_enum"),
         nullable=False,
@@ -58,7 +55,6 @@ class User(Base):
         server_default="advisor",
     )
 
-    # Stripe integration
     stripe_customer_id: Mapped[Optional[str]] = mapped_column(
         String(100), 
         nullable=True, 
@@ -66,7 +62,6 @@ class User(Base):
         index=True
     )
 
-    # Account lifecycle
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
@@ -86,7 +81,6 @@ class User(Base):
         index=True,
     )
 
-    # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(),
         nullable=False, 
@@ -94,7 +88,6 @@ class User(Base):
         server_default=text("CURRENT_TIMESTAMP")
     )
 
-    # Relationships
     licenses: Mapped[List["License"]] = relationship(
         "License",
         back_populates="user",

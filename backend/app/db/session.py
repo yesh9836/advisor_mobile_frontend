@@ -20,17 +20,15 @@ def _configure_mysql_utc_session(target_engine) -> None:
             cursor.close()
 
 
-# Create database engine
 engine = create_engine(
     settings.DATABASE_URL,
     pool_size=settings.DB_POOL_SIZE,
     max_overflow=settings.DB_MAX_OVERFLOW,
-    pool_pre_ping=True,  # Verify connections before using
-    echo=settings.DB_ECHO,  # Log SQL queries (set to True for debugging)
+    pool_pre_ping=True,
+    echo=settings.DB_ECHO,
 )
 _configure_mysql_utc_session(engine)
 
-# Create session factory
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,
@@ -47,8 +45,6 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
-
-# --- WordPress Database (For Import Tool) ---
 
 def get_wordpress_engine():
     """

@@ -32,14 +32,12 @@ class AuditLog(Base):
 
     __tablename__ = "audit_logs"
 
-    # Primary key
     id: Mapped[int] = mapped_column(
         BigInteger,
         primary_key=True,
         autoincrement=True,
     )
 
-    # Foreign key
     actor_user_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("users.id", onupdate="CASCADE", ondelete="RESTRICT"),
@@ -47,7 +45,6 @@ class AuditLog(Base):
         index=True,
     )
 
-    # Action details
     action: Mapped[str] = mapped_column(String(100), nullable=False)
     entity_type: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     entity_id: Mapped[Optional[int]] = mapped_column(
@@ -56,11 +53,9 @@ class AuditLog(Base):
         index=True,
     )
 
-    # Additional context
     meta_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
 
-    # Timestamp
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(),
         nullable=False,
@@ -69,7 +64,6 @@ class AuditLog(Base):
         index=True,
     )
 
-    # Relationships
     actor_user: Mapped["User"] = relationship("User", back_populates="audit_logs")
 
     def __repr__(self) -> str:

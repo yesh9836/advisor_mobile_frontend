@@ -37,8 +37,6 @@ EXTENSION_TO_MIME = {
 }
 
 class LicenseService:
-    """Service for managing license verification workflow."""
-
     @staticmethod
     def _upload_root() -> Path:
         return settings.UPLOAD_ROOT
@@ -111,15 +109,6 @@ class LicenseService:
 
     @staticmethod
     def _validate_file(file: UploadFile) -> None:
-        """
-        Validate uploaded file.
-
-        Args:
-            file: Uploaded file to validate
-
-        Raises:
-            HTTPException: If file is invalid
-        """
         if not file.filename:
             raise HTTPException(status_code=400, detail="No filename provided")
 
@@ -157,19 +146,6 @@ class LicenseService:
 
     @staticmethod
     async def _save_document(user_id: int, file: UploadFile) -> str:
-        """
-        Save uploaded document to filesystem.
-
-        Args:
-            user_id: ID of user uploading the document
-            file: Uploaded file
-
-        Returns:
-            Relative path to saved document
-
-        Raises:
-            HTTPException: If file save fails
-        """
         try:
             upload_root = LicenseService._upload_root()
             upload_dir = upload_root / "licenses" / str(user_id)
@@ -195,7 +171,6 @@ class LicenseService:
 
                             size += len(content)
                             if size > max_upload_size_bytes:
-                                # Clean up the partial file
                                 await out_file.close()
                                 if file_path.exists():
                                     os.remove(file_path)
@@ -237,24 +212,8 @@ class LicenseService:
         data: LicenseCreate,
         file: UploadFile,
     ) -> License:
-        """
-        Submit a new license for verification.
-
-        Args:
-            db: Database session
-            user_id: ID of user submitting license
-            data: License data
-            file: Uploaded license document
-
-        Returns:
-            Created License object
-
-        Raises:
-            HTTPException: If validation fails or duplicate exists
-        """
         LicenseService._validate_file(file)
 
-        # Check for any existing license for same advisor + state.
         existing = (
             db.query(License)
             .filter(
@@ -272,7 +231,6 @@ class LicenseService:
                 detail=f"You already have a license for state {data.state.upper()}",
             )
 
-        # Check for duplicate license_number + state (across all users)
         duplicate = (
             db.query(License)
             .filter(
@@ -290,10 +248,8 @@ class LicenseService:
                 detail=f"License {data.license_number} for state {data.state} already exists",
             )
 
-        # 2. Heavy I/O (Async)
         document_path = await LicenseService._save_document(user_id, file)
 
-        # 3. Create Record
         try:
             license = License(
                 user_id=user_id,
@@ -340,7 +296,6 @@ class LicenseService:
             raise HTTPException(status_code=500, detail="Failed to create license") from exc
         except Exception as e:
             db.rollback()
-            # Try to delete uploaded file if database operation failed
             try:
                 if document_path:
                     LicenseService._delete_document_if_safe(document_path)
@@ -358,9 +313,6 @@ class LicenseService:
         file: UploadFile,
         license_type: Optional[str] = None,
     ) -> License:
-        """
-        Resubmit a rejected license by replacing its document and returning it to pending.
-        """
         license = db.query(License).filter(License.id == license_id).first()
 
         if not license:
@@ -467,20 +419,6 @@ class LicenseService:
 
     @staticmethod
     def approve_license(db: Session, license_id: int, admin_id: int) -> License:
-        """
-        Approve a pending license.
-
-        Args:
-            db: Database session
-            license_id: ID of license to approve
-            admin_id: ID of admin user approving
-
-        Returns:
-            Updated License object
-
-        Raises:
-            HTTPException: If license not found or not pending
-        """
         license = db.query(License).filter(License.id == license_id).first()
 
         if not license:
@@ -496,7 +434,7 @@ class LicenseService:
             license.verification_status = "verified"
             license.verified_at = datetime.now(timezone.utc)
             license.verified_by = admin_id
-            license.rejection_reason = None  # Clear any previous rejection reason
+            license.rejection_reason = None
             license.reviewed_at = license.verified_at
             license.reviewed_by = admin_id
 
@@ -526,21 +464,6 @@ class LicenseService:
         admin_id: int,
         reason: str,
     ) -> License:
-        """
-        Reject a pending license.
-
-        Args:
-            db: Database session
-            license_id: ID of license to reject
-            admin_id: ID of admin user rejecting
-            reason: Reason for rejection
-
-        Returns:
-            Updated License object
-
-        Raises:
-            HTTPException: If license not found or not pending
-        """
         license = db.query(License).filter(License.id == license_id).first()
 
         if not license:
@@ -585,16 +508,6 @@ class LicenseService:
 
     @staticmethod
     def get_user_licenses(db: Session, user_id: int) -> List[License]:
-        """
-        Get all licenses for a user.
-
-        Args:
-            db: Database session
-            user_id: ID of user
-
-        Returns:
-            List of License objects ordered by created_at desc
-        """
         return (
             db.query(License)
             .filter(License.user_id == user_id)
@@ -604,15 +517,6 @@ class LicenseService:
 
     @staticmethod
     def get_pending_licenses(db: Session) -> List[License]:
-        """
-        Get all pending licenses (admin view).
-
-        Args:
-            db: Database session
-
-        Returns:
-            List of pending License objects with user details
-        """
         return (
             db.query(License)
             .join(User, License.user_id == User.id)
@@ -627,11 +531,6 @@ class LicenseService:
         advisor_id: Optional[int] = None,
         advisor_query: Optional[str] = None,
     ) -> List[dict]:
-        """
-        Get all currently processed licenses (admin view).
-
-        Processed means the latest status is approved or rejected.
-        """
         resubmission_counts = (
             db.query(
                 LicenseResubmission.license_id.label("license_id"),
@@ -688,32 +587,10 @@ class LicenseService:
 
     @staticmethod
     def get_license_by_id(db: Session, license_id: int) -> Optional[License]:
-        """
-        Get license by ID.
-
-        Args:
-            db: Database session
-            license_id: ID of license
-
-        Returns:
-            License object or None if not found
-        """
         return db.query(License).filter(License.id == license_id).first()
 
     @staticmethod
     def resolve_document_for_download(document_path: Optional[str]) -> tuple[Path, str]:
-        """
-        Resolve and validate a stored license document path for secure downloads.
-
-        Args:
-            document_path: Stored file path from license record
-
-        Returns:
-            Tuple of resolved file path and media type
-
-        Raises:
-            HTTPException: If the path is invalid, outside upload dir, missing, or unsupported
-        """
         if not document_path:
             raise HTTPException(status_code=404, detail="Document not available")
 

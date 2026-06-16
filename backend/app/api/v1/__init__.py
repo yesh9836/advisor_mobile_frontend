@@ -1,7 +1,3 @@
-"""
-API v1 router aggregation.
-"""
-
 from fastapi import APIRouter
 
 from app.api.v1 import admin, auth, delivery_settings, goals, leads, licenses, purchases, webhooks
