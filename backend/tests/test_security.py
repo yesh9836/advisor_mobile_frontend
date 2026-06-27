@@ -67,6 +67,14 @@ def _find_sensitive_health_keys(payload):
     return found
 
 
+def test_production_runtime_does_not_require_persisted_initial_admin_password():
+    configured = Settings(
+        **_production_settings_kwargs(INITIAL_ADMIN_PASSWORD=""),
+    )
+
+    assert configured.INITIAL_ADMIN_PASSWORD == ""
+
+
 @pytest.fixture(autouse=True)
 def reset_rate_limit_observability():
     reset_rate_limit_metrics()

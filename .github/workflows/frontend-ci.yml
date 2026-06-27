@@ -76,7 +76,7 @@ jobs:
           FRONTEND_URL: http://127.0.0.1:4173
         run: |
           alembic upgrade head
-          python scripts/seed_full_stack_data.py
+          python tests/fixtures/seed_frontend_integration.py
 
       - name: Start backend API for integration e2e
         working-directory: backend

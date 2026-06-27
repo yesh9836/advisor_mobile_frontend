@@ -217,7 +217,7 @@ class Settings(BaseSettings):
 
     # Admin
     INITIAL_ADMIN_EMAIL: str = "admin@example.com"
-    INITIAL_ADMIN_PASSWORD: str = "change-this-password"
+    INITIAL_ADMIN_PASSWORD: str = ""
     INITIAL_ADMIN_NAME: str = "System Admin"
 
     # Pagination
@@ -523,17 +523,6 @@ class Settings(BaseSettings):
         secret_key_lower = self.SECRET_KEY.lower()
         if len(self.SECRET_KEY) < 32 or any(marker in secret_key_lower for marker in weak_secret_markers):
             raise ValueError("SECRET_KEY must be a strong value in production (32+ chars, non-default)")
-
-        password = self.INITIAL_ADMIN_PASSWORD
-        if (
-            len(password) < 12
-            or password.lower() == password
-            or password.upper() == password
-            or not any(ch.isdigit() for ch in password)
-            or not any(not ch.isalnum() for ch in password)
-            or "change-this" in password.lower()
-        ):
-            raise ValueError("INITIAL_ADMIN_PASSWORD must be strong in production")
 
         if not self.DB_PASSWORD:
             raise ValueError("DB_PASSWORD must be set in production")

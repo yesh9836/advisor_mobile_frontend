@@ -1,3 +1,5 @@
+"""Create the database state required by the frontend integration smoke test."""
+
 import logging
 import os
 import sys

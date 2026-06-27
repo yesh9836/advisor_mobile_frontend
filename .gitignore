@@ -40,3 +40,5 @@ frontend/playwright-report/
 
 # Seed
 backend/scripts/*.csv
+backend/scripts/seed_data.py
+backend/scripts/seed_full_stack_data.py
