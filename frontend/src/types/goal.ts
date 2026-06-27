@@ -23,7 +23,6 @@ export interface GoalDerived {
   appointments_needed: number;
   leads_needed: number;
   closed_deals_ytd: number;
-  estimated_deals_from_earned_ytd: number;
   income_progress_percent: number;
   deals_remaining: number;
   appointments_remaining: number;
@@ -40,6 +39,7 @@ export interface GoalPackageRecommendation {
   credits_per_package: number;
   packages_needed: number;
   total_cost_cents: number;
+  overage_leads: number;
   estimated_cost_per_lead_cents: number;
   state_limit: number | null;
   features: string[] | Record<string, unknown> | null;

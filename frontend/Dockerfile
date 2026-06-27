@@ -6,6 +6,7 @@ COPY frontend/package.json frontend/package-lock.json /app/
 RUN npm ci
 
 COPY frontend/ /app/
+COPY shared/ /shared/
 
 ARG VITE_API_BASE_URL
 ARG VITE_APP_BASE_PATH=

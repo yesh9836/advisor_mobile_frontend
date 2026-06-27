@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -20,17 +20,29 @@ def _goal_payload(*, target_year: int = 2026, earned_ytd_cents: int = 7_800_000)
     }
 
 
-def test_goal_service_calculates_defaults_and_caps_over_goal(db: Session, user_factory) -> None:
+def test_goal_service_calculates_defaults_and_completes_when_income_goal_met(
+    db: Session,
+    user_factory,
+) -> None:
     advisor = user_factory(role="advisor")
     goal = GoalService.get_or_create_goal(db=db, user=advisor, target_year=2026)
 
     response = GoalService.build_goal_response(db=db, user=advisor, goal=goal)
 
-    assert response["goal"].annual_income_goal_cents == 25_000_000
-    assert response["derived"]["deals_needed"] == 72
-    assert response["derived"]["appointments_needed"] == 600
-    assert response["derived"]["leads_needed"] == 2400
+    assert response["goal"].annual_income_goal_cents == 1_000_000
+    assert response["derived"]["deals_needed"] == 3
+    assert response["derived"]["appointments_needed"] == 25
+    assert response["derived"]["leads_needed"] == 100
     assert response["derived"]["closed_deals_ytd"] == 0
+
+    goal.annual_income_goal_cents = 25_000_000
+    goal.earned_ytd_cents = 7_800_000
+    earned_ytd_derived = GoalService.calculate_derived_values(goal=goal, closed_deals_ytd=0)
+
+    assert earned_ytd_derived["income_progress_percent"] == 31
+    assert earned_ytd_derived["deals_remaining"] == 50
+    assert earned_ytd_derived["appointments_remaining"] == 410
+    assert earned_ytd_derived["leads_remaining"] == 1639
 
     goal.earned_ytd_cents = 30_000_000
     derived = GoalService.calculate_derived_values(goal=goal, closed_deals_ytd=0)
@@ -39,6 +51,85 @@ def test_goal_service_calculates_defaults_and_caps_over_goal(db: Session, user_f
     assert derived["deals_remaining"] == 0
     assert derived["appointments_remaining"] == 0
     assert derived["leads_remaining"] == 0
+    assert derived["pacing"]["status"] == "goal_met"
+    assert derived["pacing"]["message"] == "Annual income goal met."
+
+    closed_deal_derived = GoalService.calculate_derived_values(goal=goal, closed_deals_ytd=3)
+
+    assert closed_deal_derived["income_progress_percent"] == 100
+    assert closed_deal_derived["deals_remaining"] == 0
+    assert closed_deal_derived["appointments_remaining"] == 0
+    assert closed_deal_derived["leads_remaining"] == 0
+
+
+def test_goal_service_returns_no_packages_when_income_goal_met(
+    db: Session,
+    user_factory,
+    plan_factory,
+) -> None:
+    advisor = user_factory(role="advisor")
+    plan_factory(name="Starter", price_cents=100, daily_download_limit=10)
+    goal = GoalService.update_goal(
+        db=db,
+        user=advisor,
+        payload=AdvisorGoalUpsertRequest(
+            **_goal_payload(target_year=2026, earned_ytd_cents=25_000_000)
+        ),
+    )
+
+    response = GoalService.build_goal_response(db=db, user=advisor, goal=goal)
+
+    assert response["derived"]["leads_remaining"] == 0
+    assert response["derived"]["pacing"]["status"] == "goal_met"
+    assert response["packages"] == []
+
+
+def test_goal_service_manual_earned_ytd_drives_remaining_volume_even_with_closed_deals(
+    db: Session,
+    user_factory,
+) -> None:
+    advisor = user_factory(role="advisor")
+    goal = GoalService.get_or_create_goal(db=db, user=advisor, target_year=2026)
+    goal.annual_income_goal_cents = 1_000_000
+    goal.average_commission_cents = 50_000
+    goal.earned_ytd_cents = 40_000
+    goal.appointment_to_deal_rate_bps = 300
+    goal.lead_to_appointment_rate_bps = 500
+
+    earned_400 = GoalService.calculate_derived_values(goal=goal, closed_deals_ytd=2)
+    goal.earned_ytd_cents = 100_000
+    earned_1000 = GoalService.calculate_derived_values(goal=goal, closed_deals_ytd=2)
+
+    assert earned_400["deals_remaining"] == 20
+    assert earned_400["appointments_remaining"] == 640
+    assert earned_400["leads_remaining"] == 12800
+    assert earned_1000["deals_remaining"] == 18
+    assert earned_1000["appointments_remaining"] == 600
+    assert earned_1000["leads_remaining"] == 12000
+
+
+def test_goal_service_changes_volume_within_average_commission_band(
+    db: Session,
+    user_factory,
+) -> None:
+    advisor = user_factory(role="advisor")
+    goal = GoalService.get_or_create_goal(db=db, user=advisor, target_year=2026)
+    goal.annual_income_goal_cents = 1_000_000
+    goal.average_commission_cents = 350_000
+    goal.earned_ytd_cents = 300_000
+    goal.appointment_to_deal_rate_bps = 500
+    goal.lead_to_appointment_rate_bps = 500
+
+    earned_3000 = GoalService.calculate_derived_values(goal=goal, closed_deals_ytd=0)
+    goal.earned_ytd_cents = 900_000
+    earned_9000 = GoalService.calculate_derived_values(goal=goal, closed_deals_ytd=0)
+
+    assert earned_3000["deals_remaining"] == 2
+    assert earned_3000["appointments_remaining"] == 40
+    assert earned_3000["leads_remaining"] == 800
+    assert earned_9000["deals_remaining"] == 1
+    assert earned_9000["appointments_remaining"] == 6
+    assert earned_9000["leads_remaining"] == 115
 
 
 def test_goal_service_counts_only_explicit_closed_deals_for_advisor_year(
@@ -84,10 +175,21 @@ def test_goal_service_package_recommendations_use_live_catalog(
     user_factory,
     plan_factory,
 ) -> None:
+    now = datetime.now(timezone.utc)
     advisor = user_factory(role="advisor")
-    plan_factory(name="Starter", price_cents=7_500, daily_download_limit=50)
-    plan_factory(name="Scale", price_cents=20_000, daily_download_limit=200)
-    plan_factory(name="Bulk", price_cents=45_000, daily_download_limit=600)
+    plan_factory(name="Starter", price_cents=100, daily_download_limit=10)
+    plan_factory(name="Scale", price_cents=200, daily_download_limit=10)
+    plan_factory(name="GoodFit", price_cents=350, daily_download_limit=100)
+    hidden = plan_factory(name="HiddenGoalPackage", price_cents=1, daily_download_limit=1000)
+    future = plan_factory(name="FutureGoalPackage", price_cents=1, daily_download_limit=1000)
+    expired = plan_factory(name="ExpiredGoalPackage", price_cents=1, daily_download_limit=1000)
+
+    hidden.features = {"credits_total": 1000, "catalog_visible": False}
+    future.features = {"credits_total": 1000, "catalog_visible": True}
+    future.effective_from = now + timedelta(days=1)
+    expired.features = {"credits_total": 1000, "catalog_visible": True}
+    expired.effective_to = now - timedelta(days=1)
+    db.commit()
 
     request_payload = _goal_payload(target_year=2026)
     goal = GoalService.update_goal(
@@ -100,11 +202,32 @@ def test_goal_service_package_recommendations_use_live_catalog(
     response = GoalService.build_goal_response(db=db, user=advisor, goal=goal)
     recommendations = response["packages"]
 
-    assert [item["name"].split("-")[0] for item in recommendations] == ["Starter", "Scale", "Bulk"]
-    assert recommendations[0]["credits_per_package"] == 50
+    assert [item["name"].split("-")[0] for item in recommendations] == ["GoodFit", "Starter", "Scale"]
     assert any(item["recommended"] for item in recommendations)
     best = next(item for item in recommendations if item["recommended"])
-    assert best["name"].startswith("Bulk-")
+    assert best["name"].startswith("GoodFit-")
+    assert not any(item["name"].startswith("HiddenGoalPackage-") for item in recommendations)
+    assert not any(item["name"].startswith("FutureGoalPackage-") for item in recommendations)
+    assert not any(item["name"].startswith("ExpiredGoalPackage-") for item in recommendations)
+
+
+def test_goal_service_package_recommendations_tie_break_by_overage_and_id(
+    db: Session,
+    plan_factory,
+) -> None:
+    larger_overage = plan_factory(name="LargerOverage", price_cents=100, daily_download_limit=100)
+    exact_fit = plan_factory(name="ExactFit", price_cents=100, daily_download_limit=95)
+    same_score_later_id = plan_factory(name="ExactFitLater", price_cents=100, daily_download_limit=95)
+
+    recommendations = GoalService.build_package_recommendations(db=db, leads_remaining=95)
+
+    assert [item["package_id"] for item in recommendations] == [
+        exact_fit.id,
+        same_score_later_id.id,
+        larger_overage.id,
+    ]
+    assert recommendations[0]["recommended"] is True
+    assert recommendations[0]["overage_leads"] == 0
 
 
 def test_goals_api_fetches_default_and_updates_saved_goal(
@@ -120,7 +243,10 @@ def test_goals_api_fetches_default_and_updates_saved_goal(
     assert get_response.status_code == 200, get_response.text
     default_payload = get_response.json()
     assert default_payload["goal"]["target_year"] == 2026
-    assert default_payload["goal"]["annual_income_goal_cents"] == 25_000_000
+    assert default_payload["goal"]["annual_income_goal_cents"] == 1_000_000
+    assert default_payload["derived"]["deals_needed"] == 3
+    assert default_payload["derived"]["appointments_needed"] == 25
+    assert default_payload["derived"]["leads_needed"] == 100
 
     put_response = client.put(
         "/api/v1/goals/me",
@@ -131,11 +257,10 @@ def test_goals_api_fetches_default_and_updates_saved_goal(
     assert put_response.status_code == 200, put_response.text
     data = put_response.json()
     assert data["goal"]["earned_ytd_cents"] == 7_800_000
-    assert data["derived"]["estimated_deals_from_earned_ytd"] == 22
     assert data["derived"]["income_progress_percent"] == 31
     assert data["derived"]["deals_remaining"] == 50
-    assert data["derived"]["appointments_remaining"] == 417
-    assert data["derived"]["leads_remaining"] == 1667
+    assert data["derived"]["appointments_remaining"] == 410
+    assert data["derived"]["leads_remaining"] == 1639
 
 
 def test_goals_api_enforces_advisor_auth_and_user_isolation(
@@ -170,7 +295,7 @@ def test_goals_api_enforces_advisor_auth_and_user_isolation(
     )
 
     assert advisor_response.status_code == 200
-    assert advisor_response.json()["goal"]["annual_income_goal_cents"] == 25_000_000
+    assert advisor_response.json()["goal"]["annual_income_goal_cents"] == 1_000_000
     assert admin_response.status_code == 403
 
 

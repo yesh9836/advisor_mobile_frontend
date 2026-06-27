@@ -27,6 +27,7 @@ const purchasePackageSchema: z.ZodType<PurchasePackage> = z
     currency: z.string(),
     state_limit: z.number().nullable(),
     daily_download_limit: z.number(),
+    credits_total: z.number().optional(),
     features: featuresSchema,
     stripe_price_id: z.string(),
     created_at: z.string(),
@@ -142,8 +143,12 @@ interface RequestOptions {
   signal?: AbortSignal;
 }
 
-export const getPackages = async (): Promise<PurchasePackage[]> => {
-  const response = await apiClient.get<PurchasePackage[]>("/purchases/packages");
+export const getPackages = async (
+  options: RequestOptions = {},
+): Promise<PurchasePackage[]> => {
+  const response = await apiClient.get<PurchasePackage[]>("/purchases/packages", {
+    signal: options.signal,
+  });
   return parseApiContract(
     z.array(purchasePackageSchema),
     response.data,

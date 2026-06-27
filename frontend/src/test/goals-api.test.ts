@@ -35,11 +35,10 @@ const goalResponse = {
     appointments_needed: 600,
     leads_needed: 2400,
     closed_deals_ytd: 2,
-    estimated_deals_from_earned_ytd: 22,
     income_progress_percent: 31,
     deals_remaining: 50,
     appointments_remaining: 417,
-    leads_remaining: 1667,
+    leads_remaining: 1668,
     recommended_monthly_leads: 239,
     pacing: {
       remaining_months: 7,
@@ -57,6 +56,7 @@ const goalResponse = {
       credits_per_package: 200,
       packages_needed: 9,
       total_cost_cents: 180_000,
+      overage_leads: 64,
       estimated_cost_per_lead_cents: 100,
       state_limit: null,
       features: null,
@@ -80,6 +80,22 @@ describe("goals API contract", () => {
       params: { target_year: 2026 },
       signal: undefined,
     });
+  });
+
+  it("accepts legacy package recommendations without overage leads", async () => {
+    const legacyGoalResponse = {
+      ...goalResponse,
+      packages: goalResponse.packages.map((item) => {
+        const legacyItem: Partial<typeof item> = { ...item };
+        delete legacyItem.overage_leads;
+        return legacyItem;
+      }),
+    };
+    mockedApiClient.get.mockResolvedValueOnce({ data: legacyGoalResponse });
+
+    const parsed = await getMyGoal();
+
+    expect(parsed.packages[0].overage_leads).toBe(0);
   });
 
   it("saves the goal and rejects invalid response contracts", async () => {

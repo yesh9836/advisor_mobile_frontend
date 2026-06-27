@@ -56,6 +56,32 @@ Production lead-management platform for financial advisors with one-time lead pa
   - production build,
   - Playwright e2e critical flows (auth cookies, CSRF, refresh, checkout return).
 
+## Local Development Setup
+
+Use Python 3.12 and Node 22. The repository includes `.python-version` and `.nvmrc` for version managers.
+
+Backend dependencies are installed from the tracked lockfile:
+
+```bash
+cd backend
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.lock
+```
+
+Frontend dependencies are installed from the npm lockfile:
+
+```bash
+cd frontend
+nvm use
+npm ci
+```
+
+Dependency notes:
+
+- `axios` is intentionally pinned at `1.13.4`; do not upgrade it without a focused security review.
+- Remaining Vite/esbuild audit findings are development-tooling findings that require a Vite 8 migration.
+
 ## Docker Deployment
 
 This repository now includes:

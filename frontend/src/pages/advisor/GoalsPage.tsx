@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { getMyGoal, saveMyGoal } from "@/api/goals";
-import { createCheckout } from "@/api/purchases";
+import { createCheckout, getPackages } from "@/api/purchases";
 import {
   basisPointsToPercentInput,
   calculateGoalPreview,
@@ -11,14 +11,15 @@ import {
   formatWholeMoney,
   parseMoneyToCents,
   parsePercentToBasisPoints,
-  recalculatePackageRecommendation,
+  packageCatalogToGoalRecommendation,
+  rankPackageRecommendations,
 } from "@/pages/advisor/goalCalculations";
 import type {
   AdvisorGoalResponse,
   AdvisorGoalUpdatePayload,
   GoalDerived,
-  GoalPackageRecommendation,
 } from "@/types/goal";
+import type { PurchasePackage } from "@/types/purchase";
 import { getApiErrorMessage } from "@/utils/api-error";
 import { isRequestCanceled, useLatestRequest } from "@/utils/request-control";
 
@@ -104,41 +105,11 @@ const validatePayload = (payload: AdvisorGoalUpdatePayload | null): string | nul
   return null;
 };
 
-const rankRecommendations = (
-  packages: GoalPackageRecommendation[],
-  leadsRemaining: number,
-): GoalPackageRecommendation[] => {
-  const recalculated = packages.map((item) =>
-    recalculatePackageRecommendation(item, leadsRemaining),
-  );
-  const best = recalculated.reduce<GoalPackageRecommendation | null>(
-    (currentBest, item) => {
-      if (!currentBest) {
-        return item;
-      }
-      if (item.total_cost_cents < currentBest.total_cost_cents) {
-        return item;
-      }
-      if (
-        item.total_cost_cents === currentBest.total_cost_cents &&
-        item.packages_needed < currentBest.packages_needed
-      ) {
-        return item;
-      }
-      return currentBest;
-    },
-    null,
-  );
-  return recalculated.map((item) => ({
-    ...item,
-    recommended: best?.package_id === item.package_id,
-  }));
-};
-
 const GoalsPage = () => {
   const [goalResponse, setGoalResponse] = useState<AdvisorGoalResponse | null>(
     null,
   );
+  const [purchasePackages, setPurchasePackages] = useState<PurchasePackage[]>([]);
   const [form, setForm] = useState<GoalFormState | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -152,11 +123,15 @@ const GoalsPage = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await getMyGoal(undefined, { signal });
+      const [response, packages] = await Promise.all([
+        getMyGoal(undefined, { signal }),
+        getPackages({ signal }),
+      ]);
       if (!isLatestRequest(requestId)) {
         return;
       }
       setGoalResponse(response);
+      setPurchasePackages(packages);
       setForm(toFormState(response));
     } catch (loadError) {
       if (!isLatestRequest(requestId) || isRequestCanceled(loadError)) {
@@ -164,6 +139,7 @@ const GoalsPage = () => {
       }
       setError(getApiErrorMessage(loadError, "Unable to load goals."));
       setGoalResponse(null);
+      setPurchasePackages([]);
       setForm(null);
     } finally {
       if (isLatestRequest(requestId)) {
@@ -193,8 +169,39 @@ const GoalsPage = () => {
     if (!goalResponse || !derived) {
       return [];
     }
-    return rankRecommendations(goalResponse.packages, derived.leads_remaining);
-  }, [derived, goalResponse]);
+    const livePackageRecommendations = purchasePackages.map(
+      packageCatalogToGoalRecommendation,
+    );
+    return rankPackageRecommendations(
+      livePackageRecommendations,
+      derived.leads_remaining,
+    );
+  }, [derived, goalResponse, purchasePackages]);
+
+  const recommendedPackage = useMemo(
+    () =>
+      packageRecommendations.find((item) => item.recommended) ??
+      packageRecommendations[0] ??
+      null,
+    [packageRecommendations],
+  );
+  const annualIncomeGoalMet = derived?.pacing.status === "goal_met";
+
+  const pacingMessage = useMemo(() => {
+    if (
+      !derived ||
+      !recommendedPackage ||
+      derived.recommended_monthly_leads <= 0 ||
+      recommendedPackage.credits_per_package <= 0
+    ) {
+      return derived?.pacing.message ?? "";
+    }
+
+    const monthlyPackages = Math.ceil(
+      derived.recommended_monthly_leads / recommendedPackage.credits_per_package,
+    );
+    return `${derived.pacing.message} That is about ${formatNumber(monthlyPackages)} ${recommendedPackage.name} package${monthlyPackages === 1 ? "" : "s"}/month.`;
+  }, [derived, recommendedPackage]);
 
   const updateField = (field: keyof GoalFormState, value: string) => {
     setForm((previous) => (previous ? { ...previous, [field]: value } : previous));
@@ -321,16 +328,8 @@ const GoalsPage = () => {
             <strong>{formatNumber(derived.leads_remaining)}</strong>
           </div>
           <div>
-            <span>Est. lead cost</span>
-            <strong>
-              {packageRecommendations.length > 0
-                ? formatWholeMoney(
-                    Math.min(
-                      ...packageRecommendations.map((item) => item.total_cost_cents),
-                    ),
-                  )
-                : "N/A"}
-            </strong>
+            <span>Closed YTD</span>
+            <strong>{formatNumber(derived.closed_deals_ytd)}</strong>
           </div>
         </div>
       </section>
@@ -461,14 +460,6 @@ const GoalsPage = () => {
               </div>
             </div>
           ))}
-          <div className="goals-actuals">
-            <span>Actual closed deals YTD</span>
-            <strong>{formatNumber(derived.closed_deals_ytd)}</strong>
-          </div>
-          <div className="goals-actuals">
-            <span>Estimated from manual earned YTD</span>
-            <strong>{formatNumber(derived.estimated_deals_from_earned_ytd)}</strong>
-          </div>
         </aside>
       </div>
 
@@ -476,53 +467,72 @@ const GoalsPage = () => {
         <div className="goals-recommendation-header">
           <div>
             <h2>Recommended Lead Volume</h2>
-            <p className="metric-note">
-              You need <strong>{formatNumber(derived.leads_remaining)} more leads</strong>{" "}
-              to close <strong>{formatNumber(derived.deals_remaining)} deals</strong>{" "}
-              and hit your goal.
-            </p>
+            {annualIncomeGoalMet ? (
+              <p className="metric-note">
+                Annual income goal met. No additional lead packages are recommended.
+              </p>
+            ) : (
+              <p className="metric-note">
+                Based on your funnel, you need{" "}
+                <strong>{formatNumber(derived.leads_remaining)} additional leads</strong>{" "}
+                to cover your remaining income gap.
+              </p>
+            )}
           </div>
           <span>Based on your funnel</span>
         </div>
 
-        {packageRecommendations.length === 0 ? (
+        {annualIncomeGoalMet ? (
+          <p className="metric-note">Annual income goal met.</p>
+        ) : packageRecommendations.length === 0 ? (
           <p className="metric-note">No current lead packages are available.</p>
         ) : (
           <div className="goals-package-grid">
-            {packageRecommendations.map((item) => (
-              <article
-                key={item.package_id}
-                className={`goals-package-card ${item.recommended ? "recommended" : ""}`}
-              >
-                {item.recommended && <span className="goals-package-pill">Recommended</span>}
-                <p>{item.name}</p>
-                <strong>
-                  {formatCompactMoney(item.estimated_cost_per_lead_cents, item.currency)}
-                  <small>/lead</small>
-                </strong>
-                <span>
-                  {formatNumber(item.packages_needed)} package
-                  {item.packages_needed === 1 ? "" : "s"} x{" "}
-                  {formatNumber(item.credits_per_package)} leads
-                </span>
-                <b>{formatWholeMoney(item.total_cost_cents, item.currency)}</b>
-                <button
-                  type="button"
-                  className={item.recommended ? "btn btn-secondary" : "btn btn-primary"}
-                  onClick={() => void handleCheckout(item.package_id)}
-                  disabled={checkoutPackageId !== null || saving}
+            {packageRecommendations.map((item) => {
+              const coveredLeads = item.packages_needed * item.credits_per_package;
+              return (
+                <article
+                  key={item.package_id}
+                  className={`goals-package-card ${item.recommended ? "recommended" : ""}`}
                 >
-                  {checkoutPackageId === item.package_id
-                    ? "Opening..."
-                    : "Buy Package"}
-                </button>
-              </article>
-            ))}
+                  {item.recommended && <span className="goals-package-pill">Recommended</span>}
+                  <p>{item.name}</p>
+                  <strong>
+                    {formatCompactMoney(item.price_cents, item.currency)}
+                    <small>/package</small>
+                  </strong>
+                  <span>
+                    {formatNumber(item.packages_needed)} package
+                    {item.packages_needed === 1 ? "" : "s"} x{" "}
+                    {formatCompactMoney(item.price_cents, item.currency)} ={" "}
+                    {formatCompactMoney(item.total_cost_cents, item.currency)}
+                  </span>
+                  <span>
+                    {formatNumber(coveredLeads)} leads total (
+                    {formatNumber(item.credits_per_package)} per package)
+                  </span>
+                  <b>
+                    Estimated full-plan spend:{" "}
+                    {formatCompactMoney(item.total_cost_cents, item.currency)}
+                  </b>
+                  <button
+                    type="button"
+                    className={item.recommended ? "btn btn-secondary" : "btn btn-primary"}
+                    onClick={() => void handleCheckout(item.package_id)}
+                    disabled={checkoutPackageId !== null || saving}
+                  >
+                    {checkoutPackageId === item.package_id
+                      ? "Opening..."
+                      : "Buy 1 Package"}
+                  </button>
+                </article>
+              );
+            })}
           </div>
         )}
 
         <div className="goals-pacing-tip">
-          <strong>Pacing tip:</strong> {derived.pacing.message}
+          <strong>Pacing tip:</strong> {pacingMessage}
         </div>
       </section>
     </div>

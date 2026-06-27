@@ -5,6 +5,7 @@ export interface PurchasePackage {
   currency: string;
   state_limit: number | null;
   daily_download_limit: number;
+  credits_total?: number;
   features: string[] | Record<string, unknown> | null;
   stripe_price_id: string;
   created_at: string;

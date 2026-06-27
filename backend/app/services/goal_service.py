@@ -15,7 +15,7 @@ from app.schemas.goal import AdvisorGoalUpsertRequest
 from app.services.subscription_service import SubscriptionService
 
 
-DEFAULT_ANNUAL_INCOME_GOAL_CENTS = 250_000_00
+DEFAULT_ANNUAL_INCOME_GOAL_CENTS = 10_000_00
 DEFAULT_AVERAGE_COMMISSION_CENTS = 3_500_00
 DEFAULT_APPOINTMENT_TO_DEAL_RATE_BPS = 1_200
 DEFAULT_LEAD_TO_APPOINTMENT_RATE_BPS = 2_500
@@ -142,18 +142,30 @@ class GoalService:
         deals_needed = math.ceil(annual_goal / average_commission)
         appointments_needed = math.ceil(deals_needed / close_rate)
         leads_needed = math.ceil(appointments_needed / appointment_rate)
-        estimated_deals_from_earned = earned_ytd // average_commission
+        closed_deals = max(int(closed_deals_ytd), 0)
         progress_percent = min(100, round((earned_ytd / annual_goal) * 100))
 
-        deals_remaining = max(deals_needed - estimated_deals_from_earned, 0)
-        appointments_remaining = math.ceil(deals_remaining / close_rate) if deals_remaining else 0
+        remaining_income = max(annual_goal - earned_ytd, 0)
+        income_goal_met = remaining_income == 0
+        remaining_deal_equivalent = remaining_income / average_commission
+        deals_remaining = (
+            0
+            if income_goal_met
+            else math.ceil(remaining_deal_equivalent)
+        )
+        appointments_remaining = (
+            math.ceil(remaining_deal_equivalent / close_rate)
+            if remaining_deal_equivalent
+            else 0
+        )
         leads_remaining = (
-            math.ceil(deals_remaining / (close_rate * appointment_rate))
-            if deals_remaining
+            math.ceil(remaining_deal_equivalent / (close_rate * appointment_rate))
+            if remaining_deal_equivalent
             else 0
         )
         pacing = GoalService._build_pacing(
             leads_remaining=leads_remaining,
+            income_goal_met=income_goal_met,
             target_year=int(goal.target_year),
             now=now,
         )
@@ -162,8 +174,7 @@ class GoalService:
             "deals_needed": int(deals_needed),
             "appointments_needed": int(appointments_needed),
             "leads_needed": int(leads_needed),
-            "closed_deals_ytd": max(int(closed_deals_ytd), 0),
-            "estimated_deals_from_earned_ytd": int(estimated_deals_from_earned),
+            "closed_deals_ytd": int(closed_deals),
             "income_progress_percent": int(progress_percent),
             "deals_remaining": int(deals_remaining),
             "appointments_remaining": int(appointments_remaining),
@@ -194,13 +205,13 @@ class GoalService:
         db: Session,
         leads_remaining: int,
     ) -> List[Dict[str, Any]]:
-        packages = SubscriptionService.get_available_packages(db=db)
+        available_packages = SubscriptionService.get_available_packages(db=db)
         visible_packages = [
             package
-            for package in packages
-            if GoalService._resolve_package_credits(package) > 0
-        ][:3]
-        if not visible_packages:
+            for package in available_packages
+            if GoalService._is_goal_recommendation_package(package)
+        ]
+        if not visible_packages or leads_remaining <= 0:
             return []
 
         target_leads = max(int(leads_remaining), 1)
@@ -208,7 +219,9 @@ class GoalService:
         for package in visible_packages:
             credits = GoalService._resolve_package_credits(package)
             packages_needed = math.ceil(target_leads / credits)
-            total_cost_cents = packages_needed * max(int(package.price_cents or 0), 0)
+            covered_leads = packages_needed * credits
+            package_price_cents = max(int(package.price_cents or 0), 0)
+            total_cost_cents = packages_needed * package_price_cents
             recommendations.append(
                 {
                     "package_id": int(package.id),
@@ -218,7 +231,8 @@ class GoalService:
                     "credits_per_package": credits,
                     "packages_needed": int(packages_needed),
                     "total_cost_cents": int(total_cost_cents),
-                    "estimated_cost_per_lead_cents": math.ceil(max(int(package.price_cents or 0), 0) / credits),
+                    "overage_leads": int(max(covered_leads - target_leads, 0)),
+                    "estimated_cost_per_lead_cents": math.ceil(package_price_cents / credits),
                     "state_limit": package.state_limit,
                     "features": package.features,
                     "recommended": False,
@@ -229,16 +243,36 @@ class GoalService:
             recommendations,
             key=lambda item: (
                 int(item["total_cost_cents"]),
+                int(item["overage_leads"]),
                 int(item["packages_needed"]),
                 int(item["package_id"]),
             ),
         )
         best["recommended"] = True
-        return recommendations
+        return sorted(
+            recommendations,
+            key=lambda item: (
+                not bool(item["recommended"]),
+                int(item["total_cost_cents"]),
+                int(item["overage_leads"]),
+                int(item["packages_needed"]),
+                int(item["package_id"]),
+            ),
+        )[:3]
 
     @staticmethod
     def _resolve_package_credits(package: LeadPackage) -> int:
         return SubscriptionService._resolve_package_credits(package)
+
+    @staticmethod
+    def _is_goal_recommendation_package(package: LeadPackage) -> bool:
+        if GoalService._resolve_package_credits(package) <= 0:
+            return False
+        if SubscriptionService._is_first_purchase_offer_managed_package(package):
+            return False
+        if not str(package.stripe_price_id or "").strip():
+            return False
+        return SubscriptionService._is_package_catalog_available(package)
 
     @staticmethod
     def _basis_points_to_ratio(value: int) -> float:
@@ -254,6 +288,7 @@ class GoalService:
     def _build_pacing(
         *,
         leads_remaining: int,
+        income_goal_met: bool = False,
         target_year: int,
         now: Optional[datetime] = None,
     ) -> Dict[str, Any]:
@@ -273,8 +308,11 @@ class GoalService:
             if leads_remaining > 0
             else 0
         )
-        if leads_remaining <= 0:
-            message = "Goal met based on manually entered earned year-to-date."
+        if income_goal_met:
+            message = "Annual income goal met."
+            status_label = "goal_met"
+        elif leads_remaining <= 0:
+            message = "Lead volume goal met based on actual closed deals year-to-date."
         elif target_year < current.year:
             message = (
                 f"Goal year ended with {leads_remaining:,} estimated leads still remaining."

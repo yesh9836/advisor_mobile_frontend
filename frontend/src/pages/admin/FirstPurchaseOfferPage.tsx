@@ -78,7 +78,6 @@ const dollarsInputToCents = (value: string): number | null => {
     return null;
   }
 
-  // Support numeric input with up to 2 decimal places.
   if (!/^\d+(\.\d{1,2})?$/.test(clean)) {
     return null;
   }

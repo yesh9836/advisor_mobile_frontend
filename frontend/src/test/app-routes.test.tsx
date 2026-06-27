@@ -31,6 +31,7 @@ vi.mock("@/api/purchases", () => ({
     session_id: "cs_test",
     url: "https://checkout.example.test",
   }),
+  getPackages: vi.fn().mockResolvedValue([]),
   getPurchaseBalance: vi.fn().mockResolvedValue(null),
   getPurchaseHistory: vi.fn().mockResolvedValue({ items: [] }),
   getPurchaseBillingSummary: vi.fn().mockResolvedValue({
@@ -58,11 +59,10 @@ vi.mock("@/api/goals", () => ({
       appointments_needed: 600,
       leads_needed: 2400,
       closed_deals_ytd: 0,
-      estimated_deals_from_earned_ytd: 22,
       income_progress_percent: 31,
       deals_remaining: 50,
       appointments_remaining: 417,
-      leads_remaining: 1667,
+      leads_remaining: 1668,
       recommended_monthly_leads: 239,
       pacing: {
         remaining_months: 7,

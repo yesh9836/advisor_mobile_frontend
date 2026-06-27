@@ -113,8 +113,11 @@ def test_purchase_packages_exclude_catalog_hidden_plans(client, db, plan_factory
     purchases_response = client.get("/api/v1/purchases/packages")
     assert purchases_response.status_code == 200, purchases_response.text
 
-    package_ids = {int(item["id"]) for item in purchases_response.json()}
+    packages = purchases_response.json()
+    package_ids = {int(item["id"]) for item in packages}
+    visible_payload = next(item for item in packages if int(item["id"]) == int(visible_plan.id))
     assert visible_plan.id in package_ids
+    assert visible_payload["credits_total"] == 10
     assert hidden_plan.id not in package_ids
 
 

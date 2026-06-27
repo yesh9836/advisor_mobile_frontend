@@ -13,6 +13,7 @@ class PurchasePackageResponse(BaseModel):
     currency: str
     state_limit: Optional[int]
     daily_download_limit: int
+    credits_total: int
     features: Optional[List[str] | Dict[str, Any]]
     stripe_price_id: str
     created_at: datetime

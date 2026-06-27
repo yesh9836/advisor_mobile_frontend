@@ -40,7 +40,6 @@ class GoalDerivedSnapshot(BaseModel):
     appointments_needed: int
     leads_needed: int
     closed_deals_ytd: int
-    estimated_deals_from_earned_ytd: int
     income_progress_percent: int
     deals_remaining: int
     appointments_remaining: int
@@ -57,6 +56,7 @@ class GoalPackageRecommendation(BaseModel):
     credits_per_package: int
     packages_needed: int
     total_cost_cents: int
+    overage_leads: int
     estimated_cost_per_lead_cents: int
     state_limit: Optional[int] = None
     features: Optional[List[str] | Dict[str, Any]] = None

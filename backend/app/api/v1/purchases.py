@@ -28,7 +28,21 @@ router = APIRouter(prefix="/purchases", tags=["purchases"])
 )
 def get_packages(db: Session = Depends(get_db)) -> List[PurchasePackageResponse]:
     packages = SubscriptionService.get_available_packages(db=db)
-    return [PurchasePackageResponse.model_validate(package) for package in packages]
+    return [
+        PurchasePackageResponse(
+            id=int(package.id),
+            name=str(package.name),
+            price_cents=int(package.price_cents or 0),
+            currency=str(package.currency or "USD"),
+            state_limit=package.state_limit,
+            daily_download_limit=int(package.daily_download_limit or 0),
+            credits_total=SubscriptionService._resolve_package_credits(package),
+            features=package.features,
+            stripe_price_id=str(package.stripe_price_id or ""),
+            created_at=package.created_at,
+        )
+        for package in packages
+    ]
 
 
 @router.post(
