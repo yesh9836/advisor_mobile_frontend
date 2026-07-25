@@ -116,6 +116,6 @@ If the emulator cannot connect:
 [ ] Backend running on localhost:8000
 [ ] Flutter base URL is http://10.0.2.2:8000/api/v1
 [ ] Android emulator is selected
-[ ] Login works
+[ ] Login workss
 [ ] Dashboard APIs load after login
 ```
