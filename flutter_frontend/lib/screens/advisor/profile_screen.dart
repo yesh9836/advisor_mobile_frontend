@@ -1,18 +1,35 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_frontend/models/auth_models.dart';
+import 'package:flutter_frontend/repositories/advisor_repository.dart';
 import 'package:flutter_frontend/repositories/auth_repository.dart';
+import 'package:flutter_frontend/screens/advisor/billing_history_sheet.dart';
+import 'package:flutter_frontend/screens/advisor/change_password_sheet.dart';
+import 'package:flutter_frontend/screens/advisor/license_upload_sheet.dart';
+import 'package:flutter_frontend/screens/advisor/notification_preferences_sheet.dart';
 import 'package:flutter_frontend/screens/auth/login_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  const ProfileScreen({
+    super.key,
+    this.authRepository,
+    this.advisorRepository,
+    this.documentPicker,
+  });
+
+  final AuthRepository? authRepository;
+  final AdvisorRepository? advisorRepository;
+  final LicenseDocumentPicker? documentPicker;
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  final _authRepository = AuthRepository();
-  late final Future<_ProfileData> _future = _loadProfile();
+  late final AuthRepository _authRepository =
+      widget.authRepository ?? AuthRepository();
+  late final AdvisorRepository _advisorRepository =
+      widget.advisorRepository ?? AdvisorRepository();
+  late Future<_ProfileData> _future = _loadProfile();
   bool _isLoggingOut = false;
 
   Future<_ProfileData> _loadProfile() async {
@@ -47,6 +64,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  void _refreshProfile() {
+    setState(() {
+      _future = _loadProfile();
+    });
+  }
+
+  Future<void> _openLicenseUpload() {
+    return showLicenseUploadSheet(
+      context: context,
+      repository: _authRepository,
+      documentPicker: widget.documentPicker,
+      onSubmitted: (_) => _refreshProfile(),
+    );
+  }
+
+  Future<void> _openBillingHistory() {
+    return showBillingHistorySheet(
+      context: context,
+      repository: _advisorRepository,
+    );
+  }
+
+  Future<void> _openChangePassword() {
+    return showChangePasswordSheet(
+      context: context,
+      repository: _authRepository,
+    );
+  }
+
+  Future<void> _openNotificationPreferences() {
+    return showNotificationPreferencesSheet(
+      context: context,
+      repository: _advisorRepository,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<_ProfileData>(
@@ -78,9 +131,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 12),
             _ContactInfo(user: data.user),
             const SizedBox(height: 12),
-            _LicensedStates(licenses: data.licenses),
+            _LicensedStates(licenses: data.licenses, onAdd: _openLicenseUpload),
             const SizedBox(height: 12),
-            const _AccountActions(),
+            _AccountActions(
+              onBillingHistory: _openBillingHistory,
+              onChangePassword: _openChangePassword,
+              onNotificationPreferences: _openNotificationPreferences,
+            ),
             const SizedBox(height: 12),
             _SignOutButton(isLoading: _isLoggingOut, onTap: _logout),
           ],
@@ -213,9 +270,10 @@ class _ContactInfo extends StatelessWidget {
 }
 
 class _LicensedStates extends StatelessWidget {
-  const _LicensedStates({required this.licenses});
+  const _LicensedStates({required this.licenses, required this.onAdd});
 
   final List<AdvisorLicense> licenses;
+  final VoidCallback onAdd;
 
   @override
   Widget build(BuildContext context) {
@@ -231,11 +289,7 @@ class _LicensedStates extends StatelessWidget {
             children: [
               const Expanded(child: _SectionTitle('Licensed States')),
               TextButton.icon(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('License upload coming soon.')),
-                  );
-                },
+                onPressed: onAdd,
                 icon: const Icon(Icons.add, size: 16),
                 label: const Text('Add'),
                 style: TextButton.styleFrom(
@@ -334,20 +388,37 @@ class _LicenseRow extends StatelessWidget {
 }
 
 class _AccountActions extends StatelessWidget {
-  const _AccountActions();
+  const _AccountActions({
+    required this.onBillingHistory,
+    required this.onChangePassword,
+    required this.onNotificationPreferences,
+  });
+
+  final VoidCallback onBillingHistory;
+  final VoidCallback onChangePassword;
+  final VoidCallback onNotificationPreferences;
 
   @override
   Widget build(BuildContext context) {
-    return const _Panel(
+    return _Panel(
       child: Column(
         children: [
-          _ActionRow(icon: Icons.credit_card_outlined, label: 'Billing History'),
-          _DividerLine(),
-          _ActionRow(icon: Icons.shield_outlined, label: 'Change Password'),
-          _DividerLine(),
+          _ActionRow(
+            icon: Icons.credit_card_outlined,
+            label: 'Billing History',
+            onTap: onBillingHistory,
+          ),
+          const _DividerLine(),
+          _ActionRow(
+            icon: Icons.shield_outlined,
+            label: 'Change Password',
+            onTap: onChangePassword,
+          ),
+          const _DividerLine(),
           _ActionRow(
             icon: Icons.notifications_none,
             label: 'Notification Prefs',
+            onTap: onNotificationPreferences,
           ),
         ],
       ),
@@ -356,42 +427,52 @@ class _AccountActions extends StatelessWidget {
 }
 
 class _ActionRow extends StatelessWidget {
-  const _ActionRow({required this.icon, required this.label});
+  const _ActionRow({required this.icon, required this.label, this.onTap});
 
   final IconData icon;
   final String label;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 60,
-      child: Row(
-        children: [
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF4FAFC),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: const Color(0xFF202860), size: 19),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: Color(0xFF202860),
-                fontWeight: FontWeight.w900,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: SizedBox(
+          height: 60,
+          child: Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF4FAFC),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: const Color(0xFF202860), size: 19),
               ),
-            ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    color: Color(0xFF202860),
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.chevron_right,
+                color: onTap == null
+                    ? const Color(0xFFC7D7DD)
+                    : const Color(0xFF607987),
+                size: 22,
+              ),
+            ],
           ),
-          const Icon(
-            Icons.chevron_right,
-            color: Color(0xFF607987),
-            size: 22,
-          ),
-        ],
+        ),
       ),
     );
   }

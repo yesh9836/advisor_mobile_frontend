@@ -6,7 +6,7 @@ import pytest
 
 from app.core.config import settings
 from app.models.lead import LeadOwnership
-from app.models.purchase import LeadCreditLedger
+from app.models.purchase import LeadCreditLedger, LeadPurchase
 from app.services.payment_service import PaymentService
 
 
@@ -220,6 +220,7 @@ def test_purchase_checkout_rejects_archived_package(
 @pytest.mark.integration
 def test_purchase_checkout_uses_idempotency_key_and_metadata(
     client,
+    db,
     user_factory,
     license_factory,
     plan_factory,
@@ -255,7 +256,11 @@ def test_purchase_checkout_uses_idempotency_key_and_metadata(
     response = client.post(
         "/api/v1/purchases/checkout",
         headers=headers,
-        json={"package_id": plan.id, "retry_token": retry_token},
+        json={
+            "package_id": plan.id,
+            "target_states": ["ca"],
+            "retry_token": retry_token,
+        },
     )
     assert response.status_code == 200, response.text
     assert response.json()["session_id"] == "cs_purchase_checkout"
@@ -272,6 +277,7 @@ def test_purchase_checkout_uses_idempotency_key_and_metadata(
     assert checkout_metadata["purchase_amount_cents"] == str(int(plan.price_cents or 0))
     assert checkout_metadata["purchase_currency"] == str((plan.currency or "USD")).upper()
     assert checkout_metadata["purchase_credits_total"] == str(int(plan.daily_download_limit or 0))
+    assert checkout_metadata["target_states"] == "CA"
     assert captured_checkout_kwargs["payment_intent_data"]["metadata"] == checkout_metadata
     assert captured_checkout_kwargs["invoice_creation"]["enabled"] is True
     assert captured_checkout_kwargs["invoice_creation"]["invoice_data"]["metadata"] == checkout_metadata
@@ -280,6 +286,35 @@ def test_purchase_checkout_uses_idempotency_key_and_metadata(
         package_id=plan.id,
         retry_token=retry_token,
     )
+    purchase = db.query(LeadPurchase).filter(
+        LeadPurchase.stripe_checkout_session_id == "cs_purchase_checkout"
+    ).one()
+    assert purchase.target_states == ["CA"]
+
+
+@pytest.mark.integration
+def test_purchase_checkout_rejects_unlicensed_target_states(
+    client,
+    user_factory,
+    license_factory,
+    plan_factory,
+    auth_headers,
+):
+    _, headers = _create_advisor_with_verified_license(
+        user_factory,
+        license_factory,
+        auth_headers,
+    )
+    plan = plan_factory(stripe_price_id="price_unlicensed_target_state")
+
+    response = client.post(
+        "/api/v1/purchases/checkout",
+        headers=headers,
+        json={"package_id": plan.id, "target_states": ["TX"]},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Target states require verified licenses: TX"
 
 
 @pytest.mark.integration

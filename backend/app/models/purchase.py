@@ -143,6 +143,7 @@ class LeadPurchase(Base):
         nullable=False,
         index=True,
     )
+    target_states: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
 
     stripe_checkout_session_id: Mapped[str] = mapped_column(
         String(100),

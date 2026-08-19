@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -76,6 +76,33 @@ describe("Advisor Dashboard delivery settings editor", () => {
       page: 1,
       size: 3,
     });
+  });
+
+  it("opens the notification panel and routes its action to delivery settings", async () => {
+    getLeadDashboardSummaryMock.mockResolvedValue(summaryWithSettings(false, true));
+    getMyDeliverySettingsMock.mockResolvedValue({
+      email_alerts_enabled: false,
+      sms_alerts_enabled: true,
+      version: 1,
+      updated_at: "2026-02-17T14:00:00Z",
+      warnings: [],
+    });
+
+    renderRoute();
+
+    fireEvent.click(await screen.findByRole("button", {
+      name: "Open notification settings",
+    }));
+
+    const notificationPanel = screen.getByRole("dialog", { name: "Notification settings" });
+    expect(notificationPanel).toBeInTheDocument();
+    expect(within(notificationPanel).getByText("Email alerts")).toBeInTheDocument();
+    expect(within(notificationPanel).getByText("SMS alerts")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Manage notifications" }));
+
+    expect(await screen.findByLabelText("Email alerts")).not.toBeChecked();
+    expect(screen.getByLabelText("SMS alerts")).toBeChecked();
   });
 
   it("applies toggle changes instantly and refreshes summary snapshot", async () => {

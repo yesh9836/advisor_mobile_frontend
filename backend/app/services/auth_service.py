@@ -27,7 +27,13 @@ from app.models.auth_session import RefreshTokenSession
 from app.models.notification import NotificationOutbox
 from app.models.password_reset import PasswordResetRequestAttempt, PasswordResetToken
 from app.models.user import User
-from app.schemas.auth import PasswordResetConfirm, PasswordResetRequest, UserRegister, UserLogin
+from app.schemas.auth import (
+    PasswordChangeRequest,
+    PasswordResetConfirm,
+    PasswordResetRequest,
+    UserLogin,
+    UserRegister,
+)
 from app.services.metrics_service import MetricsService
 from app.services.notification_template_service import NotificationTemplateService
 from app.utils.phone import normalize_phone_number
@@ -154,6 +160,36 @@ class AuthService:
         except Exception as e:
             logger.error(f"Authentication error: {e}")
             return None
+
+    @staticmethod
+    def change_password(
+        db: Session,
+        *,
+        user: User,
+        payload: PasswordChangeRequest,
+    ) -> None:
+        if not verify_password(payload.current_password, user.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Current password is incorrect",
+            )
+        if verify_password(payload.new_password, user.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="New password must be different from the current password",
+            )
+
+        try:
+            user.password_hash = get_password_hash(payload.new_password)
+            db.commit()
+            logger.info("Password changed for user_id=%s", user.id)
+        except Exception:
+            db.rollback()
+            logger.exception("Password change failed for user_id=%s", user.id)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Unable to change password right now",
+            )
 
     @staticmethod
     def _authenticate_credentials(db: Session, credentials: UserLogin) -> User:

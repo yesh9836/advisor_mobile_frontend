@@ -28,7 +28,20 @@ class PurchaseCheckoutResponse(BaseModel):
 
 class PurchaseCheckoutRequest(BaseModel):
     package_id: int = Field(..., ge=1)
+    target_states: List[str] = Field(default_factory=list, max_length=50)
     retry_token: Optional[str] = Field(default=None, min_length=8, max_length=128)
+
+    @field_validator("target_states")
+    @classmethod
+    def normalize_target_states(cls, value: List[str]) -> List[str]:
+        normalized: List[str] = []
+        for item in value:
+            state = str(item).strip().upper()
+            if len(state) != 2 or not state.isalpha():
+                raise ValueError("Target states must be two-letter state codes")
+            if state not in normalized:
+                normalized.append(state)
+        return normalized
 
     @field_validator("retry_token")
     @classmethod

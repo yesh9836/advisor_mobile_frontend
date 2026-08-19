@@ -4,6 +4,7 @@ import 'package:flutter_frontend/models/auth_models.dart';
 import 'package:flutter_frontend/repositories/advisor_repository.dart';
 import 'package:flutter_frontend/repositories/auth_repository.dart';
 import 'package:flutter_frontend/screens/advisor/goals_screen.dart';
+import 'package:flutter_frontend/screens/advisor/lead_details_sheet.dart';
 import 'package:flutter_frontend/screens/advisor/leads_screen.dart';
 import 'package:flutter_frontend/screens/advisor/profile_screen.dart';
 import 'package:flutter_frontend/screens/advisor/subscription_screen.dart';
@@ -89,7 +90,7 @@ class AdvisorDashboardScreen extends StatefulWidget {
 class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
   final _repository = AdvisorRepository();
   final _authRepository = AuthRepository();
-  late final Future<_DashboardData> _future = _load();
+  late Future<_DashboardData> _future = _load();
 
   Future<_DashboardData> _load() async {
     final results = await Future.wait([
@@ -101,6 +102,54 @@ class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
       user: results[0] as UserProfile,
       summary: results[1] as LeadDashboardSummary,
       leads: results[2] as List<AdvisorLead>,
+    );
+  }
+
+  Future<void> _openDeliverySettingsEditor() async {
+    DeliverySettings settings;
+    try {
+      settings = await _repository.getDeliverySettings();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+      return;
+    }
+
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _DeliverySettingsEditor(
+        initialSettings: settings,
+        onSave: (nextSettings) async {
+          final updated = await _repository.updateDeliverySettings(
+            emailAlertsEnabled: nextSettings.emailAlertsEnabled,
+            smsAlertsEnabled: nextSettings.smsAlertsEnabled,
+            expectedVersion: nextSettings.version,
+          );
+          if (!mounted) return updated;
+          setState(() {
+            _future = _load();
+          });
+          return updated;
+        },
+      ),
+    );
+  }
+
+  Future<void> _openLead(AdvisorLead lead) {
+    return showLeadDetailsSheet(
+      context: context,
+      lead: lead,
+      repository: _repository,
+      onUpdated: (_) {
+        setState(() {
+          _future = _load();
+        });
+      },
     );
   }
 
@@ -118,7 +167,7 @@ class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
             else if (snapshot.hasError)
               _EmptyPanel(message: snapshot.error.toString())
             else ...[
-              _HomeHeader(user: data!.user),
+              _HomeHeader(user: data!.user, summary: data.summary),
               const SizedBox(height: 18),
               Row(
                 children: [
@@ -191,10 +240,13 @@ class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
                 for (final lead in data.leads.take(3))
                   Padding(
                     padding: const EdgeInsets.only(bottom: 12),
-                    child: _LeadTile(lead: lead),
+                    child: _LeadTile(lead: lead, onTap: () => _openLead(lead)),
                   ),
               const SizedBox(height: 2),
-              _DeliverySettings(summary: data.summary),
+              _DeliverySettings(
+                summary: data.summary,
+                onEdit: _openDeliverySettingsEditor,
+              ),
             ],
           ],
         );
@@ -216,9 +268,62 @@ class _DashboardData {
 }
 
 class _HomeHeader extends StatelessWidget {
-  const _HomeHeader({required this.user});
+  const _HomeHeader({required this.user, required this.summary});
 
   final UserProfile user;
+  final LeadDashboardSummary summary;
+
+  void _showNotificationSheet(BuildContext context) {
+    final hasNotificationsEnabled =
+        summary.emailAlertsEnabled || summary.smsAlertsEnabled;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Lead notifications',
+                style: TextStyle(
+                  color: Color(0xFF202860),
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Delivery alerts for your new leads.',
+                style: TextStyle(color: Color(0xFF315166)),
+              ),
+              const SizedBox(height: 18),
+              _NotificationStatusRow(
+                icon: Icons.mail_outline,
+                label: 'Email alerts',
+                enabled: summary.emailAlertsEnabled,
+              ),
+              const SizedBox(height: 12),
+              _NotificationStatusRow(
+                icon: Icons.sms_outlined,
+                label: 'SMS alerts',
+                enabled: summary.smsAlertsEnabled,
+              ),
+              if (!hasNotificationsEnabled) ...[
+                const SizedBox(height: 16),
+                const Text(
+                  'Turn on an alert channel so new lead deliveries do not go unnoticed.',
+                  style: TextStyle(color: Color(0xFFB45309), height: 1.35),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -253,19 +358,24 @@ class _HomeHeader extends StatelessWidget {
         Stack(
           clipBehavior: Clip.none,
           children: [
-            _CircleIconButton(icon: Icons.notifications_none),
-            Positioned(
-              right: 5,
-              top: 5,
-              child: Container(
-                width: 8,
-                height: 8,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFEF4444),
-                  shape: BoxShape.circle,
+            _CircleIconButton(
+              icon: Icons.notifications_none,
+              semanticLabel: 'Open notification settings',
+              onPressed: () => _showNotificationSheet(context),
+            ),
+            if (!summary.emailAlertsEnabled && !summary.smsAlertsEnabled)
+              Positioned(
+                right: 5,
+                top: 5,
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFEF4444),
+                    shape: BoxShape.circle,
+                  ),
                 ),
               ),
-            ),
           ],
         ),
         const SizedBox(width: 10),
@@ -287,21 +397,74 @@ class _HomeHeader extends StatelessWidget {
 }
 
 class _CircleIconButton extends StatelessWidget {
-  const _CircleIconButton({required this.icon});
+  const _CircleIconButton({
+    required this.icon,
+    required this.semanticLabel,
+    required this.onPressed,
+  });
 
   final IconData icon;
+  final String semanticLabel;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 38,
-      height: 38,
-      decoration: BoxDecoration(
+    return Semantics(
+      button: true,
+      label: semanticLabel,
+      child: Material(
         color: Colors.white,
-        shape: BoxShape.circle,
-        border: Border.all(color: const Color(0xFFCFE4EC)),
+        shape: const CircleBorder(),
+        child: InkWell(
+          onTap: onPressed,
+          customBorder: const CircleBorder(),
+          child: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: const Color(0xFFCFE4EC)),
+            ),
+            child: Icon(icon, color: const Color(0xFF202860), size: 21),
+          ),
+        ),
       ),
-      child: Icon(icon, color: const Color(0xFF202860), size: 21),
+    );
+  }
+}
+
+class _NotificationStatusRow extends StatelessWidget {
+  const _NotificationStatusRow({
+    required this.icon,
+    required this.label,
+    required this.enabled,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = enabled ? const Color(0xFF16A34A) : const Color(0xFF607987);
+    return Row(
+      children: [
+        Icon(icon, color: const Color(0xFF18A0B8)),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF202860),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        Text(
+          enabled ? 'On' : 'Off',
+          style: TextStyle(color: color, fontWeight: FontWeight.w900),
+        ),
+      ],
     );
   }
 }
@@ -426,118 +589,128 @@ class _SectionHeader extends StatelessWidget {
 }
 
 class _LeadTile extends StatelessWidget {
-  const _LeadTile({required this.lead});
+  const _LeadTile({required this.lead, required this.onTap});
 
   final AdvisorLead lead;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final status = _LeadStatus.fromValue(lead.outcomeStatus);
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFCFE4EC)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: status.avatarColor,
-            child: Text(
-              _leadInitials(lead),
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFCFE4EC)),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        lead.displayName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF202860),
-                          fontSize: 15,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      _relativeTime(lead.receivedAt),
-                      style: const TextStyle(
-                        color: Color(0xFF315166),
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 7),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    _MiniBadge(
-                      label: lead.stateCode,
-                      background: const Color(0xFFEAF5FF),
-                      foreground: const Color(0xFF202860),
-                    ),
-                    _MiniBadge(
-                      label: status.label,
-                      background: status.background,
-                      foreground: status.foreground,
-                      dotColor: status.foreground,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 9),
-                Text(
-                  lead.assets ?? 'Lead details pending',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: status.avatarColor,
+                child: Text(
+                  _leadInitials(lead),
                   style: const TextStyle(
-                    color: Color(0xFF18A0B8),
-                    fontSize: 13,
+                    color: Colors.white,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  lead.activity ?? 'Details available after delivery',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF315166),
-                    fontSize: 12,
-                    height: 1.25,
-                  ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            lead.displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Color(0xFF202860),
+                              fontSize: 15,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _relativeTime(lead.receivedAt),
+                          style: const TextStyle(
+                            color: Color(0xFF315166),
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 7),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        _MiniBadge(
+                          label: lead.stateCode,
+                          background: const Color(0xFFEAF5FF),
+                          foreground: const Color(0xFF202860),
+                        ),
+                        _MiniBadge(
+                          label: status.label,
+                          background: status.background,
+                          foreground: status.foreground,
+                          dotColor: status.foreground,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 9),
+                    Text(
+                      lead.assets ?? 'Lead details pending',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF18A0B8),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      lead.activity ?? 'Details available after delivery',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF315166),
+                        fontSize: 12,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 }
 
 class _DeliverySettings extends StatelessWidget {
-  const _DeliverySettings({required this.summary});
+  const _DeliverySettings({required this.summary, required this.onEdit});
 
   final LeadDashboardSummary summary;
+  final Future<void> Function() onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -563,7 +736,7 @@ class _DeliverySettings extends StatelessWidget {
                 ),
               ),
               TextButton(
-                onPressed: () {},
+                onPressed: () => onEdit(),
                 style: TextButton.styleFrom(
                   foregroundColor: const Color(0xFF18A0B8),
                   backgroundColor: const Color(0xFFE8FBFF),
@@ -590,6 +763,144 @@ class _DeliverySettings extends StatelessWidget {
             enabled: summary.smsAlertsEnabled,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _DeliverySettingsEditor extends StatefulWidget {
+  const _DeliverySettingsEditor({
+    required this.initialSettings,
+    required this.onSave,
+  });
+
+  final DeliverySettings initialSettings;
+  final Future<DeliverySettings> Function(DeliverySettings settings) onSave;
+
+  @override
+  State<_DeliverySettingsEditor> createState() =>
+      _DeliverySettingsEditorState();
+}
+
+class _DeliverySettingsEditorState extends State<_DeliverySettingsEditor> {
+  late bool _emailEnabled = widget.initialSettings.emailAlertsEnabled;
+  late bool _smsEnabled = widget.initialSettings.smsAlertsEnabled;
+  late List<String> _warnings = widget.initialSettings.warnings;
+  var _saving = false;
+  String? _error;
+
+  Future<void> _save() async {
+    if (_saving) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+
+    try {
+      final updated = await widget.onSave(
+        DeliverySettings(
+          emailAlertsEnabled: _emailEnabled,
+          smsAlertsEnabled: _smsEnabled,
+          version: widget.initialSettings.version,
+          warnings: _warnings,
+        ),
+      );
+      if (!mounted) return;
+      setState(() => _warnings = updated.warnings);
+      Navigator.of(context).pop();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          20,
+          4,
+          20,
+          24 + MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Delivery Settings',
+              style: TextStyle(
+                color: Color(0xFF202860),
+                fontSize: 21,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Choose how you want to be alerted when new leads are delivered.',
+              style: TextStyle(color: Color(0xFF315166), height: 1.35),
+            ),
+            const SizedBox(height: 18),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              secondary: const Icon(
+                Icons.mail_outline,
+                color: Color(0xFF18A0B8),
+              ),
+              title: const Text('Email alerts'),
+              subtitle: const Text('Receive lead delivery updates by email.'),
+              value: _emailEnabled,
+              onChanged: _saving
+                  ? null
+                  : (value) => setState(() => _emailEnabled = value),
+            ),
+            const Divider(),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              secondary: const Icon(
+                Icons.sms_outlined,
+                color: Color(0xFF18A0B8),
+              ),
+              title: const Text('SMS alerts'),
+              subtitle: const Text(
+                'Receive lead delivery updates by text message.',
+              ),
+              value: _smsEnabled,
+              onChanged: _saving
+                  ? null
+                  : (value) => setState(() => _smsEnabled = value),
+            ),
+            if (_warnings.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                _warnings.join('\n'),
+                style: const TextStyle(color: Color(0xFFB45309), height: 1.35),
+              ),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                _error!,
+                style: const TextStyle(color: Color(0xFFB91C1C), height: 1.35),
+              ),
+            ],
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: FilledButton(
+                onPressed: _saving ? null : _save,
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF18A0B8),
+                ),
+                child: Text(_saving ? 'Saving…' : 'Save preferences'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -669,7 +980,10 @@ class _MiniBadge extends StatelessWidget {
             Container(
               width: 6,
               height: 6,
-              decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
+              decoration: BoxDecoration(
+                color: dotColor,
+                shape: BoxShape.circle,
+              ),
             ),
             const SizedBox(width: 4),
           ],

@@ -533,7 +533,24 @@ class LeadService:
                 "assigned_lead_ids": assigned_lead_ids,
             }
 
-        states = LeadService._get_user_allowed_states_for_new_leads(db, purchase.user_id)
+        if purchase.target_states:
+            verified_states = set(
+                LeadService._get_user_allowed_states(
+                    db=db,
+                    user_id=purchase.user_id,
+                    state_limit=None,
+                )
+            )
+            states = [
+                str(state).upper()
+                for state in purchase.target_states
+                if str(state).upper() in verified_states
+            ]
+        else:
+            states = LeadService._get_user_allowed_states_for_new_leads(
+                db,
+                purchase.user_id,
+            )
         if not states:
             return {
                 "requested_count": requested_count,

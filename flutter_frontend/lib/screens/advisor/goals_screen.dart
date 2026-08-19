@@ -1,26 +1,55 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_frontend/models/advisor_models.dart';
 import 'package:flutter_frontend/repositories/advisor_repository.dart';
 
 class GoalsScreen extends StatefulWidget {
-  const GoalsScreen({super.key, required this.onSeeAllPackages});
+  const GoalsScreen({
+    super.key,
+    required this.onSeeAllPackages,
+    this.repository,
+  });
 
   final VoidCallback onSeeAllPackages;
+  final AdvisorRepository? repository;
 
   @override
   State<GoalsScreen> createState() => _GoalsScreenState();
 }
 
 class _GoalsScreenState extends State<GoalsScreen> {
-  final _repository = AdvisorRepository();
-  late final Future<GoalSnapshot> _future = _repository.getGoal();
+  late final AdvisorRepository _repository =
+      widget.repository ?? AdvisorRepository();
+  late Future<GoalSnapshot> _future = _repository.getGoal();
+  GoalSnapshot? _savedGoal;
+
+  void _retry() {
+    setState(() {
+      _savedGoal = null;
+      _future = _repository.getGoal();
+    });
+  }
+
+  Future<void> _saveMonthlyGoal(
+    GoalSnapshot currentGoal,
+    int monthlyGoalCents,
+  ) async {
+    final updated = await _repository.saveMonthlyGoal(
+      currentGoal: currentGoal,
+      monthlyGoalCents: monthlyGoalCents,
+    );
+    if (!mounted) return;
+    setState(() {
+      _savedGoal = updated;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<GoalSnapshot>(
       future: _future,
       builder: (context, snapshot) {
-        final goal = snapshot.data;
+        final goal = _savedGoal ?? snapshot.data;
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
           children: [
@@ -36,7 +65,20 @@ class _GoalsScreenState extends State<GoalsScreen> {
             if (snapshot.connectionState == ConnectionState.waiting)
               const Center(child: CircularProgressIndicator())
             else if (snapshot.hasError)
-              _Panel(child: Text(snapshot.error.toString()))
+              _Panel(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(snapshot.error.toString()),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: _retry,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              )
             else ...[
               _GoalHero(goal: goal!),
               const SizedBox(height: 12),
@@ -49,22 +91,33 @@ class _GoalsScreenState extends State<GoalsScreen> {
                 childAspectRatio: 1.55,
                 children: [
                   _StatCard(
-                    value: '${goal.appointmentsNeeded}',
-                    label: 'Target Appointments',
+                    value: '${goal.dealsRemaining}',
+                    label: 'Deals Remaining',
                   ),
                   _StatCard(
-                    value: '${goal.dealsNeeded}',
-                    label: 'Closed Deals',
+                    value: '${goal.appointmentsRemaining}',
+                    label: 'Appointments Remaining',
                   ),
-                  const _StatCard(value: '40%', label: 'Conversion Rate'),
                   _StatCard(
-                    value: '${goal.leadsNeeded}',
-                    label: 'Leads Needed',
+                    value: '${goal.leadsRemaining}',
+                    label: 'Leads Remaining',
+                  ),
+                  _StatCard(
+                    value: '${goal.closedDealsYtd}',
+                    label: 'Closed YTD',
                   ),
                 ],
               ),
               const SizedBox(height: 14),
-              _MonthlyGoalPanel(monthlyGoal: goal.annualGoalCents ~/ 12),
+              _MonthlyGoalPanel(
+                monthlyGoalCents: (goal.annualGoalCents / 12).round(),
+                onSave: (monthlyGoalCents) =>
+                    _saveMonthlyGoal(goal, monthlyGoalCents),
+              ),
+              if (goal.pacingMessage.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _PacingPanel(goal: goal),
+              ],
               const SizedBox(height: 18),
               Row(
                 children: [
@@ -84,18 +137,27 @@ class _GoalsScreenState extends State<GoalsScreen> {
                   ),
                 ],
               ),
-              SizedBox(
-                height: 172,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: goal.packages.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 12),
-                  itemBuilder: (context, index) => _PackagePreview(
-                    package: goal.packages[index],
-                    onSelect: widget.onSeeAllPackages,
+              if (goal.packages.isEmpty)
+                _Panel(
+                  child: Text(
+                    goal.pacingStatus == 'goal_met'
+                        ? 'Annual income goal met. No additional lead packages are needed.'
+                        : 'No current lead packages are available.',
+                  ),
+                )
+              else
+                SizedBox(
+                  height: 172,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: goal.packages.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 12),
+                    itemBuilder: (context, index) => _PackagePreview(
+                      package: goal.packages[index],
+                      onSelect: widget.onSeeAllPackages,
+                    ),
                   ),
                 ),
-              ),
             ],
           ],
         );
@@ -217,10 +279,75 @@ class _GoalHero extends StatelessWidget {
   }
 }
 
-class _MonthlyGoalPanel extends StatelessWidget {
-  const _MonthlyGoalPanel({required this.monthlyGoal});
+class _MonthlyGoalPanel extends StatefulWidget {
+  const _MonthlyGoalPanel({
+    required this.monthlyGoalCents,
+    required this.onSave,
+  });
 
-  final int monthlyGoal;
+  final int monthlyGoalCents;
+  final Future<void> Function(int monthlyGoalCents) onSave;
+
+  @override
+  State<_MonthlyGoalPanel> createState() => _MonthlyGoalPanelState();
+}
+
+class _MonthlyGoalPanelState extends State<_MonthlyGoalPanel> {
+  late final TextEditingController _controller = TextEditingController(
+    text: _dollarsInput(widget.monthlyGoalCents),
+  );
+  bool _saving = false;
+  String? _error;
+  String? _success;
+
+  @override
+  void didUpdateWidget(covariant _MonthlyGoalPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.monthlyGoalCents != widget.monthlyGoalCents) {
+      _controller.text = _dollarsInput(widget.monthlyGoalCents);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final monthlyGoalCents = _parseMoneyToCents(_controller.text);
+    if (monthlyGoalCents == null || monthlyGoalCents <= 0) {
+      setState(() {
+        _error = 'Enter a monthly goal greater than zero.';
+        _success = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _saving = true;
+      _error = null;
+      _success = null;
+    });
+    try {
+      await widget.onSave(monthlyGoalCents);
+      if (!mounted) return;
+      setState(() {
+        _success = 'Goal saved.';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -247,43 +374,41 @@ class _MonthlyGoalPanel extends StatelessWidget {
               ),
               SizedBox(
                 width: compact ? constraints.maxWidth - 86 : 190,
-                child: Container(
-                  height: 42,
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF7FBFD),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFFCFE4EC)),
+                height: 48,
+                child: TextField(
+                  controller: _controller,
+                  enabled: !_saving,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
                   ),
-                  child: Row(
-                    children: [
-                      const Text(
-                        '\$',
-                        style: TextStyle(
-                          color: Color(0xFF58707D),
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          '${(monthlyGoal / 100).round()}',
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Color(0xFF202860),
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                    ],
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(
+                      RegExp(r'^\d*\.?\d{0,2}'),
+                    ),
+                  ],
+                  decoration: InputDecoration(
+                    labelText: 'Monthly income goal',
+                    floatingLabelBehavior: FloatingLabelBehavior.always,
+                    prefixText: '\$ ',
+                    filled: true,
+                    fillColor: const Color(0xFFF7FBFD),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 14,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
                 ),
               ),
               SizedBox(
-                height: 42,
-                width: compact ? 76 : 64,
+                key: const ValueKey('monthly-goal-save-button-box'),
+                height: 48,
+                width: 76,
                 child: FilledButton(
-                  onPressed: () {},
+                  onPressed: _saving ? null : _save,
                   style: FilledButton.styleFrom(
                     minimumSize: Size.zero,
                     padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -291,12 +416,87 @@ class _MonthlyGoalPanel extends StatelessWidget {
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
-                  child: const Text('Save'),
+                  child: _saving
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Save'),
                 ),
               ),
+              if (_error != null)
+                SizedBox(
+                  width: constraints.maxWidth,
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(color: Color(0xFFB91C1C)),
+                  ),
+                ),
+              if (_success != null)
+                SizedBox(
+                  width: constraints.maxWidth,
+                  child: Text(
+                    _success!,
+                    style: const TextStyle(
+                      color: Color(0xFF15803D),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _PacingPanel extends StatelessWidget {
+  const _PacingPanel({required this.goal});
+
+  final GoalSnapshot goal;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.speed, color: Color(0xFF18A0B8)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Pacing tip',
+                  style: TextStyle(
+                    color: Color(0xFF202860),
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  goal.pacingMessage,
+                  style: const TextStyle(color: Color(0xFF58707D)),
+                ),
+                if (goal.recommendedMonthlyLeads > 0) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    '${goal.recommendedMonthlyLeads} leads recommended per month',
+                    style: const TextStyle(
+                      color: Color(0xFF202860),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -443,10 +643,7 @@ class _TinyBadge extends StatelessWidget {
 }
 
 class _Panel extends StatelessWidget {
-  const _Panel({
-    required this.child,
-    this.padding = const EdgeInsets.all(16),
-  });
+  const _Panel({required this.child, this.padding = const EdgeInsets.all(16)});
 
   final Widget child;
   final EdgeInsetsGeometry padding;
@@ -467,3 +664,17 @@ String? _packageBadge(LeadPackage package) {
 }
 
 String _money(int cents) => '\$${(cents / 100).round()}';
+
+String _dollarsInput(int cents) {
+  final dollars = cents / 100;
+  return dollars == dollars.roundToDouble()
+      ? dollars.toStringAsFixed(0)
+      : dollars.toStringAsFixed(2);
+}
+
+int? _parseMoneyToCents(String value) {
+  final normalized = value.trim().replaceAll(',', '');
+  final dollars = double.tryParse(normalized);
+  if (dollars == null || !dollars.isFinite) return null;
+  return (dollars * 100).round();
+}
