@@ -14,6 +14,7 @@ from app.core.rate_limit import (
 )
 from app.models.user import User
 from app.schemas.auth import (
+    PasswordChangeRequest,
     PasswordResetConfirm,
     PasswordResetRequest,
     PasswordResetRequestResponse,
@@ -163,6 +164,21 @@ def confirm_password_reset(
     _clear_auth_cookies(response)
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
+
+
+@router.post(
+    "/change-password",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Change current user's password",
+    description="Verify the current password and replace it with a new password.",
+)
+def change_password(
+    payload: PasswordChangeRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    AuthService.change_password(db, user=current_user, payload=payload)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(

@@ -59,6 +59,7 @@ def create_checkout(
         db=db,
         user=current_user,
         package_id=payload.package_id,
+        target_states=payload.target_states,
         retry_token=payload.retry_token,
     )
     return PurchaseCheckoutResponse(**session_data)

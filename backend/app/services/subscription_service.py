@@ -203,6 +203,7 @@ class SubscriptionService:
         user_id: int,
         package_id: int,
         purchase_terms: Dict[str, Any],
+        target_states: Optional[List[str]] = None,
     ) -> Dict[str, str]:
         return {
             "user_id": str(user_id),
@@ -210,7 +211,19 @@ class SubscriptionService:
             "purchase_amount_cents": str(max(int(purchase_terms.get("amount_cents") or 0), 0)),
             "purchase_currency": str(purchase_terms.get("currency") or USD_CURRENCY).upper(),
             "purchase_credits_total": str(max(int(purchase_terms.get("credits_total") or 0), 0)),
+            "target_states": ",".join(target_states),
         }
+
+    @staticmethod
+    def _target_states_from_metadata(metadata: Dict[str, Any]) -> List[str]:
+        raw_value = str(metadata.get("target_states") or "")
+        return list(
+            dict.fromkeys(
+                state.strip().upper()
+                for state in raw_value.split(",")
+                if len(state.strip()) == 2 and state.strip().isalpha()
+            )
+        )
 
     @staticmethod
     def _resolve_purchase_terms_from_metadata(metadata: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -340,6 +353,7 @@ class SubscriptionService:
         db: Session,
         user: User,
         package_id: int,
+        target_states: List[str],
         retry_token: Optional[str] = None,
     ) -> Dict[str, str]:
         """
@@ -375,21 +389,40 @@ class SubscriptionService:
                     detail=decision.to_error_detail(),
                 )
 
-        # Validate verified license
-        verified_license = (
-            db.query(License)
+        verified_state_rows = (
+            db.query(License.state)
             .filter(
                 and_(
                     License.user_id == user.id,
                     License.verification_status == "verified",
                 )
             )
-            .first()
+            .order_by(License.state.asc())
+            .all()
         )
-        if not verified_license:
+        verified_states = {str(row[0]).upper() for row in verified_state_rows}
+        if not verified_states:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="At least one verified license is required",
+            )
+        selected_states = list(
+            dict.fromkeys(state.strip().upper() for state in (target_states or []))
+        )
+        if not selected_states:
+            selected_states = sorted(verified_states)
+            if package.state_limit is not None:
+                selected_states = selected_states[: int(package.state_limit)]
+        unlicensed_states = sorted(set(selected_states) - verified_states)
+        if unlicensed_states:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Target states require verified licenses: {', '.join(unlicensed_states)}",
+            )
+        if package.state_limit is not None and len(selected_states) > int(package.state_limit):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"This package supports up to {int(package.state_limit)} target states",
             )
 
         customer_id = PaymentService.create_or_get_stripe_customer(db, user)
@@ -405,6 +438,7 @@ class SubscriptionService:
             user_id=int(user.id),
             package_id=int(package.id),
             purchase_terms=purchase_terms,
+            target_states=selected_states,
         )
 
         try:
@@ -464,6 +498,7 @@ class SubscriptionService:
                 purchase = LeadPurchase(
                     user_id=int(user.id),
                     package_id=int(package.id),
+                    target_states=selected_states,
                     stripe_checkout_session_id=session_id,
                     stripe_payment_intent_id=payment_intent_id,
                     stripe_invoice_id=invoice_id,
@@ -1704,6 +1739,7 @@ class SubscriptionService:
             )
         previous_status = purchase.status if purchase else None
         metadata_terms = SubscriptionService._resolve_purchase_terms_from_metadata(metadata)
+        metadata_target_states = SubscriptionService._target_states_from_metadata(metadata)
         if purchase:
             credits_total = max(int(purchase.credits_total or 0), 0)
             amount_cents = max(int(purchase.amount_cents or 0), 0)
@@ -1763,10 +1799,13 @@ class SubscriptionService:
                 purchase.stripe_invoice_id = invoice_id
             purchase.credits_remaining = credits_remaining
             purchase.purchased_at = purchased_at
+            if not purchase.target_states and metadata_target_states:
+                purchase.target_states = metadata_target_states
         else:
             purchase = LeadPurchase(
                 user_id=parsed_user_id,
                 package_id=parsed_package_id,
+                target_states=metadata_target_states or None,
                 stripe_checkout_session_id=session_id,
                 stripe_payment_intent_id=payment_intent_id,
                 stripe_invoice_id=invoice_id,

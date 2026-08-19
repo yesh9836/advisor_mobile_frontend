@@ -1604,6 +1604,49 @@ def test_reconcile_pending_purchase_assignments_uses_batched_allocator_not_singl
 
 
 @pytest.mark.unit
+def test_allocate_unsold_leads_uses_saved_purchase_target_states(
+    db,
+    user_factory,
+    plan_factory,
+    license_factory,
+    purchase_factory,
+    lead_factory,
+):
+    advisor = user_factory(
+        role="advisor",
+        password="LeadUnitSelectedStates123!",
+        email="lead.unit.selected.states@example.com",
+    )
+    plan = plan_factory(
+        daily_download_limit=2,
+        state_limit=2,
+        stripe_price_id="price_selected_states_allocate",
+    )
+    license_factory(user_id=advisor.id, state="CA", status="verified")
+    license_factory(user_id=advisor.id, state="TX", status="verified")
+    purchase = purchase_factory(
+        user_id=advisor.id,
+        package_id=plan.id,
+        credits_total=1,
+        credits_remaining=1,
+        status="completed",
+    )
+    purchase.target_states = ["TX"]
+    db.commit()
+
+    ca_lead = lead_factory(state_code="CA", mobile_phone="555-SELECTED-CA")
+    tx_lead = lead_factory(state_code="TX", mobile_phone="555-SELECTED-TX")
+
+    summary = LeadService.allocate_unsold_leads_for_purchase(
+        db=db,
+        purchase=purchase,
+    )
+
+    assert summary["newly_assigned_lead_ids"] == [tx_lead.id]
+    assert ca_lead.id not in summary["assigned_lead_ids"]
+
+
+@pytest.mark.unit
 def test_allocate_unsold_leads_for_purchase_ignores_legacy_refund_adjustments_for_entitlement(
     db,
     user_factory,

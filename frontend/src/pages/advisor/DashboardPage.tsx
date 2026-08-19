@@ -117,6 +117,7 @@ const DashboardPage = () => {
   const [summary, setSummary] = useState<LeadDashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isNotificationPanelOpen, setIsNotificationPanelOpen] = useState(false);
   const [isSettingsEditorOpen, setIsSettingsEditorOpen] = useState(false);
   const [settingsEditorLoading, setSettingsEditorLoading] = useState(false);
   const [settingsPendingField, setSettingsPendingField] = useState<
@@ -328,6 +329,9 @@ const DashboardPage = () => {
   };
 
   const settings = summary?.settings;
+  const hasDeliveryNotificationsEnabled = Boolean(
+    settings?.email_alerts_enabled || settings?.sms_alerts_enabled,
+  );
 
   return (
     <div className="page">
@@ -338,13 +342,74 @@ const DashboardPage = () => {
             Track your lead flow, performance, and delivery settings.
           </p>
         </div>
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={() => navigate("/subscription")}
-        >
-          Buy More Leads
-        </button>
+        <div className="dashboard-header-actions">
+          <div className="notification-menu">
+            <button
+              type="button"
+              className="notification-button"
+              aria-label={
+                isNotificationPanelOpen
+                  ? "Close notification settings"
+                  : "Open notification settings"
+              }
+              aria-expanded={isNotificationPanelOpen}
+              aria-haspopup="dialog"
+              onClick={() => setIsNotificationPanelOpen((current) => !current)}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 22h4" />
+              </svg>
+              {!loading && !hasDeliveryNotificationsEnabled && (
+                <span className="notification-attention" aria-label="Notifications need attention">
+                  !
+                </span>
+              )}
+            </button>
+
+            {isNotificationPanelOpen && (
+              <section className="notification-popover" role="dialog" aria-label="Notification settings">
+                <div className="notification-popover-heading">
+                  <div>
+                    <strong>Lead notifications</strong>
+                    <p>Delivery alerts for your new leads.</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="notification-close"
+                    aria-label="Close notification settings"
+                    onClick={() => setIsNotificationPanelOpen(false)}
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="notification-status-list">
+                  <span>Email alerts <b>{settings?.email_alerts_enabled ? "On" : "Off"}</b></span>
+                  <span>SMS alerts <b>{settings?.sms_alerts_enabled ? "On" : "Off"}</b></span>
+                </div>
+                {!hasDeliveryNotificationsEnabled && !loading && (
+                  <p className="notification-warning">Turn on an alert channel so new lead deliveries do not go unnoticed.</p>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-secondary notification-manage-button"
+                  onClick={() => {
+                    setIsNotificationPanelOpen(false);
+                    void handleOpenSettingsEditor();
+                  }}
+                >
+                  Manage notifications
+                </button>
+              </section>
+            )}
+          </div>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => navigate("/subscription")}
+          >
+            Buy More Leads
+          </button>
+        </div>
       </div>
 
       {error && <div className="alert">{error}</div>}

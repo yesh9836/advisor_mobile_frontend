@@ -72,6 +72,51 @@ def test_register_login_and_me_roundtrip(client):
 
 
 @pytest.mark.integration
+def test_authenticated_user_can_change_password(client):
+    payload = {
+        "email": "advisor.change.password@example.com",
+        "password": "StrongPass123!",
+        "name": "Password Advisor",
+    }
+    assert client.post("/api/v1/auth/register", json=payload).status_code == 201
+    assert client.post(
+        "/api/v1/auth/login",
+        json={"email": payload["email"], "password": payload["password"]},
+    ).status_code == 204
+
+    csrf_token = client.cookies.get(settings.AUTH_CSRF_COOKIE_NAME)
+    incorrect = client.post(
+        "/api/v1/auth/change-password",
+        headers={settings.AUTH_CSRF_HEADER_NAME: csrf_token},
+        json={"current_password": "NotThePassword!", "new_password": "NewPass123!"},
+    )
+    assert incorrect.status_code == 400
+    assert incorrect.json()["detail"] == "Current password is incorrect"
+
+    changed = client.post(
+        "/api/v1/auth/change-password",
+        headers={settings.AUTH_CSRF_HEADER_NAME: csrf_token},
+        json={"current_password": payload["password"], "new_password": "NewPass123!"},
+    )
+    assert changed.status_code == 204, changed.text
+
+    client.post(
+        "/api/v1/auth/logout",
+        headers={settings.AUTH_CSRF_HEADER_NAME: csrf_token},
+    )
+    old_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": payload["email"], "password": payload["password"]},
+    )
+    assert old_login.status_code == 401
+    new_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": payload["email"], "password": "NewPass123!"},
+    )
+    assert new_login.status_code == 204
+
+
+@pytest.mark.integration
 def test_register_normalizes_us_phone_to_plus_one(client):
     payload = {
         "email": "advisor.phone.normalize@example.com",

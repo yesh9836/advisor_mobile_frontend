@@ -3,16 +3,20 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_frontend/models/advisor_models.dart';
 import 'package:flutter_frontend/repositories/advisor_repository.dart';
+import 'package:flutter_frontend/screens/advisor/lead_details_sheet.dart';
 
 class LeadsScreen extends StatefulWidget {
-  const LeadsScreen({super.key});
+  const LeadsScreen({super.key, this.repository});
+
+  final AdvisorRepository? repository;
 
   @override
   State<LeadsScreen> createState() => _LeadsScreenState();
 }
 
 class _LeadsScreenState extends State<LeadsScreen> {
-  final _repository = AdvisorRepository();
+  late final AdvisorRepository _repository =
+      widget.repository ?? AdvisorRepository();
   final _searchController = TextEditingController();
   Timer? _searchDebounce;
   String _selectedOutcome = 'all';
@@ -27,7 +31,18 @@ class _LeadsScreenState extends State<LeadsScreen> {
   }
 
   void _refreshLeads() {
-    setState(() => _future = _loadLeads());
+    setState(() {
+      _future = _loadLeads();
+    });
+  }
+
+  Future<void> _openLead(AdvisorLead lead) {
+    return showLeadDetailsSheet(
+      context: context,
+      lead: lead,
+      repository: _repository,
+      onUpdated: (_) => _refreshLeads(),
+    );
   }
 
   void _onSearchChanged(String _) {
@@ -101,7 +116,7 @@ class _LeadsScreenState extends State<LeadsScreen> {
               for (final lead in leads)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
-                  child: _LeadCard(lead: lead),
+                  child: _LeadCard(lead: lead, onTap: () => _openLead(lead)),
                 ),
           ],
         );
@@ -255,9 +270,10 @@ class _FilterPill extends StatelessWidget {
 }
 
 class _LeadCard extends StatelessWidget {
-  const _LeadCard({required this.lead});
+  const _LeadCard({required this.lead, required this.onTap});
 
   final AdvisorLead lead;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -281,7 +297,7 @@ class _LeadCard extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(18),
-          onTap: () {},
+          onTap: onTap,
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
