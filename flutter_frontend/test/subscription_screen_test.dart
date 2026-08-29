@@ -63,6 +63,38 @@ void main() {
     expect(repository.savedPackageId, isNull);
   });
 
+  testWidgets('demo checkout completes without launching an external URL', (
+    tester,
+  ) async {
+    final repository = _FakeAdvisorRepository()..demoMode = true;
+    var launcherCalled = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SubscriptionScreen(
+            repository: repository,
+            checkoutUrlLauncher: (_) async {
+              launcherCalled = true;
+              return true;
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Starter'));
+    await tester.tap(find.text('TX'));
+    await tester.tap(find.text('Continue to checkout'));
+    await tester.pumpAndSettle();
+
+    expect(launcherCalled, isFalse);
+    expect(
+      find.textContaining('Purchase complete. 10 lead credits were added'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('confirms a completed Stripe checkout and reports lead credits', (
     tester,
   ) async {
@@ -97,6 +129,7 @@ class _FakeAdvisorRepository extends AdvisorRepository {
   int? savedPackageId;
   List<String>? savedTargetStates;
   String? savedRetryToken;
+  bool demoMode = false;
 
   @override
   Future<List<LeadPackage>> getPackages() async => [
@@ -133,6 +166,7 @@ class _FakeAdvisorRepository extends AdvisorRepository {
     return PurchaseCheckoutSession(
       sessionId: 'cs_test',
       url: Uri.parse('https://checkout.example/session'),
+      demoMode: demoMode,
     );
   }
 

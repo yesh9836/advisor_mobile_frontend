@@ -374,15 +374,21 @@ class LeadPackage {
 }
 
 class PurchaseCheckoutSession {
-  PurchaseCheckoutSession({required this.sessionId, required this.url});
+  PurchaseCheckoutSession({
+    required this.sessionId,
+    required this.url,
+    this.demoMode = false,
+  });
 
   final String sessionId;
   final Uri url;
+  final bool demoMode;
 
   factory PurchaseCheckoutSession.fromJson(Map<String, dynamic> json) {
     return PurchaseCheckoutSession(
       sessionId: json['session_id'] as String? ?? '',
       url: Uri.parse(json['url'] as String? ?? ''),
+      demoMode: json['demo_mode'] as bool? ?? false,
     );
   }
 }

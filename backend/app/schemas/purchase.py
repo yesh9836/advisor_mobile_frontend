@@ -24,6 +24,7 @@ class PurchasePackageResponse(BaseModel):
 class PurchaseCheckoutResponse(BaseModel):
     session_id: str
     url: str
+    demo_mode: bool = False
 
 
 class PurchaseCheckoutRequest(BaseModel):

@@ -98,6 +98,8 @@ class Settings(BaseSettings):
     STRIPE_SECRET_KEY: str = ""
     STRIPE_PUBLISHABLE_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
+    # Local/staging-only escape hatch for UI and fulfillment testing without Stripe.
+    STRIPE_DEMO_MODE: bool = False
     STRIPE_API_VERSION: str = "2023-10-16"
     STRIPE_REQUEST_TIMEOUT_SECONDS: float = 30.0
     STRIPE_MAX_NETWORK_RETRIES: int = 2
@@ -529,6 +531,9 @@ class Settings(BaseSettings):
 
         if not self.STRIPE_SECRET_KEY or not self.STRIPE_WEBHOOK_SECRET:
             raise ValueError("Stripe secrets must be configured in production")
+
+        if self.STRIPE_DEMO_MODE:
+            raise ValueError("STRIPE_DEMO_MODE must be disabled in production")
 
         if not self.CORS_ORIGINS:
             raise ValueError("CORS_ORIGINS must include trusted origins in production")

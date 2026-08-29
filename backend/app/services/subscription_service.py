@@ -1,3 +1,4 @@
+import hashlib
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -355,7 +356,7 @@ class SubscriptionService:
         package_id: int,
         target_states: List[str],
         retry_token: Optional[str] = None,
-    ) -> Dict[str, str]:
+    ) -> Dict[str, Any]:
         """
         Create Stripe checkout session for one-time package purchase.
         """
@@ -425,8 +426,6 @@ class SubscriptionService:
                 detail=f"This package supports up to {int(package.state_limit)} target states",
             )
 
-        customer_id = PaymentService.create_or_get_stripe_customer(db, user)
-
         frontend_base_url = settings.FRONTEND_URL.rstrip("/")
         success_url = (
             f"{frontend_base_url}/subscription"
@@ -440,6 +439,46 @@ class SubscriptionService:
             purchase_terms=purchase_terms,
             target_states=selected_states,
         )
+
+        if settings.STRIPE_DEMO_MODE:
+            idempotency_key = PaymentService.checkout_session_idempotency_key(
+                user_id=user.id,
+                package_id=package.id,
+                retry_token=retry_token,
+            )
+            demo_reference = hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()[:32]
+            session_id = f"cs_demo_{demo_reference}"
+            synthetic_session = {
+                "id": session_id,
+                "payment_status": "paid",
+                "amount_total": int(purchase_terms["amount_cents"]),
+                "currency": str(purchase_terms["currency"]).lower(),
+                "created": int(datetime.now(timezone.utc).timestamp()),
+                "metadata": checkout_metadata,
+                "payment_intent": f"pi_demo_{demo_reference}",
+            }
+            SubscriptionService._create_or_update_purchase_from_checkout_session(
+                db=db,
+                checkout_session=synthetic_session,
+                stripe_event_id=f"evt_demo_{demo_reference}",
+            )
+            logger.warning(
+                "Demo checkout completed without Stripe charge user_id=%s package_id=%s session_id=%s",
+                user.id,
+                package.id,
+                session_id,
+            )
+            MetricsService.increment(
+                "purchase_checkout_created_total",
+                tags={"provider": "demo", "package_id": str(package.id)},
+            )
+            return {
+                "session_id": session_id,
+                "url": f"https://demo-checkout.invalid/{session_id}",
+                "demo_mode": True,
+            }
+
+        customer_id = PaymentService.create_or_get_stripe_customer(db, user)
 
         try:
             idempotency_key = PaymentService.checkout_session_idempotency_key(
@@ -556,7 +595,7 @@ class SubscriptionService:
                     "package_id": str(package.id),
                 },
             )
-            return {"session_id": session_id, "url": session["url"]}
+            return {"session_id": session_id, "url": session["url"], "demo_mode": False}
 
         except stripe.error.StripeError as e:
             db.rollback()

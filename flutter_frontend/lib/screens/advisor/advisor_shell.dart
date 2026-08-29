@@ -29,6 +29,7 @@ class _AdvisorShellState extends State<AdvisorShell> {
       AdvisorDashboardScreen(
         onBuyLeads: () => _selectTab(2),
         onViewInbox: () => _selectTab(3),
+        onOpenProfile: () => _selectTab(4),
       ),
       GoalsScreen(onSeeAllPackages: () => _selectTab(2)),
       const SubscriptionScreen(),
@@ -78,10 +79,12 @@ class AdvisorDashboardScreen extends StatefulWidget {
     super.key,
     required this.onBuyLeads,
     required this.onViewInbox,
+    required this.onOpenProfile,
   });
 
   final VoidCallback onBuyLeads;
   final VoidCallback onViewInbox;
+  final VoidCallback onOpenProfile;
 
   @override
   State<AdvisorDashboardScreen> createState() => _AdvisorDashboardScreenState();
@@ -167,7 +170,11 @@ class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
             else if (snapshot.hasError)
               _EmptyPanel(message: snapshot.error.toString())
             else ...[
-              _HomeHeader(user: data!.user, summary: data.summary),
+              _HomeHeader(
+                user: data!.user,
+                summary: data.summary,
+                onOpenProfile: widget.onOpenProfile,
+              ),
               const SizedBox(height: 18),
               Row(
                 children: [
@@ -268,10 +275,15 @@ class _DashboardData {
 }
 
 class _HomeHeader extends StatelessWidget {
-  const _HomeHeader({required this.user, required this.summary});
+  const _HomeHeader({
+    required this.user,
+    required this.summary,
+    required this.onOpenProfile,
+  });
 
   final UserProfile user;
   final LeadDashboardSummary summary;
+  final VoidCallback onOpenProfile;
 
   void _showNotificationSheet(BuildContext context) {
     final hasNotificationsEnabled =
@@ -379,15 +391,31 @@ class _HomeHeader extends StatelessWidget {
           ],
         ),
         const SizedBox(width: 10),
-        CircleAvatar(
-          radius: 19,
-          backgroundColor: const Color(0xFF202860),
-          child: Text(
-            _initials(user.name),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
+        Semantics(
+          button: true,
+          label: 'Open profile',
+          child: Tooltip(
+            message: 'Open profile',
+            child: Material(
+              color: const Color(0xFF202860),
+              shape: const CircleBorder(),
+              child: InkWell(
+                onTap: onOpenProfile,
+                customBorder: const CircleBorder(),
+                child: SizedBox.square(
+                  dimension: 38,
+                  child: Center(
+                    child: Text(
+                      _initials(user.name),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
         ),

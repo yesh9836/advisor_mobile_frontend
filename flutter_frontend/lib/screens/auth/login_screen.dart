@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_frontend/screens/advisor/advisor_shell.dart';
+import 'package:flutter_frontend/screens/auth/forgot_password_screen.dart';
 import 'package:flutter_frontend/screens/auth/register_screen.dart';
 import '../../models/auth_models.dart';
 import '../../repositories/auth_repository.dart';
 import '../../services/api_service.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({super.key, this.authRepository});
+
+  final AuthRepository? authRepository;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -16,7 +19,8 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _authRepository = AuthRepository(apiService: ApiService());
+  late final AuthRepository _authRepository =
+      widget.authRepository ?? AuthRepository(apiService: ApiService());
   bool _isLoading = false;
   bool _obscurePassword = true;
   String? _error;
@@ -90,6 +94,16 @@ class _LoginScreenState extends State<LoginScreen> {
                         setState(() => _obscurePassword = !_obscurePassword);
                       },
                       onSubmit: _submit,
+                      onForgotPassword: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => ForgotPasswordScreen(
+                              authRepository: _authRepository,
+                              initialEmail: _emailController.text.trim(),
+                            ),
+                          ),
+                        );
+                      },
                       onRegister: () {
                         Navigator.of(context).push(
                           MaterialPageRoute(
@@ -166,6 +180,7 @@ class _LoginPanel extends StatelessWidget {
     required this.error,
     required this.onTogglePassword,
     required this.onSubmit,
+    required this.onForgotPassword,
     required this.onRegister,
   });
 
@@ -177,6 +192,7 @@ class _LoginPanel extends StatelessWidget {
   final String? error;
   final VoidCallback onTogglePassword;
   final VoidCallback onSubmit;
+  final VoidCallback onForgotPassword;
   final VoidCallback onRegister;
 
   @override
@@ -255,7 +271,7 @@ class _LoginPanel extends StatelessWidget {
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
-                  onPressed: () {},
+                  onPressed: isLoading ? null : onForgotPassword,
                   style: TextButton.styleFrom(
                     foregroundColor: const Color(0xFF0087B7),
                     padding: EdgeInsets.zero,

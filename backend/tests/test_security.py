@@ -107,6 +107,12 @@ def test_production_settings_require_strong_secret_key():
 
 
 @pytest.mark.unit
+def test_production_settings_reject_stripe_demo_mode():
+    with pytest.raises(ValidationError, match="STRIPE_DEMO_MODE must be disabled"):
+        Settings(**_production_settings_kwargs(STRIPE_DEMO_MODE=True))
+
+
+@pytest.mark.unit
 def test_production_settings_reject_wildcard_cors():
     with pytest.raises(ValidationError):
         Settings(**_production_settings_kwargs(CORS_ALLOW_METHODS=["*"]))

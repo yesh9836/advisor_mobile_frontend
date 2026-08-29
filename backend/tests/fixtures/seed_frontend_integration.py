@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_password_hash
 from app.db.session import SessionLocal
-from app.models.lead import Lead, LeadOutcome
+from app.models.goal import AdvisorGoal
+from app.models.lead import Lead, LeadOutcome, LeadOwnership
 from app.models.license import License
 from app.models.purchase import LeadPackage, LeadPurchase
 from app.models.user import User
@@ -289,7 +290,17 @@ def ensure_leads(db: Session, states: list[str], count_per_state: int = 12) -> l
 
 
 def ensure_outcomes(db: Session, advisor: User, leads: list[Lead], max_rows: int = 9) -> None:
-    statuses = ["new", "contacted", "appointment_set"]
+    statuses = [
+        "new",
+        "contacted",
+        "appointment_set",
+        "closed_deal",
+        "contacted",
+        "appointment_set",
+        "closed_deal",
+        "new",
+        "appointment_set",
+    ]
     now = datetime.now(timezone.utc)
     updated = 0
 
@@ -325,6 +336,77 @@ def ensure_outcomes(db: Session, advisor: User, leads: list[Lead], max_rows: int
     logger.info("Outcomes upserted: %s", updated)
 
 
+def ensure_current_goal(db: Session, advisor: User) -> AdvisorGoal:
+    target_year = datetime.now(timezone.utc).year
+    goal = (
+        db.query(AdvisorGoal)
+        .filter(
+            AdvisorGoal.user_id == advisor.id,
+            AdvisorGoal.target_year == target_year,
+        )
+        .first()
+    )
+    if goal is None:
+        goal = AdvisorGoal(user_id=advisor.id, target_year=target_year)
+
+    goal.annual_income_goal_cents = 12_000_000
+    goal.average_commission_cents = 600_000
+    goal.earned_ytd_cents = 3_600_000
+    goal.appointment_to_deal_rate_bps = 2_500
+    goal.lead_to_appointment_rate_bps = 1_000
+    db.add(goal)
+    db.commit()
+    db.refresh(goal)
+    logger.info(
+        "Current goal upserted: annual=$%s earned=$%s",
+        goal.annual_income_goal_cents // 100,
+        goal.earned_ytd_cents // 100,
+    )
+    return goal
+
+
+def ensure_recent_dashboard_deliveries(
+    db: Session,
+    advisor: User,
+    purchase: LeadPurchase,
+    leads: list[Lead],
+    max_rows: int = 9,
+) -> list[Lead]:
+    """Keep repeatable demo deliveries inside the dashboard's seven-day window."""
+    now = datetime.now(timezone.utc)
+    assigned_leads: list[Lead] = []
+
+    for lead in leads:
+        ownership = (
+            db.query(LeadOwnership)
+            .filter(LeadOwnership.lead_id == lead.id)
+            .first()
+        )
+        if ownership is not None and ownership.user_id != advisor.id:
+            continue
+
+        assigned_at = now - timedelta(days=len(assigned_leads) % 6)
+        if ownership is None:
+            ownership = LeadOwnership(
+                user_id=advisor.id,
+                lead_id=lead.id,
+                purchase_id=purchase.id,
+                assigned_at=assigned_at,
+            )
+        else:
+            ownership.purchase_id = purchase.id
+            ownership.assigned_at = assigned_at
+
+        db.add(ownership)
+        assigned_leads.append(lead)
+        if len(assigned_leads) >= max_rows:
+            break
+
+    db.commit()
+    logger.info("Recent dashboard deliveries upserted: %s", len(assigned_leads))
+    return assigned_leads
+
+
 def main() -> None:
     db = SessionLocal()
     try:
@@ -350,9 +432,17 @@ def main() -> None:
         )
 
         ensure_verified_licenses(db, advisor, admin)
-        ensure_completed_purchase(db, advisor, plans["Pro"])
+        purchase = ensure_completed_purchase(db, advisor, plans["Pro"])
         leads = ensure_leads(db, TARGET_STATES, count_per_state=12)
-        ensure_outcomes(db, advisor, leads, max_rows=9)
+        dashboard_leads = ensure_recent_dashboard_deliveries(
+            db,
+            advisor,
+            purchase,
+            leads,
+            max_rows=9,
+        )
+        ensure_outcomes(db, advisor, dashboard_leads, max_rows=9)
+        ensure_current_goal(db, advisor)
 
         logger.info("Seed complete.")
         logger.info("Advisor login: %s / %s", DEMO_ADVISOR_EMAIL, DEMO_PASSWORD)

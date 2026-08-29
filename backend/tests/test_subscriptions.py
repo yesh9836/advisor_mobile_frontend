@@ -202,6 +202,77 @@ def test_checkout_success_returns_session(
 
 
 @pytest.mark.integration
+def test_demo_checkout_completes_and_grants_credits_without_stripe(
+    client,
+    db,
+    user_factory,
+    license_factory,
+    plan_factory,
+    auth_headers,
+    monkeypatch,
+):
+    advisor, headers = _create_advisor_with_verified_license(
+        user_factory,
+        license_factory,
+        auth_headers,
+    )
+    plan = plan_factory(
+        stripe_price_id="price_demo_checkout",
+        daily_download_limit=10,
+    )
+    monkeypatch.setattr(settings, "STRIPE_DEMO_MODE", True)
+    monkeypatch.setattr(
+        "app.services.payment_service.PaymentService.create_or_get_stripe_customer",
+        lambda *_args, **_kwargs: pytest.fail("Stripe customer API must not be called"),
+    )
+    monkeypatch.setattr(
+        "app.services.subscription_service.stripe.checkout.Session.create",
+        lambda **_kwargs: pytest.fail("Stripe checkout API must not be called"),
+    )
+
+    payload = {
+        "package_id": plan.id,
+        "target_states": ["CA"],
+        "retry_token": "demo-checkout-retry-1",
+    }
+    response = client.post("/api/v1/purchases/checkout", headers=headers, json=payload)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["demo_mode"] is True
+    assert body["session_id"].startswith("cs_demo_")
+
+    purchase = (
+        db.query(LeadPurchase)
+        .filter(LeadPurchase.stripe_checkout_session_id == body["session_id"])
+        .one()
+    )
+    assert purchase.status == "completed"
+    assert purchase.credits_total == 10
+    grant = (
+        db.query(LeadCreditLedger)
+        .filter(
+            LeadCreditLedger.purchase_id == purchase.id,
+            LeadCreditLedger.movement_type == "purchase_grant",
+        )
+        .one()
+    )
+    assert grant.credits_delta == 10
+
+    replay = client.post("/api/v1/purchases/checkout", headers=headers, json=payload)
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["session_id"] == body["session_id"]
+    assert (
+        db.query(LeadCreditLedger)
+        .filter(
+            LeadCreditLedger.purchase_id == purchase.id,
+            LeadCreditLedger.movement_type == "purchase_grant",
+        )
+        .count()
+        == 1
+    )
+
+
+@pytest.mark.integration
 def test_checkout_success_emits_metric_and_purchase_initiated_audit(
     client,
     db,

@@ -110,6 +110,18 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
         targetStates: _selectedStates.toList()..sort(),
         retryToken: _checkoutRetryToken,
       );
+      if (checkout.demoMode) {
+        if (!mounted) return;
+        setState(() {
+          _activeCheckout = checkout;
+          _checkoutNotice =
+              'Demo checkout completed — no payment was charged. '
+              'Confirming your lead credits now.';
+          _checkoutPollAttempt = 0;
+        });
+        await _checkPurchaseStatus();
+        return;
+      }
       final launcher =
           widget.checkoutUrlLauncher ??
           (url) => launchUrl(url, mode: LaunchMode.externalApplication);

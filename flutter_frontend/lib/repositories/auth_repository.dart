@@ -120,6 +120,28 @@ class AuthRepository {
     }
   }
 
+  Future<String> requestPasswordReset(String email) async {
+    final response = await _apiService.post(
+      '/auth/password-reset/request',
+      body: {'email': email.trim()},
+    );
+    if (response.statusCode != 202) {
+      throw AuthException.fromResponse(
+        response.body,
+        'Unable to process password reset right now.',
+      );
+    }
+
+    try {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final message = data['message'];
+      if (message is String && message.isNotEmpty) return message;
+    } catch (_) {
+      // Use the same account-safe message if the response body is malformed.
+    }
+    return 'If an account exists for that email, password reset instructions will be sent.';
+  }
+
   Future<UserProfile> register(RegisterRequest request) async {
     final response = await _apiService.post(
       '/auth/register',
