@@ -80,6 +80,9 @@ services:
       - uploads_data:/app/uploads
     ports:
       - "${BACKEND_BIND_ADDRESS:-0.0.0.0}:${BACKEND_PORT:-8000}:8000"
+    networks:
+      - default
+      - advisor_proxy
     depends_on:
       mysql:
         condition: service_healthy
@@ -216,3 +219,8 @@ volumes:
   mysql_data:
   redis_data:
   uploads_data:
+
+networks:
+  advisor_proxy:
+    name: advisor_proxy
+    external: true
