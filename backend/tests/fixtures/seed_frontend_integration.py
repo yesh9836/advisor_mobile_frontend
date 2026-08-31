@@ -349,16 +349,28 @@ def ensure_current_goal(db: Session, advisor: User) -> AdvisorGoal:
     if goal is None:
         goal = AdvisorGoal(user_id=advisor.id, target_year=target_year)
 
-    goal.annual_income_goal_cents = 12_000_000
+    # Keep this profile aligned with the populated Demo Advisor experience
+    # used by the emulator: $180k target, $36k earned, and a $6k average
+    # commission. The derived remaining metrics are 24 deals, 96
+    # appointments, and 960 leads.
+    goal.annual_income_goal_cents = 18_000_000
+    goal.average_sale_cents = 3_000_000
+    goal.commission_rate_bps = 2_000
     goal.average_commission_cents = 600_000
     goal.earned_ytd_cents = 3_600_000
     goal.appointment_to_deal_rate_bps = 2_500
     goal.lead_to_appointment_rate_bps = 1_000
+    goal.onboarding_completed_at = (
+        goal.onboarding_completed_at or datetime.now(timezone.utc)
+    )
+    goal.onboarding_consent_at = (
+        goal.onboarding_consent_at or datetime.now(timezone.utc)
+    )
     db.add(goal)
     db.commit()
     db.refresh(goal)
     logger.info(
-        "Current goal upserted: annual=$%s earned=$%s",
+        "Current goal and onboarding upserted: annual=$%s earned=$%s",
         goal.annual_income_goal_cents // 100,
         goal.earned_ytd_cents // 100,
     )
