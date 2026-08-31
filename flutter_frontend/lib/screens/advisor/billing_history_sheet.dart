@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_frontend/models/advisor_models.dart';
 import 'package:flutter_frontend/repositories/advisor_repository.dart';
+import 'package:flutter_frontend/theme/app_theme.dart';
 
 Future<void> showBillingHistorySheet({
   required BuildContext context,
@@ -47,21 +48,21 @@ class _BillingHistorySheetState extends State<BillingHistorySheet> {
           children: [
             Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         'Billing History',
                         style: TextStyle(
-                          color: Color(0xFF202860),
+                          color: context.appInk,
                           fontSize: 24,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
                       Text(
                         'Invoices and purchase history.',
-                        style: TextStyle(color: Color(0xFF58707D)),
+                        style: TextStyle(color: context.appMuted),
                       ),
                     ],
                   ),
@@ -99,10 +100,10 @@ class _BillingHistorySheetState extends State<BillingHistorySheet> {
                 _PaymentMethodCard(paymentMethod: paymentMethod),
                 const SizedBox(height: 16),
               ],
-              const Text(
+              Text(
                 'Recent Purchases',
                 style: TextStyle(
-                  color: Color(0xFF202860),
+                  color: context.appInk,
                   fontSize: 18,
                   fontWeight: FontWeight.w900,
                 ),
@@ -139,6 +140,7 @@ class _PaymentMethodCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFF202860),
         borderRadius: BorderRadius.circular(16),
+        boxShadow: context.appCardShadows,
       ),
       child: Row(
         children: [
@@ -181,9 +183,10 @@ class _InvoiceCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: context.appSurfaceRaised,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFCFE4EC)),
+        border: Border.all(color: context.appOutline),
+        boxShadow: context.appCardShadows,
       ),
       child: Row(
         children: [
@@ -207,18 +210,15 @@ class _InvoiceCard extends StatelessWidget {
                   invoice.packageName?.trim().isNotEmpty ?? false
                       ? invoice.packageName!.trim()
                       : 'Lead purchase',
-                  style: const TextStyle(
-                    color: Color(0xFF202860),
+                  style: TextStyle(
+                    color: context.appInk,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
                 const SizedBox(height: 3),
                 Text(
                   '${_formatDate(invoice.createdAt)} · ${_titleCase(invoice.status)}',
-                  style: const TextStyle(
-                    color: Color(0xFF58707D),
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: context.appMuted, fontSize: 12),
                 ),
               ],
             ),
@@ -226,8 +226,8 @@ class _InvoiceCard extends StatelessWidget {
           const SizedBox(width: 8),
           Text(
             _formatAmount(invoice.amountPaidCents, invoice.currency),
-            style: const TextStyle(
-              color: Color(0xFF202860),
+            style: TextStyle(
+              color: context.appInk,
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -255,19 +255,17 @@ class _BillingNotice extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF7FBFD),
+        color: context.appSoftFill,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFCFE4EC)),
+        border: Border.all(color: context.appOutline),
+        boxShadow: context.appCardShadows,
       ),
       child: Row(
         children: [
           Icon(icon, color: const Color(0xFF18A0B8)),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              message,
-              style: const TextStyle(color: Color(0xFF58707D)),
-            ),
+            child: Text(message, style: TextStyle(color: context.appMuted)),
           ),
           if (actionLabel != null)
             TextButton(onPressed: onAction, child: Text(actionLabel!)),

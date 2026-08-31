@@ -2,7 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_frontend/models/advisor_models.dart';
+import 'package:flutter_frontend/models/onboarding_models.dart';
 import 'package:flutter_frontend/repositories/advisor_repository.dart';
+import 'package:flutter_frontend/repositories/auth_repository.dart';
+import 'package:flutter_frontend/screens/advisor/onboarding_screen.dart';
+import 'package:flutter_frontend/theme/app_components.dart';
+import 'package:flutter_frontend/theme/app_theme.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 typedef CheckoutUrlLauncher = Future<bool> Function(Uri url);
@@ -25,7 +30,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
     with WidgetsBindingObserver {
   late final AdvisorRepository _repository =
       widget.repository ?? AdvisorRepository();
-  late final Future<_BuyData> _future;
+  final AuthRepository _authRepository = AuthRepository();
+  late Future<_BuyData> _future;
   int? _selectedPackageId;
   final Set<String> _selectedStates = {};
   bool _saving = false;
@@ -65,13 +71,32 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
     final results = await Future.wait([
       _repository.getPackages(),
       _repository.getDashboardSummary(),
+      _repository.getOnboarding(),
     ]);
     final data = _BuyData(
       packages: results[0] as List<LeadPackage>,
       summary: results[1] as LeadDashboardSummary,
+      onboarding: results[2] as AdvisorOnboarding,
     );
     _selectedStates.addAll(data.summary.targetStates);
     return data;
+  }
+
+  Future<void> _reviewOnboarding(AdvisorOnboarding onboarding) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => AdvisorOnboardingScreen(
+          mandatory: false,
+          initialData: onboarding,
+          advisorRepository: _repository,
+          authRepository: _authRepository,
+          onCompleted: (_) => Navigator.of(context).pop(),
+        ),
+      ),
+    );
+    if (!mounted) return;
+    setState(() => _future = _load());
   }
 
   Future<void> _continueToCheckout(_BuyData data) async {
@@ -218,22 +243,15 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
       future: _future,
       builder: (context, snapshot) {
         return ListView(
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 18),
           children: [
-            const Text(
-              'Buy Leads',
-              style: TextStyle(
-                color: Color(0xFF202860),
-                fontSize: 22,
-                fontWeight: FontWeight.w900,
-              ),
+            const AppScreenHeader(
+              eyebrow: 'Grow your pipeline',
+              title: 'Buy Leads',
+              subtitle: 'Choose a package and target the states that matter.',
+              icon: Icons.shopping_bag_rounded,
             ),
-            const SizedBox(height: 4),
-            const Text(
-              'Select a package and target states',
-              style: TextStyle(color: Color(0xFF58707D)),
-            ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 11),
             if (snapshot.connectionState == ConnectionState.waiting)
               const Center(child: CircularProgressIndicator())
             else if (snapshot.hasError)
@@ -244,6 +262,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                 ),
               )
             else ...[
+              _LicenseReviewBanner(
+                onboarding: snapshot.data!.onboarding,
+                onReview: () => _reviewOnboarding(snapshot.data!.onboarding),
+              ),
+              const SizedBox(height: 10),
               _TargetStates(
                 states: snapshot.data!.summary.targetStates,
                 selectedStates: _selectedStates,
@@ -257,10 +280,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                   });
                 },
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
               for (final package in snapshot.data!.packages)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.only(bottom: 9),
                   child: _PackageCard(
                     package: package,
                     selected: _selectedPackageId == package.id,
@@ -274,7 +297,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                   margin: const EdgeInsets.only(bottom: 12),
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFE9F8FC),
+                    color: context.appSoftFill,
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: const Color(0xFF9BDCE8)),
                   ),
@@ -283,7 +306,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                     children: [
                       Text(
                         _checkoutNotice!,
-                        style: const TextStyle(color: Color(0xFF335366)),
+                        style: TextStyle(color: context.appMuted),
                       ),
                       if (_activeCheckout != null) ...[
                         const SizedBox(height: 8),
@@ -312,7 +335,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                 const SizedBox(height: 10),
               ],
               SizedBox(
-                height: 50,
+                height: 46,
                 child: FilledButton(
                   onPressed: _saving
                       ? null
@@ -325,6 +348,29 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                   ),
                 ),
               ),
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.lock_outline, size: 14, color: context.appMuted),
+                  const SizedBox(width: 5),
+                  Flexible(
+                    child: Text(
+                      'Secure checkout. Cancel anytime.',
+                      style: TextStyle(color: context.appMuted, fontSize: 11),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Billing FAQ',
+                    style: TextStyle(
+                      color: Color(0xFF078AA2),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
             ],
           ],
         );
@@ -334,10 +380,104 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
 }
 
 class _BuyData {
-  _BuyData({required this.packages, required this.summary});
+  _BuyData({
+    required this.packages,
+    required this.summary,
+    required this.onboarding,
+  });
 
   final List<LeadPackage> packages;
   final LeadDashboardSummary summary;
+  final AdvisorOnboarding onboarding;
+}
+
+class _LicenseReviewBanner extends StatelessWidget {
+  const _LicenseReviewBanner({
+    required this.onboarding,
+    required this.onReview,
+  });
+
+  final AdvisorOnboarding onboarding;
+  final VoidCallback onReview;
+
+  @override
+  Widget build(BuildContext context) {
+    final rejected = onboarding.licenseStatus == 'rejected';
+    final pending = onboarding.licenseStatus == 'pending';
+    final color = rejected
+        ? const Color(0xFFDC2626)
+        : pending
+        ? const Color(0xFFF59E0B)
+        : const Color(0xFF059669);
+    final title = rejected
+        ? 'License rejected — action required'
+        : pending
+        ? 'License is in review'
+        : 'License verified';
+    final description = rejected
+        ? onboarding.rejectedLicense?.rejectionReason ??
+              'Review the decision and resubmit your document.'
+        : pending
+        ? 'Your answers are saved. We’ll notify you after verification.'
+        : 'Your onboarding plan and license are ready.';
+
+    return Container(
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: context.isDarkMode ? .14 : .07),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: .3)),
+        boxShadow: context.appCardShadows,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 39,
+            height: 39,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: .13),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              rejected
+                  ? Icons.error_outline
+                  : pending
+                  ? Icons.hourglass_top_rounded
+                  : Icons.verified_outlined,
+              color: color,
+              size: 21,
+            ),
+          ),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: context.appInk,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  description,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: context.appMuted, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: onReview,
+            child: Text(rejected ? 'Fix now' : 'Review'),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _TargetStates extends StatelessWidget {
@@ -355,39 +495,33 @@ class _TargetStates extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFCFE4EC)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0F0C5263),
-            blurRadius: 20,
-            offset: Offset(0, 10),
-          ),
-        ],
+        color: context.appSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.appOutline),
+        boxShadow: context.appCardShadows,
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Target States',
               style: TextStyle(
-                color: Color(0xFF202860),
+                color: context.appInk,
                 fontWeight: FontWeight.w900,
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 9),
             if (states.isEmpty)
-              const Text(
+              Text(
                 'Add and verify a license before selecting target states.',
-                style: TextStyle(color: Color(0xFF58707D)),
+                style: TextStyle(color: context.appMuted),
               )
             else
               Wrap(
                 spacing: 8,
-                runSpacing: 8,
+                runSpacing: 7,
                 children: [
                   for (final state in states)
                     _StateChip(
@@ -418,33 +552,31 @@ class _StateChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: selected ? const Color(0xFF202860) : const Color(0xFFF4FAFC),
+      color: context.appSurface,
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         onTap: onTap,
         child: Container(
           constraints: const BoxConstraints(minWidth: 54),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: selected
-                  ? const Color(0xFF202860)
-                  : const Color(0xFFCFE4EC),
+              color: selected ? const Color(0xFF078AA2) : context.appOutline,
             ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               if (selected) ...[
-                const Icon(Icons.check, color: Colors.white, size: 14),
+                const Icon(Icons.check, color: Color(0xFF078AA2), size: 14),
                 const SizedBox(width: 5),
               ],
               Text(
                 state,
                 style: TextStyle(
-                  color: selected ? Colors.white : const Color(0xFF58707D),
+                  color: selected ? const Color(0xFF078AA2) : context.appMuted,
                   fontSize: 12,
                   fontWeight: FontWeight.w900,
                 ),
@@ -475,27 +607,25 @@ class _PackageCard extends StatelessWidget {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
       decoration: BoxDecoration(
-        color: selected ? const Color(0xFFF4FDFF) : Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        color: selected
+            ? (context.isDarkMode
+                  ? const Color(0xFF142A3D)
+                  : const Color(0xFFF4FDFF))
+            : context.appSurface,
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: selected ? const Color(0xFF18A0B8) : const Color(0xFFD8E8EE),
+          color: selected ? const Color(0xFF27B7CE) : context.appOutline,
           width: selected ? 1.6 : 1,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: selected ? const Color(0x3318A0B8) : const Color(0x0D0C5263),
-            blurRadius: selected ? 24 : 14,
-            offset: const Offset(0, 10),
-          ),
-        ],
+        boxShadow: context.appCardShadows,
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(16),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.all(18),
+            padding: const EdgeInsets.all(14),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -505,7 +635,7 @@ class _PackageCard extends StatelessWidget {
                       ? const Color(0xFF18A0B8)
                       : const Color(0xFFC7D7DD),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -517,9 +647,9 @@ class _PackageCard extends StatelessWidget {
                               package.name,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFF202860),
-                                fontSize: 18,
+                              style: TextStyle(
+                                color: context.appInk,
+                                fontSize: 16,
                                 fontWeight: FontWeight.w900,
                               ),
                             ),
@@ -527,25 +657,25 @@ class _PackageCard extends StatelessWidget {
                           const SizedBox(width: 8),
                           Text(
                             '${package.creditsTotal} leads',
-                            style: const TextStyle(color: Color(0xFF58707D)),
+                            style: TextStyle(color: context.appMuted),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 5),
                       Text(
                         package.stateLimit == null
                             ? 'All verified states'
                             : 'Up to ${package.stateLimit} target states',
-                        style: const TextStyle(color: Color(0xFF58707D)),
+                        style: TextStyle(color: context.appMuted),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 9),
                       Text(
                         _money(package.priceCents),
                         style: TextStyle(
                           color: selected
                               ? const Color(0xFF18A0B8)
-                              : const Color(0xFF202860),
-                          fontSize: 28,
+                              : context.appInk,
+                          fontSize: 24,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
@@ -553,7 +683,7 @@ class _PackageCard extends StatelessWidget {
                         children: [
                           Text(
                             '${_money(package.costPerLeadCents)}/lead',
-                            style: const TextStyle(color: Color(0xFF58707D)),
+                            style: TextStyle(color: context.appMuted),
                           ),
                           if (badge != null) ...[
                             const Spacer(),
@@ -600,7 +730,7 @@ class _PackageBadge extends StatelessWidget {
 
 String? _packageBadge(LeadPackage package) {
   final name = package.name.toLowerCase();
-  if (name.contains('pro')) return 'Best Value';
+  if (name.contains('pro')) return 'Recommended';
   if (name.contains('elite') || name.contains('unlimited')) return 'Most Leads';
   return null;
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_frontend/models/advisor_models.dart';
 import 'package:flutter_frontend/repositories/advisor_repository.dart';
+import 'package:flutter_frontend/theme/app_theme.dart';
 
 Future<void> showLeadDetailsSheet({
   required BuildContext context,
@@ -126,21 +127,21 @@ class _LeadDetailsSheetState extends State<LeadDetailsSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Lead Details',
-                    style: TextStyle(color: Color(0xFF58707D)),
+                    style: TextStyle(color: context.appMuted),
                   ),
                   Text(
                     _canUpdate ? _lead.displayName : 'Locked Lead',
-                    style: const TextStyle(
-                      color: Color(0xFF202860),
+                    style: TextStyle(
+                      color: context.appInk,
                       fontSize: 24,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
                   Text(
                     '${_lead.stateCode}${_text(_lead.zipCode) == null ? '' : ' · ${_lead.zipCode}'}',
-                    style: const TextStyle(color: Color(0xFF58707D)),
+                    style: TextStyle(color: context.appMuted),
                   ),
                 ],
               ),
@@ -202,10 +203,10 @@ class _LeadDetailsSheetState extends State<LeadDetailsSheet> {
             ],
           ),
           const SizedBox(height: 18),
-          const Text(
+          Text(
             'Update Status',
             style: TextStyle(
-              color: Color(0xFF202860),
+              color: context.appInk,
               fontSize: 18,
               fontWeight: FontWeight.w900,
             ),
@@ -331,17 +332,18 @@ class _DetailsSection extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF7FBFD),
+        color: context.appSoftFill,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFCFE4EC)),
+        border: Border.all(color: context.appOutline),
+        boxShadow: context.appCardShadows,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
-            style: const TextStyle(
-              color: Color(0xFF202860),
+            style: TextStyle(
+              color: context.appInk,
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -355,15 +357,15 @@ class _DetailsSection extends StatelessWidget {
                   width: 120,
                   child: Text(
                     visibleRows[index].label,
-                    style: const TextStyle(color: Color(0xFF58707D)),
+                    style: TextStyle(color: context.appMuted),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     visibleRows[index].value!.trim(),
-                    style: const TextStyle(
-                      color: Color(0xFF202860),
+                    style: TextStyle(
+                      color: context.appInk,
                       fontWeight: FontWeight.w700,
                     ),
                   ),

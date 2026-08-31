@@ -7,6 +7,8 @@ import 'package:flutter_frontend/screens/advisor/change_password_sheet.dart';
 import 'package:flutter_frontend/screens/advisor/license_upload_sheet.dart';
 import 'package:flutter_frontend/screens/advisor/notification_preferences_sheet.dart';
 import 'package:flutter_frontend/screens/auth/login_screen.dart';
+import 'package:flutter_frontend/theme/app_theme.dart';
+import 'package:flutter_frontend/theme/app_theme_controller.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({
@@ -116,7 +118,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               _Panel(
                 child: Text(
                   snapshot.error.toString(),
-                  style: const TextStyle(color: Color(0xFF58707D)),
+                  style: TextStyle(color: context.appMuted),
                 ),
               ),
             ],
@@ -125,20 +127,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
         final data = snapshot.data!;
         return ListView(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 18),
           children: [
             _ProfileHeader(user: data.user, licenses: data.licenses),
-            const SizedBox(height: 12),
+            const SizedBox(height: 9),
             _ContactInfo(user: data.user),
-            const SizedBox(height: 12),
+            const SizedBox(height: 9),
             _LicensedStates(licenses: data.licenses, onAdd: _openLicenseUpload),
-            const SizedBox(height: 12),
+            const SizedBox(height: 9),
             _AccountActions(
               onBillingHistory: _openBillingHistory,
               onChangePassword: _openChangePassword,
               onNotificationPreferences: _openNotificationPreferences,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 9),
             _SignOutButton(isLoading: _isLoggingOut, onTap: _logout),
           ],
         );
@@ -162,85 +164,86 @@ class _ProfileHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final verifiedCount = licenses
-        .where((license) => license.verificationStatus == 'verified')
-        .length;
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xFF2B337D),
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x26202860),
-            blurRadius: 18,
-            offset: Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 29,
-            backgroundColor: const Color(0xFF18A0B8),
-            child: Text(
-              _initials(user.name),
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 22,
-                fontWeight: FontWeight.w900,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF252D6D), Color(0xFF27B7CE)],
+                ),
+                shape: BoxShape.circle,
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                _initials(user.name),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  user.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  user.email,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Color(0xFFD6E6EF)),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 9,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0x3318A0B8),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    verifiedCount > 0
-                        ? 'Licensed Advisor'
-                        : 'Advisor Verification',
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    licenses.any(
+                          (license) => license.verificationStatus == 'verified',
+                        )
+                        ? 'LICENSED ADVISOR'
+                        : 'MY PROFILE',
                     style: const TextStyle(
-                      color: Color(0xFF67E8F9),
-                      fontSize: 11,
+                      color: AppColors.cyan,
+                      fontSize: 9,
                       fontWeight: FontWeight.w900,
+                      letterSpacing: 1.15,
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 2),
+                  Text(
+                    user.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: context.appInk,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.4,
+                    ),
+                  ),
+                  Text(
+                    user.email,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: context.appMuted, fontSize: 11.5),
+                  ),
+                ],
+              ),
+            ),
+            const AppThemeToggleButton(),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Container(
+          height: 2,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(99),
+            gradient: const LinearGradient(
+              colors: [AppColors.cyan, Color(0x3327B7CE), Colors.transparent],
+              stops: [0, 0.35, 1],
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -257,7 +260,7 @@ class _ContactInfo extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const _SectionTitle('Contact Info'),
-          const SizedBox(height: 10),
+          const SizedBox(height: 7),
           _InfoRow(label: 'Phone', value: _formatPhone(user.phone)),
           const _DividerLine(),
           _InfoRow(label: 'Email', value: user.email),
@@ -305,13 +308,13 @@ class _LicensedStates extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           if (visibleLicenses.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
               child: Text(
                 'No licenses submitted yet.',
-                style: TextStyle(color: Color(0xFF58707D)),
+                style: TextStyle(color: context.appMuted),
               ),
             )
           else
@@ -336,11 +339,11 @@ class _LicenseRow extends StatelessWidget {
     final stateName = _stateName(license.state);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.symmetric(vertical: 7),
       child: Row(
         children: [
           CircleAvatar(
-            radius: 18,
+            radius: 17,
             backgroundColor: status.avatarBackground,
             child: Text(
               license.state,
@@ -360,8 +363,8 @@ class _LicenseRow extends StatelessWidget {
                   stateName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF202860),
+                  style: TextStyle(
+                    color: context.appInk,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -370,8 +373,8 @@ class _LicenseRow extends StatelessWidget {
                   '${license.state} - ${license.licenseNumber}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF58707D),
+                  style: TextStyle(
+                    color: context.appMuted,
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
                   ),
@@ -441,24 +444,24 @@ class _ActionRow extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: SizedBox(
-          height: 60,
+          height: 52,
           child: Row(
             children: [
               Container(
                 width: 34,
                 height: 34,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF4FAFC),
+                  color: context.appSoftFill,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(icon, color: const Color(0xFF202860), size: 19),
+                child: Icon(icon, color: context.appInk, size: 19),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               Expanded(
                 child: Text(
                   label,
-                  style: const TextStyle(
-                    color: Color(0xFF202860),
+                  style: TextStyle(
+                    color: context.appInk,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -498,7 +501,7 @@ class _SignOutButton extends StatelessWidget {
       label: const Text('Sign Out'),
       style: OutlinedButton.styleFrom(
         foregroundColor: const Color(0xFFEF4444),
-        minimumSize: const Size.fromHeight(48),
+        minimumSize: const Size.fromHeight(44),
         side: const BorderSide(color: Color(0xFFFF8A8A)),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         textStyle: const TextStyle(fontWeight: FontWeight.w900),
@@ -515,11 +518,12 @@ class _Panel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFCFE4EC)),
+        color: context.appSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.appOutline),
+        boxShadow: context.appCardShadows,
       ),
       child: child,
     );
@@ -535,8 +539,8 @@ class _SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       label.toUpperCase(),
-      style: const TextStyle(
-        color: Color(0xFF315166),
+      style: TextStyle(
+        color: context.appMuted,
         fontSize: 11,
         fontWeight: FontWeight.w900,
         letterSpacing: 1.2,
@@ -554,7 +558,7 @@ class _InfoRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 9),
+      padding: const EdgeInsets.symmetric(vertical: 7),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -562,7 +566,7 @@ class _InfoRow extends StatelessWidget {
             width: 70,
             child: Text(
               label,
-              style: const TextStyle(color: Color(0xFF58707D), fontSize: 12),
+              style: TextStyle(color: context.appMuted, fontSize: 12),
             ),
           ),
           const SizedBox(width: 8),
@@ -571,8 +575,8 @@ class _InfoRow extends StatelessWidget {
               value,
               textAlign: TextAlign.right,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Color(0xFF202860),
+              style: TextStyle(
+                color: context.appInk,
                 fontSize: 13,
                 fontWeight: FontWeight.w900,
               ),
@@ -589,7 +593,7 @@ class _DividerLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Divider(height: 1, color: Color(0xFFD7E7EE));
+    return const Divider(height: 1);
   }
 }
 

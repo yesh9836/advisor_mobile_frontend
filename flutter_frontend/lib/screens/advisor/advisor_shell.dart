@@ -8,16 +8,20 @@ import 'package:flutter_frontend/screens/advisor/lead_details_sheet.dart';
 import 'package:flutter_frontend/screens/advisor/leads_screen.dart';
 import 'package:flutter_frontend/screens/advisor/profile_screen.dart';
 import 'package:flutter_frontend/screens/advisor/subscription_screen.dart';
+import 'package:flutter_frontend/theme/app_theme.dart';
+import 'package:flutter_frontend/theme/app_theme_controller.dart';
 
 class AdvisorShell extends StatefulWidget {
-  const AdvisorShell({super.key});
+  const AdvisorShell({super.key, this.initialIndex = 0});
+
+  final int initialIndex;
 
   @override
   State<AdvisorShell> createState() => _AdvisorShellState();
 }
 
 class _AdvisorShellState extends State<AdvisorShell> {
-  int _selectedIndex = 0;
+  late int _selectedIndex = widget.initialIndex.clamp(0, 4);
 
   void _selectTab(int index) {
     setState(() => _selectedIndex = index);
@@ -38,37 +42,80 @@ class _AdvisorShellState extends State<AdvisorShell> {
     ];
 
     return Scaffold(
-      body: SafeArea(child: screens[_selectedIndex]),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: _selectTab,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard),
-            label: 'Home',
+      backgroundColor: context.appCanvas,
+      body: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: context.isDarkMode
+                ? const [Color(0xFF0C1727), Color(0xFF08111F)]
+                : const [Color(0xFFF9FBFD), AppColors.canvas],
           ),
-          NavigationDestination(
-            icon: Icon(Icons.track_changes_outlined),
-            selectedIcon: Icon(Icons.track_changes),
-            label: 'Goals',
+        ),
+        child: SafeArea(
+          child: AnimatedSwitcher(
+            duration: Duration(milliseconds: 220),
+            switchInCurve: Curves.easeOutCubic,
+            child: KeyedSubtree(
+              key: ValueKey(_selectedIndex),
+              child: screens[_selectedIndex],
+            ),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.shopping_bag_outlined),
-            selectedIcon: Icon(Icons.shopping_bag),
-            label: 'Buy',
+        ),
+      ),
+      bottomNavigationBar: Container(
+        color: context.appCanvas,
+        padding: const EdgeInsets.fromLTRB(14, 6, 14, 9),
+        child: SafeArea(
+          top: false,
+          child: Container(
+            decoration: BoxDecoration(
+              color: context.appSurface,
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(color: context.appOutline),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x140C5263),
+                  blurRadius: 18,
+                  offset: Offset(0, 6),
+                ),
+              ],
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: NavigationBar(
+              selectedIndex: _selectedIndex,
+              onDestinationSelected: _selectTab,
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.dashboard_outlined),
+                  selectedIcon: Icon(Icons.dashboard),
+                  label: 'Home',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.track_changes_outlined),
+                  selectedIcon: Icon(Icons.track_changes),
+                  label: 'Goals',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.shopping_bag_outlined),
+                  selectedIcon: Icon(Icons.shopping_bag),
+                  label: 'Buy',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.inbox_outlined),
+                  selectedIcon: Icon(Icons.inbox),
+                  label: 'Inbox',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.person_outline),
+                  selectedIcon: Icon(Icons.person),
+                  label: 'Profile',
+                ),
+              ],
+            ),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.inbox_outlined),
-            selectedIcon: Icon(Icons.inbox),
-            label: 'Inbox',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: 'Profile',
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -163,7 +210,7 @@ class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
       builder: (context, snapshot) {
         final data = snapshot.data;
         return ListView(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 18),
           children: [
             if (snapshot.connectionState == ConnectionState.waiting)
               const Center(child: CircularProgressIndicator())
@@ -175,46 +222,54 @@ class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
                 summary: data.summary,
                 onOpenProfile: widget.onOpenProfile,
               ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  Expanded(
-                    child: _MetricCard(
-                      label: 'Leads Delivered',
-                      value: '${data.summary.leadsDelivered7Days}',
-                      caption: '7 days',
-                      icon: Icons.trending_up,
-                      iconBackground: const Color(0xFFDFF7FC),
-                      iconColor: const Color(0xFF18A0B8),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _MetricCard(
-                      label: 'Appointments',
-                      value: '${data.summary.appointmentsSet7Days}',
-                      caption: '7 days',
-                      icon: Icons.auto_graph,
-                      iconBackground: const Color(0xFFE8DCFF),
-                      iconColor: const Color(0xFF7C3AED),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _MetricCard(
-                      label: 'Cost / Appt',
-                      value: _money(data.summary.costPerAppointment),
-                      caption: 'avg',
-                      icon: Icons.trending_down,
-                      iconBackground: const Color(0xFFEAF5FF),
-                      iconColor: const Color(0xFF202860),
-                    ),
-                  ),
-                ],
-              ),
               const SizedBox(height: 12),
+              Container(
+                decoration: BoxDecoration(
+                  color: context.appSurface,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: context.appOutline),
+                  boxShadow: context.appCardShadows,
+                ),
+                child: IntrinsicHeight(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _MetricCard(
+                          label: 'Leads Delivered',
+                          value: '${data.summary.leadsDelivered7Days}',
+                          caption: '7 days',
+                          icon: Icons.trending_up,
+                          iconBackground: Colors.transparent,
+                          iconColor: const Color(0xFF334155),
+                        ),
+                      ),
+                      Expanded(
+                        child: _MetricCard(
+                          label: 'Appointments',
+                          value: '${data.summary.appointmentsSet7Days}',
+                          caption: '7 days',
+                          icon: Icons.auto_awesome_rounded,
+                          iconBackground: const Color(0xFFD9F5F1),
+                          iconColor: const Color(0xFF168F8A),
+                        ),
+                      ),
+                      Expanded(
+                        child: _MetricCard(
+                          label: 'Cost / Appt',
+                          value: _money(data.summary.costPerAppointment),
+                          caption: 'avg',
+                          icon: Icons.attach_money_rounded,
+                          iconBackground: const Color(0xFFF1F5F9),
+                          iconColor: const Color(0xFF64748B),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
               SizedBox(
-                height: 50,
+                height: 46,
                 child: FilledButton.icon(
                   onPressed: widget.onBuyLeads,
                   icon: const Icon(Icons.shopping_bag_outlined),
@@ -222,33 +277,53 @@ class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
                   style: FilledButton.styleFrom(
                     backgroundColor: const Color(0xFF18A0B8),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(13),
                     ),
                     textStyle: const TextStyle(
-                      fontSize: 16,
+                      fontSize: 15,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 14),
               _SectionHeader(
                 title: 'Recent Leads',
                 actionLabel: 'View all →',
                 onAction: widget.onViewInbox,
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 6),
               if (data.leads.isEmpty)
                 const _EmptyPanel(
                   message:
                       'No matching leads yet. Seed demo data or buy a package.',
                 )
               else
-                for (final lead in data.leads.take(3))
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _LeadTile(lead: lead, onTap: () => _openLead(lead)),
+                Container(
+                  decoration: BoxDecoration(
+                    color: context.appSurface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: context.appOutline),
+                    boxShadow: context.appCardShadows,
                   ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(
+                    children: [
+                      for (
+                        var index = 0;
+                        index < data.leads.length && index < 3;
+                        index++
+                      ) ...[
+                        _LeadTile(
+                          lead: data.leads[index],
+                          onTap: () => _openLead(data.leads[index]),
+                        ),
+                        if (index < data.leads.length - 1 && index < 2)
+                          Divider(height: 1, color: context.appOutline),
+                      ],
+                    ],
+                  ),
+                ),
               const SizedBox(height: 2),
               _DeliverySettings(
                 summary: data.summary,
@@ -298,18 +373,18 @@ class _HomeHeader extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Lead notifications',
                 style: TextStyle(
-                  color: Color(0xFF202860),
+                  color: context.appInk,
                   fontSize: 20,
                   fontWeight: FontWeight.w900,
                 ),
               ),
               const SizedBox(height: 6),
-              const Text(
+              Text(
                 'Delivery alerts for your new leads.',
-                style: TextStyle(color: Color(0xFF315166)),
+                style: TextStyle(color: context.appMuted),
               ),
               const SizedBox(height: 18),
               _NotificationStatusRow(
@@ -339,85 +414,103 @@ class _HomeHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Good morning,',
-                style: TextStyle(
-                  color: Color(0xFF315166),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                user.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xFF202860),
-                  fontSize: 21,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-          ),
-        ),
-        Stack(
-          clipBehavior: Clip.none,
+        Row(
           children: [
-            _CircleIconButton(
-              icon: Icons.notifications_none,
-              semanticLabel: 'Open notification settings',
-              onPressed: () => _showNotificationSheet(context),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Good morning,',
+                    style: TextStyle(
+                      color: context.appMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    user.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: context.appInk,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                ],
+              ),
             ),
-            if (!summary.emailAlertsEnabled && !summary.smsAlertsEnabled)
-              Positioned(
-                right: 5,
-                top: 5,
-                child: Container(
-                  width: 8,
-                  height: 8,
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                _CircleIconButton(
+                  icon: Icons.notifications_none,
+                  semanticLabel: 'Open notification settings',
+                  onPressed: () => _showNotificationSheet(context),
+                ),
+                if (!summary.emailAlertsEnabled && !summary.smsAlertsEnabled)
+                  Positioned(
+                    right: 5,
+                    top: 5,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFEF4444),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(width: 8),
+            const AppThemeToggleButton(),
+            const SizedBox(width: 9),
+            Semantics(
+              button: true,
+              label: 'Open profile',
+              child: Tooltip(
+                message: 'Open profile',
+                child: DecoratedBox(
                   decoration: const BoxDecoration(
-                    color: Color(0xFFEF4444),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF252D6D), Color(0xFF27B7CE)],
+                    ),
                     shape: BoxShape.circle,
                   ),
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(width: 10),
-        Semantics(
-          button: true,
-          label: 'Open profile',
-          child: Tooltip(
-            message: 'Open profile',
-            child: Material(
-              color: const Color(0xFF202860),
-              shape: const CircleBorder(),
-              child: InkWell(
-                onTap: onOpenProfile,
-                customBorder: const CircleBorder(),
-                child: SizedBox.square(
-                  dimension: 38,
-                  child: Center(
-                    child: Text(
-                      _initials(user.name),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w900,
+                  child: Material(
+                    color: Colors.transparent,
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      onTap: onOpenProfile,
+                      customBorder: const CircleBorder(),
+                      child: SizedBox.square(
+                        dimension: 40,
+                        child: Center(
+                          child: Text(
+                            _initials(user.name),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
+          ],
         ),
       ],
     );
@@ -441,7 +534,7 @@ class _CircleIconButton extends StatelessWidget {
       button: true,
       label: semanticLabel,
       child: Material(
-        color: Colors.white,
+        color: context.appSurface,
         shape: const CircleBorder(),
         child: InkWell(
           onTap: onPressed,
@@ -451,9 +544,16 @@ class _CircleIconButton extends StatelessWidget {
             height: 38,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: const Color(0xFFCFE4EC)),
+              border: Border.all(color: context.appOutline),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x120C5263),
+                  blurRadius: 10,
+                  offset: Offset(0, 4),
+                ),
+              ],
             ),
-            child: Icon(icon, color: const Color(0xFF202860), size: 21),
+            child: Icon(icon, color: context.appInk, size: 20),
           ),
         ),
       ),
@@ -482,8 +582,8 @@ class _NotificationStatusRow extends StatelessWidget {
         Expanded(
           child: Text(
             label,
-            style: const TextStyle(
-              color: Color(0xFF202860),
+            style: TextStyle(
+              color: context.appInk,
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -517,58 +617,47 @@ class _MetricCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(minHeight: 112),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFCFE4EC)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0D0C5263),
-            blurRadius: 18,
-            offset: Offset(0, 9),
-          ),
-        ],
-      ),
+      constraints: const BoxConstraints(minHeight: 122),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.fromLTRB(12, 12, 8, 11),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              width: 30,
-              height: 30,
+              width: 28,
+              height: 28,
               decoration: BoxDecoration(
                 color: iconBackground,
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: iconColor, size: 17),
+              child: Icon(icon, color: iconColor, size: 16),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 7),
             Text(
               value,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Color(0xFF202860),
-                fontSize: 20,
+              style: TextStyle(
+                color: context.appInk,
+                fontSize: 19,
                 fontWeight: FontWeight.w900,
               ),
             ),
-            const SizedBox(height: 5),
+            const SizedBox(height: 3),
             Text(
               label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Color(0xFF202860),
-                fontSize: 10,
+              maxLines: 2,
+              overflow: TextOverflow.fade,
+              style: TextStyle(
+                color: context.appInk,
+                fontSize: 11,
                 fontWeight: FontWeight.w900,
+                height: 1.15,
               ),
             ),
             Text(
               caption,
-              style: const TextStyle(color: Color(0xFF58707D), fontSize: 10),
+              style: TextStyle(color: context.appMuted, fontSize: 10),
             ),
           ],
         ),
@@ -595,8 +684,8 @@ class _SectionHeader extends StatelessWidget {
         Expanded(
           child: Text(
             title,
-            style: const TextStyle(
-              color: Color(0xFF202860),
+            style: TextStyle(
+              color: context.appInk,
               fontSize: 16,
               fontWeight: FontWeight.w900,
             ),
@@ -627,23 +716,17 @@ class _LeadTile extends StatelessWidget {
     final status = _LeadStatus.fromValue(lead.outcomeStatus);
 
     return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(14),
+      color: context.appSurface,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
         child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.transparent,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFFCFE4EC)),
-          ),
+          padding: const EdgeInsets.all(12),
+          color: Colors.transparent,
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               CircleAvatar(
-                radius: 20,
+                radius: 18,
                 backgroundColor: status.avatarColor,
                 child: Text(
                   _leadInitials(lead),
@@ -653,7 +736,7 @@ class _LeadTile extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -666,8 +749,8 @@ class _LeadTile extends StatelessWidget {
                             lead.displayName,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Color(0xFF202860),
+                            style: TextStyle(
+                              color: context.appInk,
                               fontSize: 15,
                               fontWeight: FontWeight.w900,
                             ),
@@ -676,22 +759,22 @@ class _LeadTile extends StatelessWidget {
                         const SizedBox(width: 8),
                         Text(
                           _relativeTime(lead.receivedAt),
-                          style: const TextStyle(
-                            color: Color(0xFF315166),
+                          style: TextStyle(
+                            color: context.appMuted,
                             fontSize: 11,
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 7),
+                    const SizedBox(height: 5),
                     Wrap(
                       spacing: 6,
                       runSpacing: 6,
                       children: [
                         _MiniBadge(
                           label: lead.stateCode,
-                          background: const Color(0xFFEAF5FF),
-                          foreground: const Color(0xFF202860),
+                          background: context.appSoftFill,
+                          foreground: context.appInk,
                         ),
                         _MiniBadge(
                           label: status.label,
@@ -701,27 +784,36 @@ class _LeadTile extends StatelessWidget {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 9),
-                    Text(
-                      lead.assets ?? 'Lead details pending',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF18A0B8),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      lead.activity ?? 'Details available after delivery',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF315166),
-                        fontSize: 12,
-                        height: 1.25,
-                      ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            lead.assets ?? 'Price pending',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Color(0xFF18A0B8),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text('•', style: TextStyle(color: context.appMuted)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            lead.activity ?? 'Category pending',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: context.appMuted,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -745,19 +837,20 @@ class _DeliverySettings extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: context.appSurface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFCFE4EC)),
+        border: Border.all(color: context.appOutline),
+        boxShadow: context.appCardShadows,
       ),
       child: Column(
         children: [
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Text(
                   'Delivery Settings',
                   style: TextStyle(
-                    color: Color(0xFF202860),
+                    color: context.appInk,
                     fontSize: 16,
                     fontWeight: FontWeight.w900,
                   ),
@@ -767,7 +860,7 @@ class _DeliverySettings extends StatelessWidget {
                 onPressed: () => onEdit(),
                 style: TextButton.styleFrom(
                   foregroundColor: const Color(0xFF18A0B8),
-                  backgroundColor: const Color(0xFFE8FBFF),
+                  backgroundColor: context.appSoftFill,
                   minimumSize: const Size(0, 30),
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   shape: RoundedRectangleBorder(
@@ -778,13 +871,13 @@ class _DeliverySettings extends StatelessWidget {
               ),
             ],
           ),
-          const Divider(height: 20, color: Color(0xFFD7E7EE)),
+          const Divider(height: 20),
           _SettingRow(
             icon: Icons.mail_outline,
             label: 'Email Alerts',
             enabled: summary.emailAlertsEnabled,
           ),
-          const Divider(height: 20, color: Color(0xFFD7E7EE)),
+          const Divider(height: 20),
           _SettingRow(
             icon: Icons.notifications_none,
             label: 'SMS Alerts',
@@ -858,18 +951,18 @@ class _DeliverySettingsEditorState extends State<_DeliverySettingsEditor> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Delivery Settings',
               style: TextStyle(
-                color: Color(0xFF202860),
+                color: context.appInk,
                 fontSize: 21,
                 fontWeight: FontWeight.w900,
               ),
             ),
             const SizedBox(height: 6),
-            const Text(
+            Text(
               'Choose how you want to be alerted when new leads are delivered.',
-              style: TextStyle(color: Color(0xFF315166), height: 1.35),
+              style: TextStyle(color: context.appMuted, height: 1.35),
             ),
             const SizedBox(height: 18),
             SwitchListTile.adaptive(
@@ -955,8 +1048,8 @@ class _SettingRow extends StatelessWidget {
         Expanded(
           child: Text(
             label,
-            style: const TextStyle(
-              color: Color(0xFF202860),
+            style: TextStyle(
+              color: context.appInk,
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -1086,7 +1179,7 @@ class _EmptyPanel extends StatelessWidget {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Text(message, style: const TextStyle(color: Color(0xFF58707D))),
+        child: Text(message, style: TextStyle(color: context.appMuted)),
       ),
     );
   }

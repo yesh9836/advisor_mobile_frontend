@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_frontend/models/advisor_models.dart';
+import 'package:flutter_frontend/models/onboarding_models.dart';
 import 'package:flutter_frontend/repositories/advisor_repository.dart';
 import 'package:flutter_frontend/screens/advisor/subscription_screen.dart';
 
@@ -130,6 +131,23 @@ class _FakeAdvisorRepository extends AdvisorRepository {
   List<String>? savedTargetStates;
   String? savedRetryToken;
   bool demoMode = false;
+
+  @override
+  Future<AdvisorOnboarding> getOnboarding() async => const AdvisorOnboarding(
+    complete: true,
+    consentAccepted: true,
+    annualIncomeGoalCents: 25000000,
+    averageSaleCents: 2500000,
+    commissionRateBps: 2000,
+    closingRateBps: 3300,
+    leadToAppointmentRateBps: 3333,
+    averageCommissionCents: 500000,
+    dealsNeeded: 50,
+    appointmentsNeeded: 152,
+    leadsNeeded: 457,
+    licenseStatus: 'verified',
+    licenses: [],
+  );
 
   @override
   Future<List<LeadPackage>> getPackages() async => [

@@ -21,10 +21,22 @@ void main() {
 
     expect(find.text('Deals Remaining'), findsOneWidget);
     expect(find.text('Closed YTD'), findsOneWidget);
-
     await tester.drag(find.byType(ListView).first, const Offset(0, -600));
     await tester.pumpAndSettle();
 
+    expect(find.text('Income trend'), findsOneWidget);
+    expect(find.text('Behind pace'), findsOneWidget);
+    expect(find.text('7 Days'), findsOneWidget);
+    expect(find.text('Month'), findsOneWidget);
+    expect(find.text('Year'), findsOneWidget);
+    expect(find.text('Demo trend data for visualization'), findsOneWidget);
+    final sevenDayToggle = find.byKey(const ValueKey('trend-range-sevenDays'));
+    await tester.ensureVisible(sevenDayToggle);
+    await tester.pumpAndSettle();
+    await tester.tap(sevenDayToggle);
+    await tester.pumpAndSettle();
+    expect(find.text('Required in 7 days'), findsOneWidget);
+    expect(find.text('Demo earnings'), findsOneWidget);
     expect(find.text('12 leads recommended per month'), findsOneWidget);
 
     final monthlyGoalField = find.byType(TextField);

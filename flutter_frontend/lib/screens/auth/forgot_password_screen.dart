@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_frontend/repositories/auth_repository.dart';
+import 'package:flutter_frontend/theme/app_theme.dart';
+import 'package:flutter_frontend/theme/app_theme_controller.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({
@@ -71,9 +73,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF2F8FB),
+      backgroundColor: context.appCanvas,
       appBar: AppBar(
         leading: const BackButton(),
+        actions: const [AppThemeToggleButton(), SizedBox(width: 16)],
         title: const Text(
           'Forgot Password',
           style: TextStyle(fontWeight: FontWeight.w900),
@@ -99,7 +102,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           width: 56,
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
-                            color: const Color(0xFFE8F8FC),
+                            color: context.isDarkMode
+                                ? const Color(0xFF12333E)
+                                : const Color(0xFFE8F8FC),
                             borderRadius: BorderRadius.circular(16),
                           ),
                           child: const Icon(
@@ -109,27 +114,27 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           ),
                         ),
                         const SizedBox(height: 20),
-                        const Text(
+                        Text(
                           'Reset your password',
                           style: TextStyle(
-                            color: Color(0xFF202860),
+                            color: context.appInk,
                             fontSize: 22,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
                         const SizedBox(height: 8),
-                        const Text(
+                        Text(
                           'Enter your account email and we’ll send password reset instructions if the account exists.',
                           style: TextStyle(
-                            color: Color(0xFF58707D),
+                            color: context.appMuted,
                             height: 1.4,
                           ),
                         ),
                         const SizedBox(height: 24),
-                        const Text(
+                        Text(
                           'EMAIL ADDRESS',
                           style: TextStyle(
-                            color: Color(0xFF496171),
+                            color: context.appMuted,
                             fontSize: 11,
                             fontWeight: FontWeight.w900,
                             letterSpacing: 1.1,

@@ -1,107 +1,52 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_frontend/models/auth_models.dart';
 import 'package:flutter_frontend/repositories/auth_repository.dart';
-import 'package:flutter_frontend/screens/advisor/advisor_shell.dart';
+import 'package:flutter_frontend/screens/advisor/advisor_entry_screen.dart';
 import 'package:flutter_frontend/screens/auth/login_screen.dart';
+import 'package:flutter_frontend/services/api_service.dart';
+import 'package:flutter_frontend/theme/app_theme.dart';
+import 'package:flutter_frontend/theme/app_theme_controller.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const SpectaculeadsApp());
 }
 
-class SpectaculeadsApp extends StatelessWidget {
+class SpectaculeadsApp extends StatefulWidget {
   const SpectaculeadsApp({super.key, this.authRepository});
 
   final AuthRepository? authRepository;
 
   @override
-  Widget build(BuildContext context) {
-    const navy = Color(0xFF202860);
-    const teal = Color(0xFF18A0B8);
+  State<SpectaculeadsApp> createState() => _SpectaculeadsAppState();
+}
 
-    return MaterialApp(
-      title: 'Spectaculeads',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: navy,
-          primary: navy,
-          secondary: teal,
-          surface: Colors.white,
+class _SpectaculeadsAppState extends State<SpectaculeadsApp> {
+  final _themeController = AppThemeController();
+
+  @override
+  void dispose() {
+    _themeController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppThemeScope(
+      controller: _themeController,
+      child: AnimatedBuilder(
+        animation: _themeController,
+        builder: (context, _) => MaterialApp(
+          title: 'Spectaculeads',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.light,
+          darkTheme: AppTheme.dark,
+          themeMode: _themeController.mode,
+          home: SessionBootstrap(authRepository: widget.authRepository),
         ),
-        scaffoldBackgroundColor: const Color(0xFFF2F8FB),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFFF2F8FB),
-          foregroundColor: navy,
-          elevation: 0,
-          centerTitle: false,
-        ),
-        cardTheme: CardThemeData(
-          color: Colors.white,
-          elevation: 0,
-          margin: EdgeInsets.zero,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: const BorderSide(color: Color(0xFFCFE4EC)),
-          ),
-        ),
-        chipTheme: ChipThemeData(
-          backgroundColor: const Color(0xFFEAF8FC),
-          selectedColor: const Color(0xFFE3E1FF),
-          labelStyle: const TextStyle(
-            color: navy,
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-            side: const BorderSide(color: Color(0xFFCFE4EC)),
-          ),
-        ),
-        navigationBarTheme: NavigationBarThemeData(
-          backgroundColor: Colors.white,
-          indicatorColor: const Color(0xFFE6E3FB),
-          labelTextStyle: WidgetStateProperty.resolveWith(
-            (states) => TextStyle(
-              color: states.contains(WidgetState.selected)
-                  ? navy
-                  : const Color(0xFF607987),
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          iconTheme: WidgetStateProperty.resolveWith(
-            (states) => IconThemeData(
-              color: states.contains(WidgetState.selected)
-                  ? navy
-                  : const Color(0xFF607987),
-              size: 22,
-            ),
-          ),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: const Color(0xFFF7FBFD),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: teal),
-          ),
-        ),
-        filledButtonTheme: FilledButtonThemeData(
-          style: FilledButton.styleFrom(
-            backgroundColor: navy,
-            foregroundColor: Colors.white,
-            minimumSize: const Size.fromHeight(46),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            textStyle: const TextStyle(fontWeight: FontWeight.w900),
-          ),
-        ),
-        useMaterial3: true,
       ),
-      home: SessionBootstrap(authRepository: authRepository),
     );
   }
 }
@@ -120,6 +65,25 @@ class _SessionBootstrapState extends State<SessionBootstrap> {
       widget.authRepository ?? AuthRepository();
   late Future<UserProfile?> _session = _authRepository.restoreSession();
   bool _showLogin = false;
+  StreamSubscription<void>? _sessionExpiredSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _sessionExpiredSubscription = ApiService.sessionExpiredEvents.listen((_) {
+      if (!mounted) return;
+      setState(() {
+        _showLogin = true;
+        _session = Future<UserProfile?>.value(null);
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _sessionExpiredSubscription?.cancel();
+    super.dispose();
+  }
 
   void _retry() {
     setState(() {
@@ -144,7 +108,7 @@ class _SessionBootstrapState extends State<SessionBootstrap> {
             onSignIn: () => setState(() => _showLogin = true),
           );
         }
-        if (snapshot.data != null) return const AdvisorShell();
+        if (snapshot.data != null) return const AdvisorEntryScreen();
         return const LoginScreen();
       },
     );
@@ -190,31 +154,30 @@ class _SessionRestoreError extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        actions: const [AppThemeToggleButton(), SizedBox(width: 16)],
+      ),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
-                Icons.cloud_off_outlined,
-                color: Color(0xFF58707D),
-                size: 42,
-              ),
+              Icon(Icons.cloud_off_outlined, color: context.appMuted, size: 42),
               const SizedBox(height: 16),
-              const Text(
+              Text(
                 'Unable to restore your session',
                 style: TextStyle(
-                  color: Color(0xFF202860),
+                  color: context.appInk,
                   fontSize: 20,
                   fontWeight: FontWeight.w900,
                 ),
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 'Check your connection and try again.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Color(0xFF58707D)),
+                style: TextStyle(color: context.appMuted),
               ),
               const SizedBox(height: 20),
               FilledButton(onPressed: onRetry, child: const Text('Retry')),

@@ -60,10 +60,17 @@ class _FakeApiService extends ApiService {
   Future<void> restoreCookies() async => restoredCookies = true;
 
   @override
-  Future<http.Response> get(String path) async => _getResponses.removeAt(0);
+  Future<http.Response> get(
+    String path, {
+    bool retryUnauthorized = true,
+  }) async => _getResponses.removeAt(0);
 
   @override
-  Future<http.Response> post(String path, {Map<String, dynamic>? body}) async {
+  Future<http.Response> post(
+    String path, {
+    Map<String, dynamic>? body,
+    bool retryUnauthorized = true,
+  }) async {
     postPaths.add(path);
     return _postResponses.removeAt(0);
   }

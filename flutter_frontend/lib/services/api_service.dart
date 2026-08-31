@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
@@ -90,17 +92,32 @@ class CookieStore {
 }
 
 class ApiService {
-  ApiService({String? baseUrl})
-    : _baseUrl = baseUrl ?? 'http://10.0.2.2:8000/api/v1';
+  ApiService({
+    String? baseUrl,
+    http.Client? client,
+    CookieStore? cookieStore,
+    this.requestTimeout = const Duration(seconds: 25),
+  }) : _baseUrl = baseUrl ?? 'http://10.0.2.2:8000/api/v1',
+       _client = client ?? http.Client(),
+       _cookieStore = cookieStore ?? _sharedCookieStore;
 
   static final CookieStore _sharedCookieStore = CookieStore(
     persistence: SecureCookiePersistence(),
   );
   static Future<void>? _initializing;
   static bool _initialized = false;
+  static Future<bool>? _refreshing;
+  static final StreamController<void> _sessionExpiredController =
+      StreamController<void>.broadcast();
 
   final String _baseUrl;
-  CookieStore get _cookieStore => _sharedCookieStore;
+  final http.Client _client;
+  final CookieStore _cookieStore;
+  final Duration requestTimeout;
+  bool _customCookieStoreInitialized = false;
+
+  static Stream<void> get sessionExpiredEvents =>
+      _sessionExpiredController.stream;
 
   static Future<void> initialize() async {
     if (_initialized) return;
@@ -117,7 +134,17 @@ class ApiService {
     }
   }
 
-  Future<void> restoreCookies() => initialize();
+  Future<void> restoreCookies() => _initializeCookieStore();
+
+  Future<void> _initializeCookieStore() async {
+    if (identical(_cookieStore, _sharedCookieStore)) {
+      await initialize();
+      return;
+    }
+    if (_customCookieStoreInitialized) return;
+    await _cookieStore.restore();
+    _customCookieStoreInitialized = true;
+  }
 
   Map<String, String> get defaultHeaders => {
     'Content-Type': 'application/json',
@@ -126,47 +153,56 @@ class ApiService {
     if (_cookieStore.csrfToken != null) 'X-CSRF-Token': _cookieStore.csrfToken!,
   };
 
-  Future<http.Response> post(String path, {Map<String, dynamic>? body}) async {
-    await initialize();
-    final response = await http.post(
-      Uri.parse('$_baseUrl$path'),
-      headers: defaultHeaders,
-      body: body == null ? null : jsonEncode(body),
+  Future<http.Response> post(
+    String path, {
+    Map<String, dynamic>? body,
+    bool retryUnauthorized = true,
+  }) {
+    return _sendWithSessionRefresh(
+      () => _client.post(
+        Uri.parse('$_baseUrl$path'),
+        headers: defaultHeaders,
+        body: body == null ? null : jsonEncode(body),
+      ),
+      retryUnauthorized: retryUnauthorized,
     );
-    await _cookieStore.updateFromResponse(response);
-    return response;
   }
 
-  Future<http.Response> get(String path) async {
-    await initialize();
-    final response = await http.get(
-      Uri.parse('$_baseUrl$path'),
-      headers: defaultHeaders,
+  Future<http.Response> get(String path, {bool retryUnauthorized = true}) {
+    return _sendWithSessionRefresh(
+      () => _client.get(Uri.parse('$_baseUrl$path'), headers: defaultHeaders),
+      retryUnauthorized: retryUnauthorized,
     );
-    await _cookieStore.updateFromResponse(response);
-    return response;
   }
 
-  Future<http.Response> put(String path, {Map<String, dynamic>? body}) async {
-    await initialize();
-    final response = await http.put(
-      Uri.parse('$_baseUrl$path'),
-      headers: defaultHeaders,
-      body: body == null ? null : jsonEncode(body),
+  Future<http.Response> put(
+    String path, {
+    Map<String, dynamic>? body,
+    bool retryUnauthorized = true,
+  }) {
+    return _sendWithSessionRefresh(
+      () => _client.put(
+        Uri.parse('$_baseUrl$path'),
+        headers: defaultHeaders,
+        body: body == null ? null : jsonEncode(body),
+      ),
+      retryUnauthorized: retryUnauthorized,
     );
-    await _cookieStore.updateFromResponse(response);
-    return response;
   }
 
-  Future<http.Response> patch(String path, {Map<String, dynamic>? body}) async {
-    await initialize();
-    final response = await http.patch(
-      Uri.parse('$_baseUrl$path'),
-      headers: defaultHeaders,
-      body: body == null ? null : jsonEncode(body),
+  Future<http.Response> patch(
+    String path, {
+    Map<String, dynamic>? body,
+    bool retryUnauthorized = true,
+  }) {
+    return _sendWithSessionRefresh(
+      () => _client.patch(
+        Uri.parse('$_baseUrl$path'),
+        headers: defaultHeaders,
+        body: body == null ? null : jsonEncode(body),
+      ),
+      retryUnauthorized: retryUnauthorized,
     );
-    await _cookieStore.updateFromResponse(response);
-    return response;
   }
 
   Future<http.Response> postMultipart(
@@ -176,29 +212,127 @@ class ApiService {
     required String filename,
     required Uint8List bytes,
     required String contentType,
+    bool retryUnauthorized = true,
+  }) {
+    return _sendWithSessionRefresh(() async {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$_baseUrl$path'),
+      );
+      request.headers.addAll({
+        if (_cookieStore.getHeaderValue().isNotEmpty)
+          'Cookie': _cookieStore.getHeaderValue(),
+        if (_cookieStore.csrfToken != null)
+          'X-CSRF-Token': _cookieStore.csrfToken!,
+      });
+      request.fields.addAll(fields);
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          fileField,
+          bytes,
+          filename: filename,
+          contentType: MediaType.parse(contentType),
+        ),
+      );
+      return http.Response.fromStream(await _client.send(request));
+    }, retryUnauthorized: retryUnauthorized);
+  }
+
+  Future<http.Response> _sendWithSessionRefresh(
+    Future<http.Response> Function() send, {
+    required bool retryUnauthorized,
   }) async {
-    await initialize();
-    final request = http.MultipartRequest('POST', Uri.parse('$_baseUrl$path'));
-    request.headers.addAll({
-      if (_cookieStore.getHeaderValue().isNotEmpty)
-        'Cookie': _cookieStore.getHeaderValue(),
-      if (_cookieStore.csrfToken != null)
-        'X-CSRF-Token': _cookieStore.csrfToken!,
-    });
-    request.fields.addAll(fields);
-    request.files.add(
-      http.MultipartFile.fromBytes(
-        fileField,
-        bytes,
-        filename: filename,
-        contentType: MediaType.parse(contentType),
-      ),
-    );
-    final streamed = await request.send();
-    final response = await http.Response.fromStream(streamed);
-    await _cookieStore.updateFromResponse(response);
+    try {
+      await _initializeCookieStore();
+    } catch (_) {
+      throw const ApiException(
+        'Secure session data could not be opened. Please sign in again.',
+      );
+    }
+    var response = await _sendSafely(send);
+    await _updateCookiesSafely(response);
+    if (!retryUnauthorized || response.statusCode != 401) return response;
+
+    if (!await _refreshSession()) return response;
+
+    response = await _sendSafely(send);
+    await _updateCookiesSafely(response);
+    if (response.statusCode == 401) await _expireSession();
     return response;
   }
 
+  Future<bool> _refreshSession() {
+    final pending = _refreshing;
+    if (pending != null) return pending;
+
+    late final Future<bool> operation;
+    operation = _performSessionRefresh().whenComplete(() {
+      if (identical(_refreshing, operation)) _refreshing = null;
+    });
+    _refreshing = operation;
+    return operation;
+  }
+
+  Future<bool> _performSessionRefresh() async {
+    final response = await _sendSafely(
+      () => _client.post(
+        Uri.parse('$_baseUrl/auth/refresh'),
+        headers: defaultHeaders,
+      ),
+    );
+    await _updateCookiesSafely(response);
+    if (response.statusCode == 204) return true;
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      await _expireSession();
+    }
+    return false;
+  }
+
+  Future<void> _expireSession() async {
+    try {
+      await _cookieStore.clear();
+    } finally {
+      _sessionExpiredController.add(null);
+    }
+  }
+
   Future<void> clearCookies() => _cookieStore.clear();
+
+  Future<void> _updateCookiesSafely(http.Response response) async {
+    try {
+      await _cookieStore.updateFromResponse(response);
+    } catch (_) {
+      // The in-memory cookie store is already updated. A device keystore
+      // failure must not turn a valid endpoint response into an app crash.
+    }
+  }
+
+  Future<http.Response> _sendSafely(
+    Future<http.Response> Function() send,
+  ) async {
+    try {
+      return await send().timeout(requestTimeout);
+    } on TimeoutException {
+      throw const ApiException(
+        'The request timed out. Check your connection and try again.',
+      );
+    } on SocketException {
+      throw const ApiException(
+        'Unable to reach the server. Check your connection and try again.',
+      );
+    } on http.ClientException {
+      throw const ApiException(
+        'Unable to reach the server. Check your connection and try again.',
+      );
+    }
+  }
+}
+
+class ApiException implements Exception {
+  const ApiException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }

@@ -1,6 +1,7 @@
-import 'dart:typed_data';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_frontend/models/advisor_models.dart';
 import 'package:flutter_frontend/models/auth_models.dart';
@@ -54,6 +55,70 @@ void main() {
     expect(repository.submittedFilename, 'license.pdf');
     expect(submittedLicense?.verificationStatus, 'pending');
     expect(find.text('License submitted for review.'), findsOneWidget);
+  });
+
+  testWidgets('treats closing the document picker as cancellation', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: LicenseUploadSheet(
+            repository: _FakeAuthRepository(),
+            documentPicker: () async => throw PlatformException(
+              code: 'user_cancelled',
+              message: 'Picker cancelled',
+            ),
+            onSubmitted: (_) {},
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Select PDF or image'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('could not be opened'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('does not update a closed sheet after upload failure', (
+    tester,
+  ) async {
+    final repository = _FakeAuthRepository();
+    final pending = Completer<AdvisorLicense>();
+    repository.submitCompleter = pending;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: LicenseUploadSheet(
+            repository: repository,
+            documentPicker: () async => LicenseDocument(
+              name: 'license.pdf',
+              bytes: Uint8List.fromList('%PDF-test'.codeUnits),
+              contentType: 'application/pdf',
+            ),
+            onSubmitted: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.enterText(find.widgetWithText(TextField, 'State code'), 'TX');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'License number'),
+      'LIC-123',
+    );
+    await tester.tap(find.text('Select PDF or image'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Submit License'));
+    await tester.pump();
+
+    await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
+    pending.completeError(AuthException('Upload failed.'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('renders payment method and billing history', (tester) async {
@@ -151,6 +216,7 @@ class _FakeAuthRepository extends AuthRepository {
   String? submittedFilename;
   String? currentPassword;
   String? newPassword;
+  Completer<AdvisorLicense>? submitCompleter;
 
   @override
   Future<UserProfile> getCurrentUser() async => UserProfile(
@@ -172,6 +238,8 @@ class _FakeAuthRepository extends AuthRepository {
     required Uint8List documentBytes,
     required String contentType,
   }) async {
+    final pending = submitCompleter;
+    if (pending != null) return pending.future;
     submittedState = state;
     submittedNumber = licenseNumber;
     submittedFilename = filename;

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_frontend/screens/advisor/advisor_shell.dart';
+import 'package:flutter_frontend/screens/advisor/advisor_entry_screen.dart';
 import 'package:flutter_frontend/screens/auth/forgot_password_screen.dart';
 import 'package:flutter_frontend/screens/auth/register_screen.dart';
+import 'package:flutter_frontend/theme/app_theme.dart';
+import 'package:flutter_frontend/theme/app_theme_controller.dart';
 import '../../models/auth_models.dart';
 import '../../repositories/auth_repository.dart';
 import '../../services/api_service.dart';
@@ -41,7 +43,7 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const AdvisorShell()),
+        MaterialPageRoute(builder: (_) => const AdvisorEntryScreen()),
       );
     } catch (_) {
       setState(
@@ -72,8 +74,44 @@ class _LoginScreenState extends State<LoginScreen> {
               Container(
                 height: topHeight,
                 width: double.infinity,
-                color: const Color(0xFF252D6D),
-                child: const SafeArea(bottom: false, child: _BrandHeader()),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      AppColors.midnight,
+                      Color(0xFF29347E),
+                      Color(0xFF126D7A),
+                    ],
+                  ),
+                ),
+                child: Stack(
+                  children: [
+                    Positioned(
+                      right: -48,
+                      top: -36,
+                      child: Container(
+                        width: 180,
+                        height: 180,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: AppColors.cyanBright.withValues(alpha: 0.08),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.08),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const Positioned.fill(
+                      child: SafeArea(bottom: false, child: _BrandHeader()),
+                    ),
+                  ],
+                ),
+              ),
+              const Positioned(
+                right: 18,
+                top: 12,
+                child: SafeArea(bottom: false, child: AppThemeToggleButton()),
               ),
               Align(
                 alignment: Alignment.bottomCenter,
@@ -135,13 +173,20 @@ class _BrandHeader extends StatelessWidget {
           height: 76,
           width: 76,
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.10),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white.withValues(alpha: 0.16),
+                AppColors.cyan.withValues(alpha: 0.18),
+              ],
+            ),
             borderRadius: BorderRadius.circular(22),
             border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
           ),
           child: const Icon(
-            Icons.bar_chart_rounded,
-            color: Colors.white,
+            Icons.auto_graph_rounded,
+            color: AppColors.cyanBright,
             size: 34,
           ),
         ),
@@ -160,7 +205,7 @@ class _BrandHeader extends StatelessWidget {
           'LEAD MANAGEMENT PLATFORM',
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.62),
-            fontSize: 12,
+            fontSize: 11,
             fontWeight: FontWeight.w800,
             letterSpacing: 0.8,
           ),
@@ -200,11 +245,11 @@ class _LoginPanel extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(24, 30, 24, 22),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(30),
-          topRight: Radius.circular(30),
+      decoration: BoxDecoration(
+        color: context.appSurface,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(34),
+          topRight: Radius.circular(34),
         ),
       ),
       child: SafeArea(
@@ -215,18 +260,18 @@ class _LoginPanel extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
+              Text(
                 'Welcome back',
                 style: TextStyle(
-                  color: Color(0xFF051B68),
+                  color: context.appInk,
                   fontSize: 22,
                   fontWeight: FontWeight.w800,
                 ),
               ),
               const SizedBox(height: 4),
-              const Text(
+              Text(
                 'Sign in to your advisor account',
-                style: TextStyle(color: Color(0xFF496171), fontSize: 14),
+                style: TextStyle(color: context.appMuted, fontSize: 14),
               ),
               const SizedBox(height: 20),
               const _FieldLabel('EMAIL ADDRESS'),
@@ -235,8 +280,9 @@ class _LoginPanel extends StatelessWidget {
                 controller: emailController,
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.next,
-                style: const TextStyle(color: Color(0xFF202860)),
+                style: TextStyle(color: context.appInk),
                 decoration: _inputDecoration(
+                  context,
                   hintText: 'alex@wealthadvisors.com',
                 ),
                 validator: (value) =>
@@ -249,8 +295,9 @@ class _LoginPanel extends StatelessWidget {
                 controller: passwordController,
                 obscureText: obscurePassword,
                 textInputAction: TextInputAction.done,
-                style: const TextStyle(color: Color(0xFF202860)),
+                style: TextStyle(color: context.appInk),
                 decoration: _inputDecoration(
+                  context,
                   hintText: 'Password',
                   suffixIcon: IconButton(
                     onPressed: onTogglePassword,
@@ -258,7 +305,7 @@ class _LoginPanel extends StatelessWidget {
                       obscurePassword
                           ? Icons.visibility_outlined
                           : Icons.visibility_off_outlined,
-                      color: const Color(0xFF496171),
+                      color: context.appMuted,
                       size: 20,
                     ),
                   ),
@@ -323,9 +370,9 @@ class _LoginPanel extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Text(
+                  Text(
                     'Don\'t have an account? ',
-                    style: TextStyle(color: Color(0xFF496171), fontSize: 13),
+                    style: TextStyle(color: context.appMuted, fontSize: 13),
                   ),
                   TextButton(
                     onPressed: onRegister,
@@ -352,17 +399,21 @@ class _LoginPanel extends StatelessWidget {
     );
   }
 
-  InputDecoration _inputDecoration({String? hintText, Widget? suffixIcon}) {
+  InputDecoration _inputDecoration(
+    BuildContext context, {
+    String? hintText,
+    Widget? suffixIcon,
+  }) {
     return InputDecoration(
       hintText: hintText,
-      hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 14),
+      hintStyle: TextStyle(color: context.appMuted, fontSize: 14),
       filled: true,
-      fillColor: const Color(0xFFF6FAFD),
+      fillColor: context.appSoftFill,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
       suffixIcon: suffixIcon,
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(13),
-        borderSide: const BorderSide(color: Color(0xFFD5E3EA)),
+        borderSide: BorderSide(color: context.appOutline),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(13),
@@ -389,8 +440,8 @@ class _FieldLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       text,
-      style: const TextStyle(
-        color: Color(0xFF496171),
+      style: TextStyle(
+        color: context.appMuted,
         fontSize: 11,
         fontWeight: FontWeight.w900,
         letterSpacing: 1.1,

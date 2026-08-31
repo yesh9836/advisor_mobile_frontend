@@ -1,6 +1,5 @@
-import 'dart:convert';
-
 import 'package:flutter_frontend/models/advisor_models.dart';
+import 'package:flutter_frontend/models/onboarding_models.dart';
 import 'package:flutter_frontend/repositories/auth_repository.dart';
 import 'package:flutter_frontend/services/api_service.dart';
 
@@ -9,6 +8,47 @@ class AdvisorRepository {
     : _apiService = apiService ?? ApiService();
 
   final ApiService _apiService;
+
+  Future<AdvisorOnboarding> getOnboarding() async {
+    final response = await _apiService.get('/onboarding/me');
+    if (response.statusCode != 200) {
+      throw AuthException.fromResponse(
+        response.body,
+        'Unable to load onboarding.',
+      );
+    }
+    return AdvisorOnboarding.fromJson(
+      decodeResponseObject(response.body, 'Unable to load onboarding.'),
+    );
+  }
+
+  Future<AdvisorOnboarding> saveOnboarding({
+    required int annualIncomeGoalCents,
+    required int averageSaleCents,
+    required int commissionRateBps,
+    required int closingRateBps,
+    required bool consentAccepted,
+  }) async {
+    final response = await _apiService.put(
+      '/onboarding/me',
+      body: {
+        'annual_income_goal_cents': annualIncomeGoalCents,
+        'average_sale_cents': averageSaleCents,
+        'commission_rate_bps': commissionRateBps,
+        'closing_rate_bps': closingRateBps,
+        'consent_accepted': consentAccepted,
+      },
+    );
+    if (response.statusCode != 200) {
+      throw AuthException.fromResponse(
+        response.body,
+        'Unable to save onboarding.',
+      );
+    }
+    return AdvisorOnboarding.fromJson(
+      decodeResponseObject(response.body, 'Unable to save onboarding.'),
+    );
+  }
 
   Future<LeadDashboardSummary> getDashboardSummary() async {
     final response = await _apiService.get('/leads/dashboard/summary');
@@ -19,7 +59,7 @@ class AdvisorRepository {
       );
     }
     return LeadDashboardSummary.fromJson(
-      jsonDecode(response.body) as Map<String, dynamic>,
+      decodeResponseObject(response.body, 'Unable to load dashboard.'),
     );
   }
 
@@ -41,9 +81,13 @@ class AdvisorRepository {
     if (response.statusCode != 200) {
       throw AuthException.fromResponse(response.body, 'Unable to load leads.');
     }
-    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final data = decodeResponseObject(response.body, 'Unable to load leads.');
     return (data['items'] as List? ?? [])
-        .map((item) => AdvisorLead.fromJson(item as Map<String, dynamic>))
+        .map(
+          (item) => AdvisorLead.fromJson(
+            requireResponseObject(item, 'Unable to load leads.'),
+          ),
+        )
         .toList();
   }
 
@@ -65,7 +109,10 @@ class AdvisorRepository {
         'Unable to save lead outcome.',
       );
     }
-    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final data = decodeResponseObject(
+      response.body,
+      'Unable to save lead outcome.',
+    );
     return lead.copyWithOutcome(
       status: data['status'] as String? ?? status,
       notes: data['notes'] as String?,
@@ -83,9 +130,13 @@ class AdvisorRepository {
         'Unable to load packages.',
       );
     }
-    final data = jsonDecode(response.body) as List;
+    final data = decodeResponseList(response.body, 'Unable to load packages.');
     return data
-        .map((item) => LeadPackage.fromJson(item as Map<String, dynamic>))
+        .map(
+          (item) => LeadPackage.fromJson(
+            requireResponseObject(item, 'Unable to load packages.'),
+          ),
+        )
         .toList();
   }
 
@@ -110,7 +161,7 @@ class AdvisorRepository {
       );
     }
     return PurchaseCheckoutSession.fromJson(
-      jsonDecode(response.body) as Map<String, dynamic>,
+      decodeResponseObject(response.body, 'Unable to save package selection.'),
     );
   }
 
@@ -124,9 +175,15 @@ class AdvisorRepository {
         'Unable to confirm purchase status.',
       );
     }
-    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final data = decodeResponseObject(
+      response.body,
+      'Unable to confirm purchase status.',
+    );
     for (final item in data['items'] as List? ?? const []) {
-      final row = item as Map<String, dynamic>;
+      final row = requireResponseObject(
+        item,
+        'Unable to confirm purchase status.',
+      );
       if (row['stripe_checkout_session_id'] == checkoutSessionId) {
         return LeadPurchaseStatus.fromJson(row);
       }
@@ -138,7 +195,10 @@ class AdvisorRepository {
     final summaryResponse = await _apiService.get('/purchases/billing/summary');
     if (summaryResponse.statusCode == 200) {
       return BillingHistoryData.fromSummary(
-        jsonDecode(summaryResponse.body) as Map<String, dynamic>,
+        decodeResponseObject(
+          summaryResponse.body,
+          'Unable to load billing history.',
+        ),
       );
     }
 
@@ -152,7 +212,10 @@ class AdvisorRepository {
       );
     }
     return BillingHistoryData.fromPurchaseHistory(
-      jsonDecode(historyResponse.body) as Map<String, dynamic>,
+      decodeResponseObject(
+        historyResponse.body,
+        'Unable to load billing history.',
+      ),
     );
   }
 
@@ -165,7 +228,7 @@ class AdvisorRepository {
       );
     }
     return DeliverySettings.fromJson(
-      jsonDecode(response.body) as Map<String, dynamic>,
+      decodeResponseObject(response.body, 'Unable to load delivery settings.'),
     );
   }
 
@@ -189,7 +252,10 @@ class AdvisorRepository {
       );
     }
     return DeliverySettings.fromJson(
-      jsonDecode(response.body) as Map<String, dynamic>,
+      decodeResponseObject(
+        response.body,
+        'Unable to update delivery settings.',
+      ),
     );
   }
 
@@ -199,7 +265,7 @@ class AdvisorRepository {
       throw AuthException.fromResponse(response.body, 'Unable to load goals.');
     }
     return GoalSnapshot.fromJson(
-      jsonDecode(response.body) as Map<String, dynamic>,
+      decodeResponseObject(response.body, 'Unable to load goals.'),
     );
   }
 
@@ -222,7 +288,7 @@ class AdvisorRepository {
       throw AuthException.fromResponse(response.body, 'Unable to save goal.');
     }
     return GoalSnapshot.fromJson(
-      jsonDecode(response.body) as Map<String, dynamic>,
+      decodeResponseObject(response.body, 'Unable to save goal.'),
     );
   }
 }

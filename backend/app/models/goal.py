@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, Integer, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -46,9 +46,19 @@ class AdvisorGoal(Base):
     target_year: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     annual_income_goal_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     average_commission_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    average_sale_cents: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    commission_rate_bps: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     earned_ytd_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     appointment_to_deal_rate_bps: Mapped[int] = mapped_column(Integer, nullable=False)
     lead_to_appointment_rate_bps: Mapped[int] = mapped_column(Integer, nullable=False)
+    onboarding_completed_at: Mapped[Optional[datetime]] = mapped_column(
+        UTCDateTime(),
+        nullable=True,
+    )
+    onboarding_consent_at: Mapped[Optional[datetime]] = mapped_column(
+        UTCDateTime(),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(),
         nullable=False,

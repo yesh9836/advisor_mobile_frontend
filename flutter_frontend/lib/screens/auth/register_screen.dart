@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_frontend/models/auth_models.dart';
 import 'package:flutter_frontend/repositories/auth_repository.dart';
-import 'package:flutter_frontend/screens/advisor/advisor_shell.dart';
+import 'package:flutter_frontend/screens/advisor/advisor_entry_screen.dart';
 import 'package:flutter_frontend/services/api_service.dart';
+import 'package:flutter_frontend/theme/app_theme.dart';
+import 'package:flutter_frontend/theme/app_theme_controller.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -41,7 +43,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const AdvisorShell()),
+        MaterialPageRoute(builder: (_) => const AdvisorEntryScreen()),
         (_) => false,
       );
     } catch (error) {
@@ -63,11 +65,26 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF252D6D),
+      backgroundColor: AppColors.midnight,
       body: LayoutBuilder(
         builder: (context, constraints) {
           return Stack(
             children: [
+              const Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        AppColors.midnight,
+                        Color(0xFF29347E),
+                        Color(0xFF126D7A),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
               SafeArea(
                 bottom: false,
                 child: Padding(
@@ -75,14 +92,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      IconButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        icon: const Icon(Icons.arrow_back, color: Colors.white),
-                        style: IconButton.styleFrom(
-                          padding: EdgeInsets.zero,
-                          minimumSize: const Size(36, 36),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          IconButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            icon: const Icon(
+                              Icons.arrow_back,
+                              color: Colors.white,
+                            ),
+                            style: IconButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              minimumSize: const Size(36, 36),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                          ),
+                          const AppThemeToggleButton(),
+                        ],
                       ),
                       const SizedBox(height: 18),
                       const Text(
@@ -183,11 +209,11 @@ class _RegisterPanel extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(28),
-          topRight: Radius.circular(28),
+      decoration: BoxDecoration(
+        color: context.appSurface,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(34),
+          topRight: Radius.circular(34),
         ),
       ),
       child: SafeArea(
@@ -203,7 +229,10 @@ class _RegisterPanel extends StatelessWidget {
               TextFormField(
                 controller: nameController,
                 textInputAction: TextInputAction.next,
-                decoration: _inputDecoration(hintText: 'Alex Rodriguez'),
+                decoration: _inputDecoration(
+                  context,
+                  hintText: 'Alex Rodriguez',
+                ),
                 validator: (value) => (value ?? '').trim().isEmpty
                     ? 'Full name is required'
                     : null,
@@ -215,7 +244,10 @@ class _RegisterPanel extends StatelessWidget {
                 controller: emailController,
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.next,
-                decoration: _inputDecoration(hintText: 'alex@wealth.com'),
+                decoration: _inputDecoration(
+                  context,
+                  hintText: 'alex@wealth.com',
+                ),
                 validator: _validateEmail,
               ),
               const SizedBox(height: 16),
@@ -226,6 +258,7 @@ class _RegisterPanel extends StatelessWidget {
                 obscureText: obscurePassword,
                 textInputAction: TextInputAction.next,
                 decoration: _inputDecoration(
+                  context,
                   hintText: 'Min 8 characters',
                   suffixIcon: IconButton(
                     onPressed: onTogglePassword,
@@ -233,7 +266,7 @@ class _RegisterPanel extends StatelessWidget {
                       obscurePassword
                           ? Icons.visibility_outlined
                           : Icons.visibility_off_outlined,
-                      color: const Color(0xFF496171),
+                      color: context.appMuted,
                       size: 20,
                     ),
                   ),
@@ -254,6 +287,7 @@ class _RegisterPanel extends StatelessWidget {
                 obscureText: obscureConfirmPassword,
                 textInputAction: TextInputAction.done,
                 decoration: _inputDecoration(
+                  context,
                   hintText: 'Repeat password',
                   suffixIcon: IconButton(
                     onPressed: onToggleConfirmPassword,
@@ -261,7 +295,7 @@ class _RegisterPanel extends StatelessWidget {
                       obscureConfirmPassword
                           ? Icons.visibility_outlined
                           : Icons.visibility_off_outlined,
-                      color: const Color(0xFF496171),
+                      color: context.appMuted,
                       size: 20,
                     ),
                   ),
@@ -316,9 +350,9 @@ class _RegisterPanel extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Text(
+                  Text(
                     'Already have an account? ',
-                    style: TextStyle(color: Color(0xFF496171), fontSize: 13),
+                    style: TextStyle(color: context.appMuted, fontSize: 13),
                   ),
                   TextButton(
                     onPressed: onSignIn,
@@ -354,17 +388,21 @@ class _RegisterPanel extends StatelessWidget {
     return null;
   }
 
-  InputDecoration _inputDecoration({String? hintText, Widget? suffixIcon}) {
+  InputDecoration _inputDecoration(
+    BuildContext context, {
+    String? hintText,
+    Widget? suffixIcon,
+  }) {
     return InputDecoration(
       hintText: hintText,
-      hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 14),
+      hintStyle: TextStyle(color: context.appMuted, fontSize: 14),
       filled: true,
-      fillColor: const Color(0xFFF6FAFD),
+      fillColor: context.appSoftFill,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
       suffixIcon: suffixIcon,
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: Color(0xFFD5E3EA)),
+        borderSide: BorderSide(color: context.appOutline),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
@@ -390,20 +428,26 @@ class _LicenseNotice extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        color: const Color(0xFFE9F8FC),
+        color: context.isDarkMode
+            ? const Color(0xFF102D38)
+            : const Color(0xFFE9F8FC),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF9BDCE8)),
+        border: Border.all(
+          color: context.isDarkMode
+              ? const Color(0xFF285A67)
+              : const Color(0xFF9BDCE8),
+        ),
       ),
-      child: const Row(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.shield_outlined, color: Color(0xFF0087B7), size: 18),
-          SizedBox(width: 10),
+          const Icon(Icons.shield_outlined, color: AppColors.cyan, size: 18),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
               'You will need to upload a valid financial advisor license before receiving leads.',
               style: TextStyle(
-                color: Color(0xFF335366),
+                color: context.appMuted,
                 fontSize: 12,
                 height: 1.35,
               ),
@@ -424,8 +468,8 @@ class _FieldLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       text,
-      style: const TextStyle(
-        color: Color(0xFF496171),
+      style: TextStyle(
+        color: context.appMuted,
         fontSize: 11,
         fontWeight: FontWeight.w900,
         letterSpacing: 1.1,

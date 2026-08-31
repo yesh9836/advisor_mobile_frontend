@@ -61,6 +61,7 @@ class AdvisorLicense {
     required this.licenseNumber,
     required this.verificationStatus,
     this.licenseType,
+    this.rejectionReason,
   });
 
   final int id;
@@ -68,6 +69,7 @@ class AdvisorLicense {
   final String licenseNumber;
   final String verificationStatus;
   final String? licenseType;
+  final String? rejectionReason;
 
   factory AdvisorLicense.fromJson(Map<String, dynamic> json) {
     return AdvisorLicense(
@@ -76,6 +78,7 @@ class AdvisorLicense {
       licenseNumber: json['license_number'] as String? ?? '',
       verificationStatus: json['verification_status'] as String? ?? 'pending',
       licenseType: json['license_type'] as String?,
+      rejectionReason: json['rejection_reason'] as String?,
     );
   }
 }

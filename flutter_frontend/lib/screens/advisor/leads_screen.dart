@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_frontend/models/advisor_models.dart';
 import 'package:flutter_frontend/repositories/advisor_repository.dart';
 import 'package:flutter_frontend/screens/advisor/lead_details_sheet.dart';
+import 'package:flutter_frontend/theme/app_components.dart';
+import 'package:flutter_frontend/theme/app_theme.dart';
 
 class LeadsScreen extends StatefulWidget {
   const LeadsScreen({super.key, this.repository});
@@ -64,29 +66,21 @@ class _LeadsScreenState extends State<LeadsScreen> {
       builder: (context, snapshot) {
         final leads = snapshot.data ?? [];
         return ListView(
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 18),
           children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Lead Inbox',
-                    style: TextStyle(
-                      color: Color(0xFF202860),
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-                _CountBadge(count: leads.length),
-              ],
+            AppScreenHeader(
+              eyebrow: 'Pipeline',
+              title: 'Lead Inbox',
+              subtitle: 'Prioritize conversations and move prospects forward.',
+              icon: Icons.inbox_rounded,
+              trailing: _CountBadge(count: leads.length),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 10),
             _SearchField(
               controller: _searchController,
               onChanged: _onSearchChanged,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 9),
             _StatusFilters(
               selected: _selectedOutcome,
               onSelected: (value) {
@@ -97,7 +91,7 @@ class _LeadsScreenState extends State<LeadsScreen> {
                 });
               },
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 11),
             if (snapshot.connectionState == ConnectionState.waiting)
               const Padding(
                 padding: EdgeInsets.only(top: 40),
@@ -113,11 +107,27 @@ class _LeadsScreenState extends State<LeadsScreen> {
             else if (leads.isEmpty)
               const _EmptyInbox()
             else
-              for (final lead in leads)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _LeadCard(lead: lead, onTap: () => _openLead(lead)),
+              Container(
+                decoration: BoxDecoration(
+                  color: context.appSurface,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: context.appOutline),
+                  boxShadow: context.appCardShadows,
                 ),
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  children: [
+                    for (var index = 0; index < leads.length; index++) ...[
+                      _LeadCard(
+                        lead: leads[index],
+                        onTap: () => _openLead(leads[index]),
+                      ),
+                      if (index < leads.length - 1)
+                        Divider(height: 1, color: context.appOutline),
+                    ],
+                  ],
+                ),
+              ),
           ],
         );
       },
@@ -160,26 +170,56 @@ class _SearchField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 48,
-      child: TextField(
-        controller: controller,
-        onChanged: onChanged,
-        textInputAction: TextInputAction.search,
-        decoration: InputDecoration(
-          hintText: 'Search leads...',
-          prefixIcon: const Icon(Icons.search, size: 22),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: Color(0xFFCFE4EC)),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: Color(0xFFCFE4EC)),
+    return Row(
+      children: [
+        Expanded(
+          child: SizedBox(
+            height: 46,
+            child: TextField(
+              controller: controller,
+              onChanged: onChanged,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: 'Search leads...',
+                prefixIcon: const Icon(Icons.search, size: 22),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: context.appOutline),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: context.appOutline),
+                ),
+              ),
+            ),
           ),
         ),
-      ),
+        const SizedBox(width: 8),
+        Container(
+          height: 46,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: context.appSurface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: context.appOutline),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.filter_list_rounded, color: context.appInk, size: 19),
+              const SizedBox(width: 5),
+              Text(
+                'Filter',
+                style: TextStyle(
+                  color: context.appInk,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -240,25 +280,31 @@ class _FilterPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: selected ? const Color(0xFF202860) : Colors.white,
+      color: selected
+          ? (context.isDarkMode
+                ? const Color(0xFF23566B)
+                : const Color(0xFF202860))
+          : context.appSurface,
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
         borderRadius: BorderRadius.circular(999),
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
             border: Border.all(
               color: selected
-                  ? const Color(0xFF202860)
-                  : const Color(0xFFCFE4EC),
+                  ? (context.isDarkMode
+                        ? const Color(0xFF4BC9DA)
+                        : const Color(0xFF202860))
+                  : context.appOutline,
             ),
           ),
           child: Text(
             label,
             style: TextStyle(
-              color: selected ? Colors.white : const Color(0xFF315166),
+              color: selected ? Colors.white : context.appMuted,
               fontSize: 12,
               fontWeight: FontWeight.w900,
             ),
@@ -281,30 +327,18 @@ class _LeadCard extends StatelessWidget {
     final initials = _initials(lead);
 
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFCFE4EC)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0D0C5263),
-            blurRadius: 18,
-            offset: Offset(0, 10),
-          ),
-        ],
-      ),
+      color: context.appSurface,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(18),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(13),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _InitialAvatar(initials: initials, color: status.avatarColor),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -317,8 +351,8 @@ class _LeadCard extends StatelessWidget {
                               lead.displayName,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFF202860),
+                              style: TextStyle(
+                                color: context.appInk,
                                 fontSize: 15,
                                 fontWeight: FontWeight.w900,
                               ),
@@ -327,15 +361,15 @@ class _LeadCard extends StatelessWidget {
                           const SizedBox(width: 8),
                           Text(
                             _relativeTime(lead.receivedAt),
-                            style: const TextStyle(
-                              color: Color(0xFF58707D),
+                            style: TextStyle(
+                              color: context.appMuted,
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 7),
+                      const SizedBox(height: 5),
                       Wrap(
                         spacing: 6,
                         runSpacing: 6,
@@ -343,8 +377,8 @@ class _LeadCard extends StatelessWidget {
                         children: [
                           _MiniBadge(
                             label: lead.stateCode,
-                            background: const Color(0xFFEAF5FF),
-                            foreground: const Color(0xFF202860),
+                            background: context.appSoftFill,
+                            foreground: context.appInk,
                           ),
                           _MiniBadge(
                             label: status.label,
@@ -354,27 +388,36 @@ class _LeadCard extends StatelessWidget {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 10),
-                      Text(
-                        lead.assets ?? 'Lead details pending',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF202860),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        lead.activity ?? 'Details available after delivery',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF315166),
-                          fontSize: 13,
-                          height: 1.25,
-                        ),
+                      const SizedBox(height: 7),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              lead.assets ?? 'Price pending',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: context.appInk,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text('•', style: TextStyle(color: context.appMuted)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              lead.activity ?? 'Category pending',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: context.appMuted,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -397,7 +440,7 @@ class _InitialAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return CircleAvatar(
-      radius: 21,
+      radius: 19,
       backgroundColor: color,
       child: Text(
         initials,
@@ -516,13 +559,13 @@ class _EmptyInbox extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(18),
         child: Row(
-          children: const [
-            Icon(Icons.inbox_outlined, color: Color(0xFF18A0B8)),
-            SizedBox(width: 12),
+          children: [
+            const Icon(Icons.inbox_outlined, color: Color(0xFF18A0B8)),
+            const SizedBox(width: 12),
             Expanded(
               child: Text(
                 'No leads match this view yet.',
-                style: TextStyle(color: Color(0xFF58707D)),
+                style: TextStyle(color: context.appMuted),
               ),
             ),
           ],

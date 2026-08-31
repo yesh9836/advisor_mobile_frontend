@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_frontend/models/auth_models.dart';
 import 'package:flutter_frontend/repositories/auth_repository.dart';
+import 'package:flutter_frontend/theme/app_theme.dart';
 
 const _maxDocumentBytes = 10 * 1024 * 1024;
 const _allowedExtensions = {'pdf', 'jpg', 'jpeg', 'png'};
@@ -26,6 +27,7 @@ Future<void> showLicenseUploadSheet({
   required AuthRepository repository,
   required ValueChanged<AdvisorLicense> onSubmitted,
   LicenseDocumentPicker? documentPicker,
+  AdvisorLicense? rejectedLicense,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -38,6 +40,7 @@ Future<void> showLicenseUploadSheet({
         repository: repository,
         onSubmitted: onSubmitted,
         documentPicker: documentPicker,
+        rejectedLicense: rejectedLicense,
       ),
     ),
   );
@@ -49,11 +52,13 @@ class LicenseUploadSheet extends StatefulWidget {
     required this.repository,
     required this.onSubmitted,
     this.documentPicker,
+    this.rejectedLicense,
   });
 
   final AuthRepository repository;
   final ValueChanged<AdvisorLicense> onSubmitted;
   final LicenseDocumentPicker? documentPicker;
+  final AdvisorLicense? rejectedLicense;
 
   @override
   State<LicenseUploadSheet> createState() => _LicenseUploadSheetState();
@@ -68,6 +73,19 @@ class _LicenseUploadSheetState extends State<LicenseUploadSheet> {
   bool _submitting = false;
   String? _error;
   String? _success;
+
+  bool get _isResubmission => widget.rejectedLicense != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final rejected = widget.rejectedLicense;
+    if (rejected != null) {
+      _stateController.text = rejected.state;
+      _numberController.text = rejected.licenseNumber;
+      _typeController.text = rejected.licenseType ?? '';
+    }
+  }
 
   @override
   void dispose() {
@@ -113,8 +131,17 @@ class _LicenseUploadSheetState extends State<LicenseUploadSheet> {
         return;
       }
       setState(() => _document = document);
+    } on PlatformException catch (error) {
+      if (!mounted || _isPickerCancellation(error)) return;
+      setState(() {
+        _error = 'The document picker could not be opened. Please try again.';
+      });
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) {
+        setState(() {
+          _error = 'The selected document could not be read. Please try again.';
+        });
+      }
     } finally {
       if (mounted) setState(() => _picking = false);
     }
@@ -148,18 +175,34 @@ class _LicenseUploadSheetState extends State<LicenseUploadSheet> {
       _success = null;
     });
     try {
-      final license = await widget.repository.submitLicense(
-        state: state,
-        licenseNumber: number,
-        licenseType: _typeController.text,
-        filename: document.name,
-        documentBytes: document.bytes,
-        contentType: document.contentType,
-      );
+      final license = _isResubmission
+          ? await widget.repository.resubmitLicense(
+              licenseId: widget.rejectedLicense!.id,
+              licenseType: _typeController.text,
+              filename: document.name,
+              documentBytes: document.bytes,
+              contentType: document.contentType,
+            )
+          : await widget.repository.submitLicense(
+              state: state,
+              licenseNumber: number,
+              licenseType: _typeController.text,
+              filename: document.name,
+              documentBytes: document.bytes,
+              contentType: document.contentType,
+            );
       if (!mounted) return;
-      widget.onSubmitted(license);
+      try {
+        widget.onSubmitted(license);
+      } catch (_) {
+        // The upload has succeeded. A parent refresh must not turn that into
+        // an unhandled upload failure if its screen is closing concurrently.
+      }
+      if (!mounted) return;
       setState(() {
-        _success = 'License submitted for review.';
+        _success = _isResubmission
+            ? 'License resubmitted for review.'
+            : 'License submitted for review.';
         _stateController.clear();
         _numberController.clear();
         _typeController.clear();
@@ -184,21 +227,23 @@ class _LicenseUploadSheetState extends State<LicenseUploadSheet> {
       children: [
         Row(
           children: [
-            const Expanded(
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Upload License',
+                    _isResubmission ? 'Resubmit License' : 'Upload License',
                     style: TextStyle(
-                      color: Color(0xFF202860),
+                      color: context.appInk,
                       fontSize: 24,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
                   Text(
-                    'Submit a state license for verification.',
-                    style: TextStyle(color: Color(0xFF58707D)),
+                    _isResubmission
+                        ? 'Replace the rejected document for a new review.'
+                        : 'Submit a state license for verification.',
+                    style: TextStyle(color: context.appMuted),
                   ),
                 ],
               ),
@@ -213,7 +258,7 @@ class _LicenseUploadSheetState extends State<LicenseUploadSheet> {
         const SizedBox(height: 20),
         TextField(
           controller: _stateController,
-          enabled: !_submitting,
+          enabled: !_submitting && !_isResubmission,
           textCapitalization: TextCapitalization.characters,
           maxLength: 2,
           inputFormatters: [
@@ -229,7 +274,7 @@ class _LicenseUploadSheetState extends State<LicenseUploadSheet> {
         const SizedBox(height: 10),
         TextField(
           controller: _numberController,
-          enabled: !_submitting,
+          enabled: !_submitting && !_isResubmission,
           maxLength: 80,
           decoration: const InputDecoration(
             labelText: 'License number',
@@ -260,9 +305,9 @@ class _LicenseUploadSheetState extends State<LicenseUploadSheet> {
           ),
         ),
         const SizedBox(height: 6),
-        const Text(
+        Text(
           'PDF, JPG, JPEG, or PNG · maximum 10 MB',
-          style: TextStyle(color: Color(0xFF58707D), fontSize: 12),
+          style: TextStyle(color: context.appMuted, fontSize: 12),
         ),
         if (_error != null) ...[
           const SizedBox(height: 12),
@@ -292,7 +337,13 @@ class _LicenseUploadSheetState extends State<LicenseUploadSheet> {
                     ),
                   )
                 : const Icon(Icons.verified_user_outlined),
-            label: Text(_submitting ? 'Submitting…' : 'Submit License'),
+            label: Text(
+              _submitting
+                  ? 'Submitting…'
+                  : _isResubmission
+                  ? 'Resubmit License'
+                  : 'Submit License',
+            ),
           ),
         ),
       ],
@@ -311,6 +362,9 @@ class UpperCaseTextFormatter extends TextInputFormatter {
 }
 
 String? _validateDocument(LicenseDocument document) {
+  if (document.bytes.isEmpty) {
+    return 'The selected document is empty. Choose another file.';
+  }
   final extension = document.name.toLowerCase().split('.').last;
   if (!_allowedExtensions.contains(extension)) {
     return 'Document must be a PDF, JPG, JPEG, or PNG file.';
@@ -319,6 +373,11 @@ String? _validateDocument(LicenseDocument document) {
     return 'Document must be 10 MB or smaller.';
   }
   return null;
+}
+
+bool _isPickerCancellation(PlatformException error) {
+  final value = '${error.code} ${error.message ?? ''}'.toLowerCase();
+  return value.contains('cancel') || value.contains('abort');
 }
 
 String _contentTypeFor(String? extension) {

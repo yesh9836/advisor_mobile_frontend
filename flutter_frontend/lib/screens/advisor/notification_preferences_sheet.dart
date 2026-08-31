@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_frontend/models/advisor_models.dart';
 import 'package:flutter_frontend/repositories/advisor_repository.dart';
+import 'package:flutter_frontend/theme/app_theme.dart';
 
 Future<void> showNotificationPreferencesSheet({
   required BuildContext context,
@@ -10,7 +11,7 @@ Future<void> showNotificationPreferencesSheet({
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
-    backgroundColor: const Color(0xFFF9F7FF),
+    backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
@@ -101,18 +102,18 @@ class _NotificationPreferencesSheetState
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Notification Preferences',
             style: TextStyle(
-              color: Color(0xFF202860),
+              color: context.appInk,
               fontSize: 21,
               fontWeight: FontWeight.w900,
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             'Choose how you want to be alerted when new leads are delivered.',
-            style: TextStyle(color: Color(0xFF58707D), height: 1.35),
+            style: TextStyle(color: context.appMuted, height: 1.35),
           ),
           const SizedBox(height: 18),
           if (_loading)
