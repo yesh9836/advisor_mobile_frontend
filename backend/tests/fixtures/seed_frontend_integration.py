@@ -299,7 +299,7 @@ def ensure_outcomes(db: Session, advisor: User, leads: list[Lead], max_rows: int
         "appointment_set",
         "closed_deal",
         "new",
-        "appointment_set",
+        "closed_deal",
     ]
     now = datetime.now(timezone.utc)
     updated = 0
