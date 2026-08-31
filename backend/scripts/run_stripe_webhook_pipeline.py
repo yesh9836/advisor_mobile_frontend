@@ -15,6 +15,7 @@ import logging
 import time
 from typing import Dict, Optional
 
+from app.core.config import settings
 from app.core.sentry import capture_exception, init_sentry
 from app.db.session import SessionLocal
 from app.db.timezone import utcnow
@@ -156,10 +157,16 @@ def main() -> int:
         max_cycles or "infinite",
     )
 
+    if settings.STRIPE_DEMO_MODE:
+        logger.info(
+            "Stripe reconciliation is disabled while STRIPE_DEMO_MODE is enabled; "
+            "webhook inbox and cleanup processing remain active."
+        )
+
     try:
         while True:
             now_monotonic = time.monotonic()
-            if now_monotonic >= next_reconcile_at:
+            if not settings.STRIPE_DEMO_MODE and now_monotonic >= next_reconcile_at:
                 _run_reconciliation_once()
                 next_reconcile_at = now_monotonic + reconcile_interval_seconds
 
