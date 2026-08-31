@@ -249,20 +249,28 @@ class AdvisorDashboardScreen extends StatefulWidget {
     required this.onBuyLeads,
     required this.onViewInbox,
     required this.onOpenProfile,
+    this.repository,
+    this.authRepository,
   });
 
   final VoidCallback onBuyLeads;
   final VoidCallback onViewInbox;
   final VoidCallback onOpenProfile;
+  final AdvisorRepository? repository;
+  final AuthRepository? authRepository;
 
   @override
   State<AdvisorDashboardScreen> createState() => _AdvisorDashboardScreenState();
 }
 
 class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
-  final _repository = AdvisorRepository();
-  final _authRepository = AuthRepository();
+  late final _repository = widget.repository ?? AdvisorRepository();
+  late final _authRepository = widget.authRepository ?? AuthRepository();
   late Future<_DashboardData> _future = _load();
+  DeliverySettings? _deliverySettings;
+  bool? _emailAlertsOverride;
+  bool? _smsAlertsOverride;
+  var _savingDeliverySettings = false;
 
   Future<_DashboardData> _load() async {
     // Keep these startup requests on the shared persistent connection. On a
@@ -274,39 +282,60 @@ class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
     return _DashboardData(user: user, summary: summary, leads: leads);
   }
 
-  Future<void> _openDeliverySettingsEditor() async {
-    DeliverySettings settings;
+  Future<void> _updateDeliverySettings({
+    required LeadDashboardSummary summary,
+    bool? emailAlertsEnabled,
+    bool? smsAlertsEnabled,
+  }) async {
+    if (_savingDeliverySettings) return;
+    final previousEmail =
+        _emailAlertsOverride ??
+        _deliverySettings?.emailAlertsEnabled ??
+        summary.emailAlertsEnabled;
+    final previousSms =
+        _smsAlertsOverride ??
+        _deliverySettings?.smsAlertsEnabled ??
+        summary.smsAlertsEnabled;
+
+    setState(() {
+      _savingDeliverySettings = true;
+      if (emailAlertsEnabled != null) {
+        _emailAlertsOverride = emailAlertsEnabled;
+      }
+      if (smsAlertsEnabled != null) {
+        _smsAlertsOverride = smsAlertsEnabled;
+      }
+    });
+
     try {
-      settings = await _repository.getDeliverySettings();
+      final current =
+          _deliverySettings ?? await _repository.getDeliverySettings();
+      final updated = await _repository.updateDeliverySettings(
+        emailAlertsEnabled: emailAlertsEnabled ?? current.emailAlertsEnabled,
+        smsAlertsEnabled: smsAlertsEnabled ?? current.smsAlertsEnabled,
+        expectedVersion: current.version,
+      );
+      if (!mounted) return;
+      setState(() {
+        _deliverySettings = updated;
+        _emailAlertsOverride = updated.emailAlertsEnabled;
+        _smsAlertsOverride = updated.smsAlertsEnabled;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Delivery settings updated.')),
+      );
     } catch (error) {
       if (!mounted) return;
+      setState(() {
+        _emailAlertsOverride = previousEmail;
+        _smsAlertsOverride = previousSms;
+      });
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(error.toString())));
-      return;
+    } finally {
+      if (mounted) setState(() => _savingDeliverySettings = false);
     }
-
-    if (!mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => _DeliverySettingsEditor(
-        initialSettings: settings,
-        onSave: (nextSettings) async {
-          final updated = await _repository.updateDeliverySettings(
-            emailAlertsEnabled: nextSettings.emailAlertsEnabled,
-            smsAlertsEnabled: nextSettings.smsAlertsEnabled,
-            expectedVersion: nextSettings.version,
-          );
-          if (!mounted) return updated;
-          setState(() {
-            _future = _load();
-          });
-          return updated;
-        },
-      ),
-    );
   }
 
   Future<void> _openLead(AdvisorLead lead) {
@@ -445,8 +474,23 @@ class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
                 ),
               const SizedBox(height: 2),
               _DeliverySettings(
-                summary: data.summary,
-                onEdit: _openDeliverySettingsEditor,
+                emailAlertsEnabled:
+                    _emailAlertsOverride ??
+                    _deliverySettings?.emailAlertsEnabled ??
+                    data.summary.emailAlertsEnabled,
+                smsAlertsEnabled:
+                    _smsAlertsOverride ??
+                    _deliverySettings?.smsAlertsEnabled ??
+                    data.summary.smsAlertsEnabled,
+                saving: _savingDeliverySettings,
+                onEmailChanged: (value) => _updateDeliverySettings(
+                  summary: data.summary,
+                  emailAlertsEnabled: value,
+                ),
+                onSmsChanged: (value) => _updateDeliverySettings(
+                  summary: data.summary,
+                  smsAlertsEnabled: value,
+                ),
               ),
             ],
           ],
@@ -957,10 +1001,19 @@ class _LeadTile extends StatelessWidget {
 }
 
 class _DeliverySettings extends StatelessWidget {
-  const _DeliverySettings({required this.summary, required this.onEdit});
+  const _DeliverySettings({
+    required this.emailAlertsEnabled,
+    required this.smsAlertsEnabled,
+    required this.saving,
+    required this.onEmailChanged,
+    required this.onSmsChanged,
+  });
 
-  final LeadDashboardSummary summary;
-  final Future<void> Function() onEdit;
+  final bool emailAlertsEnabled;
+  final bool smsAlertsEnabled;
+  final bool saving;
+  final ValueChanged<bool> onEmailChanged;
+  final ValueChanged<bool> onSmsChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -986,32 +1039,26 @@ class _DeliverySettings extends StatelessWidget {
                   ),
                 ),
               ),
-              TextButton(
-                onPressed: () => onEdit(),
-                style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFF18A0B8),
-                  backgroundColor: context.appSoftFill,
-                  minimumSize: const Size(0, 30),
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(999),
-                  ),
+              if (saving)
+                const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 ),
-                child: const Text('Edit'),
-              ),
             ],
           ),
           const Divider(height: 20),
           _SettingRow(
             icon: Icons.mail_outline,
             label: 'Email Alerts',
-            enabled: summary.emailAlertsEnabled,
+            enabled: emailAlertsEnabled,
+            onChanged: saving ? null : onEmailChanged,
           ),
           const Divider(height: 20),
           _SettingRow(
-            icon: Icons.notifications_none,
+            icon: Icons.sms_outlined,
             label: 'SMS Alerts',
-            enabled: summary.smsAlertsEnabled,
+            enabled: smsAlertsEnabled,
+            onChanged: saving ? null : onSmsChanged,
           ),
         ],
       ),
@@ -1162,19 +1209,30 @@ class _SettingRow extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.enabled,
+    required this.onChanged,
   });
 
   final IconData icon;
   final String label;
   final bool enabled;
+  final ValueChanged<bool>? onChanged;
 
   @override
   Widget build(BuildContext context) {
-    final color = enabled ? const Color(0xFF16A34A) : const Color(0xFF607987);
     return Row(
       children: [
-        Icon(icon, color: const Color(0xFF18A0B8), size: 19),
-        const SizedBox(width: 12),
+        Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: const Color(
+              0xFF18A0B8,
+            ).withValues(alpha: context.isDarkMode ? .15 : .09),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, color: const Color(0xFF18A0B8), size: 18),
+        ),
+        const SizedBox(width: 11),
         Expanded(
           child: Text(
             label,
@@ -1184,19 +1242,10 @@ class _SettingRow extends StatelessWidget {
             ),
           ),
         ),
-        Text(
-          enabled ? 'ON' : 'OFF',
-          style: TextStyle(
-            color: color,
-            fontSize: 12,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Container(
-          width: 6,
-          height: 6,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        Switch.adaptive(
+          value: enabled,
+          onChanged: onChanged,
+          activeTrackColor: const Color(0xFF18A0B8),
         ),
       ],
     );

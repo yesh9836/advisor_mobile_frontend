@@ -285,9 +285,14 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                   child: _PackageCard(
                     package: package,
                     selected: _selectedPackageId == package.id,
+                    saving: _saving,
                     onTap: () {
-                      setState(() => _selectedPackageId = package.id);
+                      setState(() {
+                        _selectedPackageId = package.id;
+                        _error = null;
+                      });
                     },
+                    onCheckout: () => _continueToCheckout(snapshot.data!),
                   ),
                 ),
               if (_checkoutNotice != null) ...[
@@ -332,43 +337,6 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                 Text(_error!, style: const TextStyle(color: Color(0xFFB91C1C))),
                 const SizedBox(height: 10),
               ],
-              SizedBox(
-                height: 46,
-                child: FilledButton(
-                  onPressed: _saving
-                      ? null
-                      : () => _continueToCheckout(snapshot.data!),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF18A0B8),
-                  ),
-                  child: Text(
-                    _saving ? 'Saving selection...' : 'Continue to checkout',
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.lock_outline, size: 14, color: context.appMuted),
-                  const SizedBox(width: 5),
-                  Flexible(
-                    child: Text(
-                      'Secure checkout. Cancel anytime.',
-                      style: TextStyle(color: context.appMuted, fontSize: 11),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  const Text(
-                    'Billing FAQ',
-                    style: TextStyle(
-                      color: Color(0xFF078AA2),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
             ],
           ],
         );
@@ -591,12 +559,16 @@ class _PackageCard extends StatelessWidget {
   const _PackageCard({
     required this.package,
     required this.selected,
+    required this.saving,
     required this.onTap,
+    required this.onCheckout,
   });
 
   final LeadPackage package;
   final bool selected;
+  final bool saving;
   final VoidCallback onTap;
+  final VoidCallback onCheckout;
 
   @override
   Widget build(BuildContext context) {
@@ -689,6 +661,45 @@ class _PackageCard extends StatelessWidget {
                           ],
                         ],
                       ),
+                      if (selected) ...[
+                        const SizedBox(height: 14),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 44,
+                          child: FilledButton.icon(
+                            onPressed: saving ? null : onCheckout,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFF18A0B8),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            icon: saving
+                                ? const SizedBox.square(
+                                    dimension: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.lock_outline, size: 17),
+                            label: Text(
+                              saving
+                                  ? 'Preparing checkout...'
+                                  : 'Continue to checkout',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 7),
+                        Center(
+                          child: Text(
+                            'Secure checkout • Cancel anytime',
+                            style: TextStyle(
+                              color: context.appMuted,
+                              fontSize: 10.5,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
