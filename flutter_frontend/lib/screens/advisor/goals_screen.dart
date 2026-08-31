@@ -94,21 +94,33 @@ class _GoalsScreenState extends State<GoalsScreen> {
                     value: '${goal.dealsRemaining}',
                     label: 'Deals Remaining',
                     icon: Icons.emoji_events_outlined,
+                    accent: Color(0xFFD58416),
+                    lightSurface: Color(0xFFFFF8E8),
+                    darkSurface: Color(0xFF2A2113),
                   ),
                   _StatCard(
                     value: '${goal.appointmentsRemaining}',
                     label: 'Appointments Remaining',
                     icon: Icons.calendar_today_outlined,
+                    accent: Color(0xFF5967D8),
+                    lightSurface: Color(0xFFF1F3FF),
+                    darkSurface: Color(0xFF1C2341),
                   ),
                   _StatCard(
                     value: '${goal.leadsRemaining}',
                     label: 'Leads Remaining',
                     icon: Icons.group_outlined,
+                    accent: Color(0xFF0F9F98),
+                    lightSurface: Color(0xFFEAFBF8),
+                    darkSurface: Color(0xFF102C2B),
                   ),
                   _StatCard(
                     value: '${goal.closedDealsYtd}',
                     label: 'Closed YTD',
                     icon: Icons.check_circle_outline_rounded,
+                    accent: Color(0xFF168A5B),
+                    lightSurface: Color(0xFFEBFAF2),
+                    darkSurface: Color(0xFF112B20),
                   ),
                 ],
               ),
@@ -827,9 +839,7 @@ class _GoalTrendPainter extends CustomPainter {
         ),
     ];
     final demoPath = Path()..moveTo(demoPoints.first.dx, demoPoints.first.dy);
-    for (final point in demoPoints.skip(1)) {
-      demoPath.lineTo(point.dx, point.dy);
-    }
+    _addSmoothCurve(demoPath, demoPoints);
     canvas.drawPath(demoPath, actualPaint);
     final pointPaint = Paint()..color = actualColor;
     for (final point in demoPoints) {
@@ -880,6 +890,38 @@ class _GoalTrendPainter extends CustomPainter {
         size.width - painter.width,
       );
       painter.paint(canvas, Offset(labelX, size.height - painter.height));
+    }
+  }
+
+  void _addSmoothCurve(Path path, List<Offset> points) {
+    if (points.length < 2) return;
+
+    // Catmull-Rom-inspired cubic segments keep the line flowing through the
+    // history points. Clamping each control point to its segment prevents the
+    // curve from overshooting and producing artificial spikes.
+    for (var index = 0; index < points.length - 1; index++) {
+      final previous = index == 0 ? points[index] : points[index - 1];
+      final current = points[index];
+      final next = points[index + 1];
+      final following = index + 2 < points.length ? points[index + 2] : next;
+      final minY = current.dy < next.dy ? current.dy : next.dy;
+      final maxY = current.dy > next.dy ? current.dy : next.dy;
+      final control1 = Offset(
+        current.dx + (next.dx - previous.dx) / 6,
+        (current.dy + (next.dy - previous.dy) / 6).clamp(minY, maxY),
+      );
+      final control2 = Offset(
+        next.dx - (following.dx - current.dx) / 6,
+        (next.dy - (following.dy - current.dy) / 6).clamp(minY, maxY),
+      );
+      path.cubicTo(
+        control1.dx,
+        control1.dy,
+        control2.dx,
+        control2.dy,
+        next.dx,
+        next.dy,
+      );
     }
   }
 
@@ -1175,15 +1217,37 @@ class _StatCard extends StatelessWidget {
     required this.value,
     required this.label,
     required this.icon,
+    required this.accent,
+    required this.lightSurface,
+    required this.darkSurface,
   });
 
   final String value;
   final String label;
   final IconData icon;
+  final Color accent;
+  final Color lightSurface;
+  final Color darkSurface;
 
   @override
   Widget build(BuildContext context) {
-    return _Panel(
+    final surface = context.isDarkMode ? darkSurface : lightSurface;
+    final displayAccent = context.isDarkMode
+        ? Color.lerp(accent, Colors.white, 0.14)!
+        : accent;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [surface, Color.lerp(surface, context.appSurface, 0.42)!],
+        ),
+        borderRadius: BorderRadius.circular(17),
+        border: Border.all(color: displayAccent.withValues(alpha: 0.2)),
+        boxShadow: context.appCardShadows,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1194,17 +1258,23 @@ class _StatCard extends StatelessWidget {
                   value,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF2BAFA8),
+                  style: TextStyle(
+                    color: displayAccent,
                     fontSize: 23,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
               ),
-              Icon(
-                icon,
-                color: context.appMuted.withValues(alpha: 0.45),
-                size: 19,
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: displayAccent.withValues(
+                    alpha: context.isDarkMode ? 0.18 : 0.12,
+                  ),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: displayAccent, size: 17),
               ),
             ],
           ),

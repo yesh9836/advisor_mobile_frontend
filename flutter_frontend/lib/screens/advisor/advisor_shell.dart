@@ -66,53 +66,169 @@ class _AdvisorShellState extends State<AdvisorShell> {
       ),
       bottomNavigationBar: Container(
         color: context.appCanvas,
-        padding: const EdgeInsets.fromLTRB(14, 6, 14, 9),
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 9),
         child: SafeArea(
           top: false,
           child: Container(
+            padding: const EdgeInsets.all(5),
             decoration: BoxDecoration(
               color: context.appSurface,
-              borderRadius: BorderRadius.circular(15),
+              borderRadius: BorderRadius.circular(20),
               border: Border.all(color: context.appOutline),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x140C5263),
-                  blurRadius: 18,
-                  offset: Offset(0, 6),
-                ),
-              ],
+              boxShadow: context.appCardShadows,
             ),
             clipBehavior: Clip.antiAlias,
-            child: NavigationBar(
+            child: _AdvisorNavigationBar(
               selectedIndex: _selectedIndex,
               onDestinationSelected: _selectTab,
-              destinations: const [
-                NavigationDestination(
-                  icon: Icon(Icons.dashboard_outlined),
-                  selectedIcon: Icon(Icons.dashboard),
-                  label: 'Home',
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AdvisorNavigationBar extends StatelessWidget {
+  const _AdvisorNavigationBar({
+    required this.selectedIndex,
+    required this.onDestinationSelected,
+  });
+
+  final int selectedIndex;
+  final ValueChanged<int> onDestinationSelected;
+
+  static const _items = <_AdvisorNavigationItem>[
+    _AdvisorNavigationItem(
+      label: 'Home',
+      icon: Icons.dashboard_outlined,
+      selectedIcon: Icons.dashboard_rounded,
+      color: Color(0xFF0F9F98),
+    ),
+    _AdvisorNavigationItem(
+      label: 'Goals',
+      icon: Icons.track_changes_outlined,
+      selectedIcon: Icons.track_changes_rounded,
+      color: Color(0xFF6366D9),
+    ),
+    _AdvisorNavigationItem(
+      label: 'Buy',
+      icon: Icons.shopping_bag_outlined,
+      selectedIcon: Icons.shopping_bag_rounded,
+      color: Color(0xFFD58416),
+    ),
+    _AdvisorNavigationItem(
+      label: 'Inbox',
+      icon: Icons.inbox_outlined,
+      selectedIcon: Icons.inbox_rounded,
+      color: Color(0xFF1687C8),
+    ),
+    _AdvisorNavigationItem(
+      label: 'Profile',
+      icon: Icons.person_outline_rounded,
+      selectedIcon: Icons.person_rounded,
+      color: Color(0xFF8B5CC7),
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 62,
+      child: Row(
+        children: [
+          for (var index = 0; index < _items.length; index++)
+            Expanded(
+              child: _AdvisorNavigationButton(
+                item: _items[index],
+                selected: selectedIndex == index,
+                onTap: () => onDestinationSelected(index),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AdvisorNavigationItem {
+  const _AdvisorNavigationItem({
+    required this.label,
+    required this.icon,
+    required this.selectedIcon,
+    required this.color,
+  });
+
+  final String label;
+  final IconData icon;
+  final IconData selectedIcon;
+  final Color color;
+}
+
+class _AdvisorNavigationButton extends StatelessWidget {
+  const _AdvisorNavigationButton({
+    required this.item,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final _AdvisorNavigationItem item;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = context.isDarkMode
+        ? Color.lerp(item.color, Colors.white, 0.16)!
+        : item.color;
+    final idleColor = Color.lerp(context.appMuted, accent, 0.3)!;
+
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '${item.label}, tab',
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(13),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(13),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 190),
+              curve: Curves.easeOutCubic,
+              decoration: BoxDecoration(
+                color: selected
+                    ? accent.withValues(alpha: context.isDarkMode ? 0.19 : 0.1)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(13),
+                border: Border.all(
+                  color: selected
+                      ? accent.withValues(alpha: 0.2)
+                      : Colors.transparent,
                 ),
-                NavigationDestination(
-                  icon: Icon(Icons.track_changes_outlined),
-                  selectedIcon: Icon(Icons.track_changes),
-                  label: 'Goals',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.shopping_bag_outlined),
-                  selectedIcon: Icon(Icons.shopping_bag),
-                  label: 'Buy',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.inbox_outlined),
-                  selectedIcon: Icon(Icons.inbox),
-                  label: 'Inbox',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.person_outline),
-                  selectedIcon: Icon(Icons.person),
-                  label: 'Profile',
-                ),
-              ],
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    selected ? item.selectedIcon : item.icon,
+                    color: selected ? accent : idleColor,
+                    size: selected ? 22 : 21,
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    item.label,
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: selected ? accent : idleColor,
+                      fontSize: 9.5,
+                      fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -236,8 +352,8 @@ class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
                           value: '${data.summary.leadsDelivered7Days}',
                           caption: '7 days',
                           icon: Icons.trending_up,
-                          iconBackground: Colors.transparent,
-                          iconColor: const Color(0xFF334155),
+                          iconBackground: const Color(0xFFE0F7FA),
+                          iconColor: const Color(0xFF078AA2),
                         ),
                       ),
                       Expanded(
@@ -246,8 +362,8 @@ class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
                           value: '${data.summary.appointmentsSet7Days}',
                           caption: '7 days',
                           icon: Icons.auto_awesome_rounded,
-                          iconBackground: const Color(0xFFD9F5F1),
-                          iconColor: const Color(0xFF168F8A),
+                          iconBackground: const Color(0xFFF0E9FF),
+                          iconColor: const Color(0xFF7C4DCC),
                         ),
                       ),
                       Expanded(
@@ -256,8 +372,8 @@ class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
                           value: _money(data.summary.costPerAppointment),
                           caption: 'avg',
                           icon: Icons.attach_money_rounded,
-                          iconBackground: const Color(0xFFF1F5F9),
-                          iconColor: const Color(0xFF64748B),
+                          iconBackground: const Color(0xFFE7F8EF),
+                          iconColor: const Color(0xFF15805D),
                         ),
                       ),
                     ],
@@ -624,7 +740,9 @@ class _MetricCard extends StatelessWidget {
               width: 28,
               height: 28,
               decoration: BoxDecoration(
-                color: iconBackground,
+                color: context.isDarkMode
+                    ? iconColor.withValues(alpha: 0.18)
+                    : iconBackground,
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, color: iconColor, size: 16),
