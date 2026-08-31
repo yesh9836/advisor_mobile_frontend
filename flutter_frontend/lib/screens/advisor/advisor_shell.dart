@@ -22,25 +22,38 @@ class AdvisorShell extends StatefulWidget {
 
 class _AdvisorShellState extends State<AdvisorShell> {
   late int _selectedIndex = widget.initialIndex.clamp(0, 4);
+  late final List<Widget?> _screens;
+
+  @override
+  void initState() {
+    super.initState();
+    _screens = List<Widget?>.filled(5, null);
+    _screens[_selectedIndex] = _createScreen(_selectedIndex);
+  }
+
+  Widget _createScreen(int index) => switch (index) {
+    0 => AdvisorDashboardScreen(
+      onBuyLeads: () => _selectTab(2),
+      onViewInbox: () => _selectTab(3),
+      onOpenProfile: () => _selectTab(4),
+    ),
+    1 => GoalsScreen(onSeeAllPackages: () => _selectTab(2)),
+    2 => const SubscriptionScreen(),
+    3 => const LeadsScreen(),
+    4 => const ProfileScreen(),
+    _ => const SizedBox.shrink(),
+  };
 
   void _selectTab(int index) {
-    setState(() => _selectedIndex = index);
+    if (index == _selectedIndex) return;
+    setState(() {
+      _screens[index] ??= _createScreen(index);
+      _selectedIndex = index;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final screens = [
-      AdvisorDashboardScreen(
-        onBuyLeads: () => _selectTab(2),
-        onViewInbox: () => _selectTab(3),
-        onOpenProfile: () => _selectTab(4),
-      ),
-      GoalsScreen(onSeeAllPackages: () => _selectTab(2)),
-      const SubscriptionScreen(),
-      const LeadsScreen(),
-      const ProfileScreen(),
-    ];
-
     return Scaffold(
       backgroundColor: context.appCanvas,
       body: DecoratedBox(
@@ -49,18 +62,16 @@ class _AdvisorShellState extends State<AdvisorShell> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: context.isDarkMode
-                ? const [Color(0xFF0C1727), Color(0xFF08111F)]
+                ? const [Color(0xFF090909), Color(0xFF000000)]
                 : const [Color(0xFFF9FBFD), AppColors.canvas],
           ),
         ),
         child: SafeArea(
-          child: AnimatedSwitcher(
-            duration: Duration(milliseconds: 220),
-            switchInCurve: Curves.easeOutCubic,
-            child: KeyedSubtree(
-              key: ValueKey(_selectedIndex),
-              child: screens[_selectedIndex],
-            ),
+          child: IndexedStack(
+            index: _selectedIndex,
+            children: [
+              for (final screen in _screens) screen ?? const SizedBox.shrink(),
+            ],
           ),
         ),
       ),
@@ -181,7 +192,7 @@ class _AdvisorNavigationButton extends StatelessWidget {
     final accent = context.isDarkMode
         ? Color.lerp(item.color, Colors.white, 0.16)!
         : item.color;
-    final idleColor = Color.lerp(context.appMuted, accent, 0.3)!;
+    final idleColor = context.appMuted;
 
     return Semantics(
       button: true,
@@ -203,11 +214,6 @@ class _AdvisorNavigationButton extends StatelessWidget {
                     ? accent.withValues(alpha: context.isDarkMode ? 0.19 : 0.1)
                     : Colors.transparent,
                 borderRadius: BorderRadius.circular(13),
-                border: Border.all(
-                  color: selected
-                      ? accent.withValues(alpha: 0.2)
-                      : Colors.transparent,
-                ),
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -729,6 +735,10 @@ class _MetricCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final displayIconColor = context.isDarkMode
+        ? Color.lerp(iconColor, Colors.white, 0.24)!
+        : iconColor;
+
     return Container(
       constraints: const BoxConstraints(minHeight: 122),
       child: Padding(
@@ -737,15 +747,20 @@ class _MetricCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              width: 28,
-              height: 28,
+              width: 34,
+              height: 34,
               decoration: BoxDecoration(
                 color: context.isDarkMode
-                    ? iconColor.withValues(alpha: 0.18)
+                    ? displayIconColor.withValues(alpha: 0.24)
                     : iconBackground,
                 shape: BoxShape.circle,
+                border: context.isDarkMode
+                    ? Border.all(
+                        color: displayIconColor.withValues(alpha: 0.22),
+                      )
+                    : null,
               ),
-              child: Icon(icon, color: iconColor, size: 16),
+              child: Icon(icon, color: displayIconColor, size: 19),
             ),
             const SizedBox(height: 7),
             Text(

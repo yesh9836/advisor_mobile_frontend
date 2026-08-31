@@ -197,23 +197,23 @@ abstract final class AppTheme {
   }
 
   static ThemeData get dark {
-    const canvas = Color(0xFF08111F);
-    const surface = Color(0xFF111C2E);
-    const surfaceRaised = Color(0xFF17243A);
-    const ink = Color(0xFFEAF0F8);
-    const muted = Color(0xFF9DACC0);
-    const outline = Color(0xFF2A3A52);
-    const cyan = Color(0xFF4BC9DA);
+    const canvas = Color(0xFF050505);
+    const surface = Color(0xFF111111);
+    const surfaceRaised = Color(0xFF1A1A1A);
+    const ink = Color(0xFFF5F5F5);
+    const muted = Color(0xFFA3A3A3);
+    const outline = Color(0xFF2B2B2B);
+    const cyan = Color(0xFF4DD3E1);
 
     const scheme = ColorScheme.dark(
       primary: cyan,
-      onPrimary: Color(0xFF04161C),
+      onPrimary: Color(0xFF001416),
       secondary: Color(0xFF7DDDE8),
-      onSecondary: Color(0xFF04161C),
+      onSecondary: Color(0xFF001416),
       surface: surface,
       onSurface: ink,
       onSurfaceVariant: muted,
-      outline: Color(0xFF405169),
+      outline: Color(0xFF525252),
       outlineVariant: outline,
       error: Color(0xFFFF6B7D),
       onError: Color(0xFF2A050B),
@@ -282,7 +282,7 @@ abstract final class AppTheme {
       chipTheme: ChipThemeData(
         backgroundColor: surfaceRaised,
         selectedColor: cyan,
-        checkmarkColor: const Color(0xFF04161C),
+        checkmarkColor: const Color(0xFF001416),
         labelStyle: const TextStyle(
           color: ink,
           fontSize: 12,
@@ -304,7 +304,7 @@ abstract final class AppTheme {
           (states) => TextStyle(
             color: states.contains(WidgetState.selected)
                 ? cyan
-                : const Color(0xFF8290A5),
+                : const Color(0xFF929292),
             fontSize: 10,
             fontWeight: states.contains(WidgetState.selected)
                 ? FontWeight.w800
@@ -315,7 +315,7 @@ abstract final class AppTheme {
           (states) => IconThemeData(
             color: states.contains(WidgetState.selected)
                 ? cyan
-                : const Color(0xFF8290A5),
+                : const Color(0xFF929292),
             size: 21,
           ),
         ),
@@ -324,7 +324,7 @@ abstract final class AppTheme {
         filled: true,
         fillColor: surfaceRaised,
         labelStyle: const TextStyle(color: muted),
-        hintStyle: const TextStyle(color: Color(0xFF718198)),
+        hintStyle: const TextStyle(color: Color(0xFF777777)),
         prefixIconColor: muted,
         suffixIconColor: muted,
         contentPadding: const EdgeInsets.symmetric(
@@ -347,8 +347,8 @@ abstract final class AppTheme {
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: cyan,
-          foregroundColor: const Color(0xFF04161C),
-          disabledBackgroundColor: const Color(0xFF274550),
+          foregroundColor: const Color(0xFF001416),
+          disabledBackgroundColor: const Color(0xFF272727),
           minimumSize: const Size.fromHeight(46),
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
@@ -379,7 +379,7 @@ abstract final class AppTheme {
         backgroundColor: surface,
         surfaceTintColor: surface,
         showDragHandle: true,
-        dragHandleColor: Color(0xFF41516A),
+        dragHandleColor: Color(0xFF555555),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
@@ -389,7 +389,7 @@ abstract final class AppTheme {
         surfaceTintColor: surface,
       ),
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: const Color(0xFF1E304A),
+        backgroundColor: const Color(0xFF1C1C1C),
         contentTextStyle: const TextStyle(color: ink),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -405,12 +405,12 @@ extension AppThemeContext on BuildContext {
   Color get appCanvas => Theme.of(this).scaffoldBackgroundColor;
   Color get appSurface => appScheme.surface;
   Color get appSurfaceRaised =>
-      isDarkMode ? const Color(0xFF17243A) : Colors.white;
+      isDarkMode ? const Color(0xFF1A1A1A) : Colors.white;
   Color get appInk => appScheme.onSurface;
   Color get appMuted => appScheme.onSurfaceVariant;
   Color get appOutline => appScheme.outlineVariant;
   Color get appSoftFill =>
-      isDarkMode ? const Color(0xFF152338) : const Color(0xFFF4FAFC);
+      isDarkMode ? const Color(0xFF181818) : const Color(0xFFF4FAFC);
   List<BoxShadow> get appCardShadows => isDarkMode
       ? [
           BoxShadow(
