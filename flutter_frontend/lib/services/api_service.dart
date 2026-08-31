@@ -103,9 +103,13 @@ class ApiService {
     CookieStore? cookieStore,
     this.requestTimeout = const Duration(seconds: 25),
   }) : _baseUrl = baseUrl ?? defaultBaseUrl,
-       _client = client ?? http.Client(),
+       _client = client ?? _sharedClient,
        _cookieStore = cookieStore ?? _sharedCookieStore;
 
+  // Reuse one connection pool throughout the app. Creating a client for every
+  // repository forces another DNS lookup and TLS handshake, which is
+  // especially expensive for users far from the API region.
+  static final http.Client _sharedClient = http.Client();
   static final CookieStore _sharedCookieStore = CookieStore(
     persistence: SecureCookiePersistence(),
   );

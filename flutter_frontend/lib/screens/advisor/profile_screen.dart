@@ -35,15 +35,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isLoggingOut = false;
 
   Future<_ProfileData> _loadProfile() async {
-    final results = await Future.wait([
-      _authRepository.getCurrentUser(),
-      _authRepository.getMyLicenses(),
-    ]);
+    final user = await _authRepository.getCurrentUser();
+    final licenses = await _authRepository.getMyLicenses();
 
-    return _ProfileData(
-      user: results[0] as UserProfile,
-      licenses: results[1] as List<AdvisorLicense>,
-    );
+    return _ProfileData(user: user, licenses: licenses);
   }
 
   Future<void> _logout() async {

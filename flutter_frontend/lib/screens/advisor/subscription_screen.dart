@@ -68,15 +68,13 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
   }
 
   Future<_BuyData> _load() async {
-    final results = await Future.wait([
-      _repository.getPackages(),
-      _repository.getDashboardSummary(),
-      _repository.getOnboarding(),
-    ]);
+    final packages = await _repository.getPackages();
+    final summary = await _repository.getDashboardSummary();
+    final onboarding = await _repository.getOnboarding();
     final data = _BuyData(
-      packages: results[0] as List<LeadPackage>,
-      summary: results[1] as LeadDashboardSummary,
-      onboarding: results[2] as AdvisorOnboarding,
+      packages: packages,
+      summary: summary,
+      onboarding: onboarding,
     );
     _selectedStates.addAll(data.summary.targetStates);
     return data;

@@ -143,16 +143,13 @@ class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
   late Future<_DashboardData> _future = _load();
 
   Future<_DashboardData> _load() async {
-    final results = await Future.wait([
-      _authRepository.getCurrentUser(),
-      _repository.getDashboardSummary(),
-      _repository.getLeads(deliveryStatus: 'all'),
-    ]);
-    return _DashboardData(
-      user: results[0] as UserProfile,
-      summary: results[1] as LeadDashboardSummary,
-      leads: results[2] as List<AdvisorLead>,
-    );
+    // Keep these startup requests on the shared persistent connection. On a
+    // high-latency or lossy route, opening three TLS connections in parallel
+    // is noticeably slower and less reliable than reusing one warm socket.
+    final user = await _authRepository.getCurrentUser();
+    final summary = await _repository.getDashboardSummary();
+    final leads = await _repository.getLeads(deliveryStatus: 'all');
+    return _DashboardData(user: user, summary: summary, leads: leads);
   }
 
   Future<void> _openDeliverySettingsEditor() async {
