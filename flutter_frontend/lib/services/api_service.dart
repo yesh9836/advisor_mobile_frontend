@@ -94,7 +94,7 @@ class CookieStore {
 class ApiService {
   static const String defaultBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:8000/api/v1',
+    defaultValue: 'https://api.rcntgroup.com/api/v1',
   );
 
   ApiService({
