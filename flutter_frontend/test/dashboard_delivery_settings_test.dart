@@ -31,8 +31,9 @@ void main() {
     );
 
     expect(find.text('Edit'), findsNothing);
-    expect(find.byType(Switch), findsNWidgets(2));
-    await tester.tap(find.byType(Switch).first);
+    expect(find.bySemanticsLabel('Email Alerts toggle'), findsOneWidget);
+    expect(find.bySemanticsLabel('SMS Alerts toggle'), findsOneWidget);
+    await tester.tap(find.bySemanticsLabel('Email Alerts toggle'));
     await tester.pumpAndSettle();
 
     expect(repository.savedEmailEnabled, isFalse);

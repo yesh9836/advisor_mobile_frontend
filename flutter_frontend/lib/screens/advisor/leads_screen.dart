@@ -66,7 +66,7 @@ class _LeadsScreenState extends State<LeadsScreen> {
       builder: (context, snapshot) {
         final leads = snapshot.data ?? [];
         return ListView(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 18),
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 112),
           children: [
             AppScreenHeader(
               eyebrow: 'Pipeline',
@@ -101,7 +101,26 @@ class _LeadsScreenState extends State<LeadsScreen> {
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Text(snapshot.error.toString()),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(snapshot.error.toString()),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: () => setState(() {
+                          _future = _loadLeads();
+                        }),
+                        icon: const Icon(Icons.wifi_protected_setup_rounded),
+                        label: Text(
+                          snapshot.error.toString().toLowerCase().contains(
+                                'timed out',
+                              )
+                              ? 'Reconnect'
+                              : 'Reload',
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               )
             else if (leads.isEmpty)

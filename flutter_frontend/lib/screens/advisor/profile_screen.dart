@@ -111,9 +111,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
             padding: const EdgeInsets.all(16),
             children: [
               _Panel(
-                child: Text(
-                  snapshot.error.toString(),
-                  style: TextStyle(color: context.appMuted),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      snapshot.error.toString(),
+                      style: TextStyle(color: context.appMuted),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: _refreshProfile,
+                      icon: const Icon(Icons.wifi_protected_setup_rounded),
+                      label: Text(
+                        snapshot.error.toString().toLowerCase().contains(
+                              'timed out',
+                            )
+                            ? 'Reconnect'
+                            : 'Reload',
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -122,7 +139,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
         final data = snapshot.data!;
         return ListView(
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 18),
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 112),
           children: [
             _ProfileHeader(user: data.user, licenses: data.licenses),
             const SizedBox(height: 9),

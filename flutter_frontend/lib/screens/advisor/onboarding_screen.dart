@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_frontend/models/onboarding_models.dart';
 import 'package:flutter_frontend/repositories/advisor_repository.dart';
 import 'package:flutter_frontend/repositories/auth_repository.dart';
@@ -213,7 +214,7 @@ class _AdvisorOnboardingScreenState extends State<AdvisorOnboardingScreen> {
                         min: 50000,
                         max: 10000000,
                         step: 10000,
-                        formatter: _money,
+                        inputPrefix: '\$',
                         rangeLabel: '\$50k — \$10m',
                         onChanged: (value) => setState(() => _income = value),
                       ),
@@ -226,7 +227,7 @@ class _AdvisorOnboardingScreenState extends State<AdvisorOnboardingScreen> {
                         min: 1000,
                         max: 20000000,
                         step: 1000,
-                        formatter: _money,
+                        inputPrefix: '\$',
                         rangeLabel: '\$1k — \$20m',
                         onChanged: (value) =>
                             setState(() => _averageSale = value),
@@ -241,7 +242,7 @@ class _AdvisorOnboardingScreenState extends State<AdvisorOnboardingScreen> {
                         min: 1,
                         max: 50,
                         step: 1,
-                        formatter: _percent,
+                        inputSuffix: '%',
                         rangeLabel: '1% — 50%',
                         onChanged: (value) =>
                             setState(() => _commissionRate = value),
@@ -256,7 +257,7 @@ class _AdvisorOnboardingScreenState extends State<AdvisorOnboardingScreen> {
                         min: 1,
                         max: 100,
                         step: 1,
-                        formatter: _percent,
+                        inputSuffix: '%',
                         rangeLabel: '1% — 100%',
                         onChanged: (value) =>
                             setState(() => _closingRate = value),
@@ -511,7 +512,34 @@ class _WelcomeStep extends StatelessWidget {
   }
 }
 
-class _QuestionPage extends StatelessWidget {
+class _ThousandsSeparatorInputFormatter extends TextInputFormatter {
+  const _ThousandsSeparatorInputFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final digits = newValue.text.replaceAll(RegExp(r'\D'), '');
+    if (digits.isEmpty) return const TextEditingValue();
+    final formatted = _groupDigits(digits);
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
+
+String _groupDigits(String digits) {
+  final buffer = StringBuffer();
+  for (var index = 0; index < digits.length; index++) {
+    if (index > 0 && (digits.length - index) % 3 == 0) buffer.write(',');
+    buffer.write(digits[index]);
+  }
+  return buffer.toString();
+}
+
+class _QuestionPage extends StatefulWidget {
   const _QuestionPage({
     required this.icon,
     required this.eyebrow,
@@ -521,9 +549,10 @@ class _QuestionPage extends StatelessWidget {
     required this.min,
     required this.max,
     required this.step,
-    required this.formatter,
     required this.rangeLabel,
     required this.onChanged,
+    this.inputPrefix,
+    this.inputSuffix,
   });
 
   final IconData icon;
@@ -534,19 +563,75 @@ class _QuestionPage extends StatelessWidget {
   final double min;
   final double max;
   final double step;
-  final String Function(double) formatter;
   final String rangeLabel;
   final ValueChanged<double> onChanged;
+  final String? inputPrefix;
+  final String? inputSuffix;
+
+  @override
+  State<_QuestionPage> createState() => _QuestionPageState();
+}
+
+class _QuestionPageState extends State<_QuestionPage> {
+  late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: _editableValue(widget.value));
+    _focusNode = FocusNode()..addListener(_handleFocusChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _QuestionPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_focusNode.hasFocus && oldWidget.value != widget.value) {
+      _controller.text = _editableValue(widget.value);
+    }
+  }
+
+  @override
+  void dispose() {
+    _focusNode
+      ..removeListener(_handleFocusChanged)
+      ..dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  String _editableValue(double value) => _groupDigits(value.round().toString());
+
+  double? _parseEditable(String value) =>
+      double.tryParse(value.replaceAll(',', ''));
+
+  void _handleFocusChanged() {
+    if (!_focusNode.hasFocus) _commitValue();
+  }
+
+  void _handleTextChanged(String text) {
+    final parsed = _parseEditable(text);
+    if (parsed != null && parsed >= widget.min && parsed <= widget.max) {
+      widget.onChanged(parsed);
+    }
+  }
+
+  void _commitValue() {
+    final parsed = _parseEditable(_controller.text);
+    final next = (parsed ?? widget.value).clamp(widget.min, widget.max);
+    widget.onChanged(next);
+    _controller.text = _editableValue(next);
+  }
 
   @override
   Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
       children: [
-        Center(child: Icon(icon, color: AppColors.cyan, size: 28)),
+        Center(child: Icon(widget.icon, color: AppColors.cyan, size: 28)),
         const SizedBox(height: 8),
         Text(
-          eyebrow.toUpperCase(),
+          widget.eyebrow.toUpperCase(),
           style: const TextStyle(
             color: AppColors.cyan,
             fontSize: 10,
@@ -556,7 +641,7 @@ class _QuestionPage extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         Text(
-          title,
+          widget.title,
           style: TextStyle(
             color: context.appInk,
             fontSize: 25,
@@ -567,7 +652,7 @@ class _QuestionPage extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          subtitle,
+          widget.subtitle,
           style: TextStyle(color: context.appMuted, fontSize: 14, height: 1.4),
         ),
         const SizedBox(height: 28),
@@ -581,36 +666,79 @@ class _QuestionPage extends StatelessWidget {
           ),
           child: Column(
             children: [
-              Text(
-                formatter(value),
-                style: const TextStyle(
-                  color: AppColors.cyan,
-                  fontSize: 36,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -1,
+              Semantics(
+                textField: true,
+                label: '${widget.title} value',
+                child: SizedBox(
+                  width: 230,
+                  child: TextField(
+                    key: ValueKey('onboarding-value-${widget.eyebrow}'),
+                    controller: _controller,
+                    focusNode: _focusNode,
+                    keyboardType: TextInputType.number,
+                    textInputAction: TextInputAction.done,
+                    inputFormatters: const [
+                      _ThousandsSeparatorInputFormatter(),
+                    ],
+                    textAlign: TextAlign.center,
+                    onChanged: _handleTextChanged,
+                    onSubmitted: (_) => _commitValue(),
+                    style: const TextStyle(
+                      color: AppColors.cyan,
+                      fontSize: 34,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -1,
+                    ),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      filled: false,
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: const UnderlineInputBorder(
+                        borderSide: BorderSide(color: AppColors.cyan, width: 2),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                      prefixText: widget.inputPrefix,
+                      suffixText: widget.inputSuffix,
+                      prefixStyle: const TextStyle(
+                        color: AppColors.cyan,
+                        fontSize: 30,
+                        fontWeight: FontWeight.w900,
+                      ),
+                      suffixStyle: const TextStyle(
+                        color: AppColors.cyan,
+                        fontSize: 27,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(height: 4),
               Text(
-                'Drag to adjust',
+                'Tap to type or drag to adjust',
                 style: TextStyle(color: context.appMuted, fontSize: 12),
               ),
               const SizedBox(height: 15),
               Slider(
-                value: value.clamp(min, max),
-                min: min,
-                max: max,
-                onChanged: (raw) => onChanged((raw / step).round() * step),
+                value: widget.value.clamp(widget.min, widget.max),
+                min: widget.min,
+                max: widget.max,
+                onChanged: (raw) {
+                  final next = (raw / widget.step).round() * widget.step;
+                  widget.onChanged(next);
+                  _controller.text = _editableValue(next);
+                },
               ),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    rangeLabel.split(' — ').first,
+                    widget.rangeLabel.split(' — ').first,
                     style: TextStyle(color: context.appMuted, fontSize: 11),
                   ),
                   Text(
-                    rangeLabel.split(' — ').last,
+                    widget.rangeLabel.split(' — ').last,
                     style: TextStyle(color: context.appMuted, fontSize: 11),
                   ),
                 ],
@@ -1039,5 +1167,3 @@ String _money(double value) {
   }
   return '\$$buffer';
 }
-
-String _percent(double value) => '${value.round()}%';

@@ -100,6 +100,43 @@ void main() {
     expect(find.text('Document is unreadable'), findsOneWidget);
     expect(find.text('Resubmit'), findsOneWidget);
   });
+
+  testWidgets('accepts a manually entered value alongside the slider', (
+    tester,
+  ) async {
+    final repository = _FakeOnboardingRepository();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AdvisorOnboardingScreen(
+          mandatory: true,
+          initialData: _pendingOnboarding,
+          advisorRepository: repository,
+          onCompleted: (_) {},
+        ),
+      ),
+    );
+    await tester.tap(find.text('Start my plan'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('onboarding-value-Income by Design')),
+      '300000',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+
+    for (var index = 0; index < 4; index++) {
+      await tester.tap(find.text('Next'));
+      await tester.pumpAndSettle();
+    }
+    await tester.tap(find.text('Verification consent'));
+    await tester.ensureVisible(find.text('Continue to Buy Leads'));
+    await tester.tap(find.text('Continue to Buy Leads'));
+    await tester.pumpAndSettle();
+
+    expect(repository.savedIncomeCents, 30000000);
+  });
 }
 
 const _pendingOnboarding = AdvisorOnboarding(

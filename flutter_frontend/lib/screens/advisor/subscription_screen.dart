@@ -241,7 +241,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
       future: _future,
       builder: (context, snapshot) {
         return ListView(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 18),
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 112),
           children: [
             const AppScreenHeader(
               eyebrow: 'Grow your pipeline',
@@ -256,7 +256,24 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Text(snapshot.error.toString()),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(snapshot.error.toString()),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: () => setState(() => _future = _load()),
+                        icon: const Icon(Icons.wifi_protected_setup_rounded),
+                        label: Text(
+                          snapshot.error.toString().toLowerCase().contains(
+                                'timed out',
+                              )
+                              ? 'Reconnect'
+                              : 'Reload',
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               )
             else ...[

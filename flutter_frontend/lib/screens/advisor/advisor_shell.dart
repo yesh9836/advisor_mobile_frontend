@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_frontend/models/advisor_models.dart';
 import 'package:flutter_frontend/models/auth_models.dart';
@@ -55,6 +57,7 @@ class _AdvisorShellState extends State<AdvisorShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBody: true,
       backgroundColor: context.appCanvas,
       body: DecoratedBox(
         decoration: BoxDecoration(
@@ -75,23 +78,47 @@ class _AdvisorShellState extends State<AdvisorShell> {
           ),
         ),
       ),
-      bottomNavigationBar: Container(
-        color: context.appCanvas,
-        padding: const EdgeInsets.fromLTRB(12, 6, 12, 9),
-        child: SafeArea(
-          top: false,
+      bottomNavigationBar: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 13, sigmaY: 13),
           child: Container(
-            padding: const EdgeInsets.all(5),
+            padding: const EdgeInsets.fromLTRB(12, 17, 12, 9),
             decoration: BoxDecoration(
-              color: context.appSurface,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: context.appOutline),
-              boxShadow: context.appCardShadows,
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  context.appCanvas.withValues(alpha: 0),
+                  context.appCanvas.withValues(alpha: .88),
+                ],
+              ),
             ),
-            clipBehavior: Clip.antiAlias,
-            child: _AdvisorNavigationBar(
-              selectedIndex: _selectedIndex,
-              onDestinationSelected: _selectTab,
+            child: SafeArea(
+              top: false,
+              child: Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: context.appSurface.withValues(alpha: .9),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: context.appOutline.withValues(alpha: .8),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(
+                        alpha: context.isDarkMode ? .38 : .13,
+                      ),
+                      blurRadius: 24,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: _AdvisorNavigationBar(
+                  selectedIndex: _selectedIndex,
+                  onDestinationSelected: _selectTab,
+                ),
+              ),
             ),
           ),
         ),
@@ -218,10 +245,11 @@ class _AdvisorNavigationButton extends StatelessWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    selected ? item.selectedIcon : item.icon,
-                    color: selected ? accent : idleColor,
-                    size: selected ? 22 : 21,
+                  _NavigationGlyph(
+                    item: item,
+                    selected: selected,
+                    accent: accent,
+                    idleColor: idleColor,
                   ),
                   const SizedBox(height: 3),
                   Text(
@@ -239,6 +267,90 @@ class _AdvisorNavigationButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _NavigationGlyph extends StatelessWidget {
+  const _NavigationGlyph({
+    required this.item,
+    required this.selected,
+    required this.accent,
+    required this.idleColor,
+  });
+
+  final _AdvisorNavigationItem item;
+  final bool selected;
+  final Color accent;
+  final Color idleColor;
+
+  @override
+  Widget build(BuildContext context) {
+    if (item.label == 'Home') {
+      const colors = [
+        Color(0xFF16A6B6),
+        Color(0xFF7964D9),
+        Color(0xFFF19B32),
+        Color(0xFF27A974),
+      ];
+      return SizedBox.square(
+        dimension: 22,
+        child: Wrap(
+          spacing: 3,
+          runSpacing: 3,
+          children: [
+            for (var index = 0; index < 4; index++)
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 190),
+                width: 9,
+                height: 9,
+                decoration: BoxDecoration(
+                  color: selected ? colors[index] : idleColor,
+                  borderRadius: BorderRadius.circular(2.5),
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+
+    if (item.label == 'Goals') {
+      return SizedBox.square(
+        dimension: 23,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Icon(
+              Icons.track_changes_rounded,
+              color: selected ? accent : idleColor,
+              size: 23,
+            ),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 190),
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: selected ? const Color(0xFFEF4444) : idleColor,
+                shape: BoxShape.circle,
+                boxShadow: selected
+                    ? [
+                        BoxShadow(
+                          color: const Color(0xFFEF4444).withValues(alpha: .35),
+                          blurRadius: 5,
+                        ),
+                      ]
+                    : null,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Icon(
+      selected ? item.selectedIcon : item.icon,
+      color: selected ? accent : idleColor,
+      size: selected ? 22 : 21,
     );
   }
 }
@@ -280,6 +392,10 @@ class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
     final summary = await _repository.getDashboardSummary();
     final leads = await _repository.getLeads(deliveryStatus: 'all');
     return _DashboardData(user: user, summary: summary, leads: leads);
+  }
+
+  void _retryLoad() {
+    setState(() => _future = _load());
   }
 
   Future<void> _updateDeliverySettings({
@@ -358,12 +474,15 @@ class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
       builder: (context, snapshot) {
         final data = snapshot.data;
         return ListView(
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 18),
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 112),
           children: [
             if (snapshot.connectionState == ConnectionState.waiting)
               const Center(child: CircularProgressIndicator())
             else if (snapshot.hasError)
-              _EmptyPanel(message: snapshot.error.toString())
+              _EmptyPanel(
+                message: snapshot.error.toString(),
+                onRetry: _retryLoad,
+              )
             else ...[
               _HomeHeader(
                 user: data!.user,
@@ -1242,12 +1361,89 @@ class _SettingRow extends StatelessWidget {
             ),
           ),
         ),
-        Switch.adaptive(
+        _CompactDeliveryToggle(
+          label: '$label toggle',
           value: enabled,
           onChanged: onChanged,
-          activeTrackColor: const Color(0xFF18A0B8),
         ),
       ],
+    );
+  }
+}
+
+class _CompactDeliveryToggle extends StatelessWidget {
+  const _CompactDeliveryToggle({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onChanged != null;
+    return Semantics(
+      button: true,
+      toggled: value,
+      label: label,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: enabled ? () => onChanged!(!value) : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 5),
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 160),
+            opacity: enabled ? 1 : .55,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              width: 42,
+              height: 23,
+              padding: const EdgeInsets.all(2.5),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: value
+                      ? const [Color(0xFF24B8C5), Color(0xFF078AA2)]
+                      : [context.appOutline, context.appOutline],
+                ),
+                borderRadius: BorderRadius.circular(999),
+                boxShadow: value
+                    ? [
+                        BoxShadow(
+                          color: const Color(0xFF18A0B8).withValues(alpha: .22),
+                          blurRadius: 7,
+                          offset: const Offset(0, 2),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: AnimatedAlign(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOutCubic,
+                alignment: value ? Alignment.centerRight : Alignment.centerLeft,
+                child: Container(
+                  width: 18,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: .18),
+                        blurRadius: 3,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1349,16 +1545,35 @@ class _LeadStatus {
 }
 
 class _EmptyPanel extends StatelessWidget {
-  const _EmptyPanel({required this.message});
+  const _EmptyPanel({required this.message, this.onRetry});
 
   final String message;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Text(message, style: TextStyle(color: context.appMuted)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(message, style: TextStyle(color: context.appMuted)),
+            if (onRetry != null) ...[
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.wifi_protected_setup_rounded),
+                label: Text(
+                  message.toLowerCase().contains('timed out')
+                      ? 'Reconnect'
+                      : 'Reload',
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

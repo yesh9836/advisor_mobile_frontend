@@ -53,7 +53,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
       builder: (context, snapshot) {
         final goal = _savedGoal ?? snapshot.data;
         return ListView(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 18),
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 112),
           children: [
             const AppScreenHeader(
               eyebrow: 'Performance plan',
