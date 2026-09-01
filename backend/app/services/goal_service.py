@@ -109,13 +109,21 @@ class GoalService:
 
     @staticmethod
     def build_goal_response(*, db: Session, user: User, goal: AdvisorGoal) -> Dict[str, Any]:
+        outcome_counts = GoalService.count_outcomes_ytd(
+            db=db,
+            user=user,
+            target_year=int(goal.target_year),
+        )
+        reached_leads = sum(
+            outcome_counts.get(outcome, 0)
+            for outcome in ("contacted", "appointment_set", "closed_deal")
+        )
         derived = GoalService.calculate_derived_values(
             goal=goal,
-            closed_deals_ytd=GoalService.count_closed_deals_ytd(
-                db=db,
-                user=user,
-                target_year=int(goal.target_year),
-            ),
+            closed_deals_ytd=outcome_counts.get("closed_deal", 0),
+            contacted_leads_ytd=outcome_counts.get("contacted", 0),
+            appointments_set_ytd=outcome_counts.get("appointment_set", 0),
+            reached_leads_ytd=reached_leads,
         )
         return {
             "goal": goal,
@@ -131,6 +139,9 @@ class GoalService:
         *,
         goal: AdvisorGoal,
         closed_deals_ytd: int,
+        contacted_leads_ytd: int = 0,
+        appointments_set_ytd: int = 0,
+        reached_leads_ytd: int = 0,
         now: Optional[datetime] = None,
     ) -> Dict[str, Any]:
         annual_goal = max(int(goal.annual_income_goal_cents), 1)
@@ -143,6 +154,14 @@ class GoalService:
         appointments_needed = math.ceil(deals_needed / close_rate)
         leads_needed = math.ceil(appointments_needed / appointment_rate)
         closed_deals = max(int(closed_deals_ytd), 0)
+        contacted_leads = max(int(contacted_leads_ytd), 0)
+        appointments_set = max(int(appointments_set_ytd), 0)
+        reached_leads = max(int(reached_leads_ytd), 0)
+        current_success_rate_bps = (
+            min(10_000, round((closed_deals / reached_leads) * 10_000))
+            if reached_leads
+            else 0
+        )
         progress_percent = min(100, round((earned_ytd / annual_goal) * 100))
 
         remaining_income = max(annual_goal - earned_ytd, 0)
@@ -175,6 +194,10 @@ class GoalService:
             "appointments_needed": int(appointments_needed),
             "leads_needed": int(leads_needed),
             "closed_deals_ytd": int(closed_deals),
+            "contacted_leads_ytd": int(contacted_leads),
+            "appointments_set_ytd": int(appointments_set),
+            "reached_leads_ytd": int(reached_leads),
+            "current_success_rate_bps": int(current_success_rate_bps),
             "income_progress_percent": int(progress_percent),
             "deals_remaining": int(deals_remaining),
             "appointments_remaining": int(appointments_remaining),
@@ -185,19 +208,32 @@ class GoalService:
 
     @staticmethod
     def count_closed_deals_ytd(*, db: Session, user: User, target_year: int) -> int:
+        return GoalService.count_outcomes_ytd(
+            db=db,
+            user=user,
+            target_year=target_year,
+        ).get("closed_deal", 0)
+
+    @staticmethod
+    def count_outcomes_ytd(
+        *,
+        db: Session,
+        user: User,
+        target_year: int,
+    ) -> Dict[str, int]:
         year_start = datetime(target_year, 1, 1, tzinfo=timezone.utc)
         next_year_start = datetime(target_year + 1, 1, 1, tzinfo=timezone.utc)
-        count = (
-            db.query(func.count(LeadOutcome.id))
+        rows = (
+            db.query(LeadOutcome.status, func.count(LeadOutcome.id))
             .filter(
                 LeadOutcome.user_id == user.id,
-                LeadOutcome.status == "closed_deal",
                 LeadOutcome.updated_at >= year_start,
                 LeadOutcome.updated_at < next_year_start,
             )
-            .scalar()
+            .group_by(LeadOutcome.status)
+            .all()
         )
-        return int(count or 0)
+        return {str(outcome): int(count or 0) for outcome, count in rows}
 
     @staticmethod
     def build_package_recommendations(

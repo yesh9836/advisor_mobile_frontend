@@ -54,69 +54,88 @@ class _AdvisorShellState extends State<AdvisorShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      extendBody: true,
       backgroundColor: context.appCanvas,
-      body: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: context.isDarkMode
-                ? const [Color(0xFF090909), Color(0xFF000000)]
-                : const [Color(0xFFF9FBFD), AppColors.canvas],
-          ),
-        ),
-        child: SafeArea(
-          child: IndexedStack(
-            index: _selectedIndex,
-            children: [
-              for (final screen in _screens) screen ?? const SizedBox.shrink(),
-            ],
-          ),
-        ),
-      ),
-      bottomNavigationBar: Container(
-        padding: const EdgeInsets.fromLTRB(12, 48, 12, 9),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              context.appCanvas.withValues(alpha: 0),
-              context.appCanvas.withValues(alpha: .22),
-              context.appCanvas.withValues(alpha: .72),
-              context.appCanvas,
-            ],
-            stops: const [0, .32, .7, 1],
-          ),
-        ),
-        child: SafeArea(
-          top: false,
-          child: Container(
-            padding: const EdgeInsets.all(5),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          DecoratedBox(
             decoration: BoxDecoration(
-              color: context.appSurface.withValues(alpha: .94),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: context.appOutline.withValues(alpha: .7),
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: context.isDarkMode
+                    ? const [Color(0xFF090909), Color(0xFF000000)]
+                    : const [Color(0xFFF9FBFD), AppColors.canvas],
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(
-                    alpha: context.isDarkMode ? .38 : .13,
-                  ),
-                  blurRadius: 24,
-                  offset: const Offset(0, 10),
-                ),
-              ],
             ),
-            clipBehavior: Clip.antiAlias,
-            child: _AdvisorNavigationBar(
-              selectedIndex: _selectedIndex,
-              onDestinationSelected: _selectTab,
+            child: SafeArea(
+              child: IndexedStack(
+                index: _selectedIndex,
+                children: [
+                  for (final screen in _screens)
+                    screen ?? const SizedBox.shrink(),
+                ],
+              ),
             ),
           ),
-        ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: IgnorePointer(
+              child: SizedBox(
+                height: 94 + MediaQuery.viewPaddingOf(context).bottom,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        context.appCanvas.withValues(alpha: 0),
+                        context.appCanvas.withValues(alpha: .1),
+                        context.appCanvas.withValues(alpha: .48),
+                        context.appCanvas.withValues(alpha: .82),
+                      ],
+                      stops: const [0, .28, .68, 1],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 12,
+            right: 12,
+            bottom: 7,
+            child: SafeArea(
+              top: false,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: context.appSurface.withValues(alpha: .92),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: context.appOutline.withValues(alpha: .65),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(
+                        alpha: context.isDarkMode ? .34 : .12,
+                      ),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: _AdvisorNavigationBar(
+                  selectedIndex: _selectedIndex,
+                  onDestinationSelected: _selectTab,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -167,7 +186,7 @@ class _AdvisorNavigationBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 62,
+      height: 54,
       child: Row(
         children: [
           for (var index = 0; index < _items.length; index++)

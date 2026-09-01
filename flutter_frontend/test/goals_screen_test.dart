@@ -21,6 +21,14 @@ void main() {
 
     expect(find.text('Deals Remaining'), findsOneWidget);
     expect(find.text('Closed YTD'), findsOneWidget);
+    expect(find.text('Conversion success'), findsOneWidget);
+    expect(find.text('SET SUCCESS RATE'), findsOneWidget);
+    expect(find.text('CURRENT SUCCESS RATE'), findsOneWidget);
+    expect(find.text('25%'), findsNWidgets(2));
+    expect(
+      find.text('10 contacted • 2 appointment set • 4 closed'),
+      findsOneWidget,
+    );
     await tester.drag(find.byType(ListView).first, const Offset(0, -600));
     await tester.pumpAndSettle();
 
@@ -140,6 +148,10 @@ GoalSnapshot _goal({required int annualGoalCents}) {
     dealsRemaining: 6,
     leadsRemaining: 240,
     closedDealsYtd: 4,
+    contactedLeadsYtd: 10,
+    appointmentsSetYtd: 2,
+    reachedLeadsYtd: 16,
+    currentSuccessRateBps: 2500,
     recommendedMonthlyLeads: 12,
     pacingStatus: 'behind',
     pacingMessage: 'Increase your monthly lead pace.',

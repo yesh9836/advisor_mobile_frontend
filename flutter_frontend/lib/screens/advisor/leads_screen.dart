@@ -88,7 +88,6 @@ class _LeadsScreenState extends State<LeadsScreen> {
               title: 'Lead Inbox',
               subtitle: 'Prioritize conversations and move prospects forward.',
               icon: Icons.inbox_rounded,
-              titleBadge: _CountBadge(count: leads.length),
             ),
             const SizedBox(height: 10),
             _SearchField(
@@ -100,6 +99,7 @@ class _LeadsScreenState extends State<LeadsScreen> {
             const SizedBox(height: 9),
             _StatusFilters(
               selected: _selectedOutcome,
+              selectedCount: snapshot.hasData ? leads.length : null,
               onSelected: (value) {
                 if (_selectedOutcome == value) return;
                 setState(() {
@@ -167,33 +167,6 @@ class _LeadsScreenState extends State<LeadsScreen> {
           ],
         );
       },
-    );
-  }
-}
-
-class _CountBadge extends StatelessWidget {
-  const _CountBadge({required this.count});
-
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-      decoration: const BoxDecoration(
-        color: Color(0xFF18A0B8),
-        shape: BoxShape.circle,
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        '$count',
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 12,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
     );
   }
 }
@@ -393,9 +366,14 @@ class _InboxFilterSheet extends StatelessWidget {
 }
 
 class _StatusFilters extends StatelessWidget {
-  const _StatusFilters({required this.selected, required this.onSelected});
+  const _StatusFilters({
+    required this.selected,
+    required this.selectedCount,
+    required this.onSelected,
+  });
 
   final String selected;
+  final int? selectedCount;
   final ValueChanged<String> onSelected;
 
   static const _filters = [
@@ -416,8 +394,10 @@ class _StatusFilters extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: _FilterPill(
+                key: ValueKey('outcome-filter-${filter.value}'),
                 label: filter.label,
                 selected: selected == filter.value,
+                count: selected == filter.value ? selectedCount : null,
                 onTap: () => onSelected(filter.value),
               ),
             ),
@@ -436,13 +416,16 @@ class _LeadFilter {
 
 class _FilterPill extends StatelessWidget {
   const _FilterPill({
+    super.key,
     required this.label,
     required this.selected,
+    required this.count,
     required this.onTap,
   });
 
   final String label;
   final bool selected;
+  final int? count;
   final VoidCallback onTap;
 
   @override
@@ -469,13 +452,45 @@ class _FilterPill extends StatelessWidget {
                   : context.appOutline,
             ),
           ),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: selected ? Colors.white : context.appMuted,
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
-            ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: selected ? Colors.white : context.appMuted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              if (selected && count != null) ...[
+                const SizedBox(width: 7),
+                Container(
+                  key: const ValueKey('selected-filter-count'),
+                  constraints: const BoxConstraints(
+                    minWidth: 21,
+                    minHeight: 21,
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: .18),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: .3),
+                    ),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    '$count',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
       ),

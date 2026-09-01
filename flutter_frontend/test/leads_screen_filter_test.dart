@@ -17,6 +17,38 @@ void main() {
 
     expect(repository.deliveryStatuses, ['all']);
     expect(find.text('1'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('outcome-filter-all')),
+        matching: find.byKey(const ValueKey('selected-filter-count')),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('outcome-filter-new')),
+        matching: find.byKey(const ValueKey('selected-filter-count')),
+      ),
+      findsNothing,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('outcome-filter-new')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('outcome-filter-new')),
+        matching: find.byKey(const ValueKey('selected-filter-count')),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('outcome-filter-all')),
+        matching: find.byKey(const ValueKey('selected-filter-count')),
+      ),
+      findsNothing,
+    );
     await tester.tap(find.byKey(const ValueKey('inbox-filter-button')));
     await tester.pumpAndSettle();
 
@@ -24,7 +56,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('delivery-filter-delivered')));
     await tester.pumpAndSettle();
 
-    expect(repository.deliveryStatuses, ['all', 'delivered']);
+    expect(repository.deliveryStatuses, ['all', 'all', 'delivered']);
     expect(find.text('Filter leads'), findsNothing);
   });
 }

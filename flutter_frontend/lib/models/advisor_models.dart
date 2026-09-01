@@ -443,6 +443,10 @@ class GoalSnapshot {
     required this.dealsRemaining,
     required this.leadsRemaining,
     required this.closedDealsYtd,
+    required this.contactedLeadsYtd,
+    required this.appointmentsSetYtd,
+    required this.reachedLeadsYtd,
+    required this.currentSuccessRateBps,
     required this.recommendedMonthlyLeads,
     required this.pacingStatus,
     required this.pacingMessage,
@@ -463,6 +467,10 @@ class GoalSnapshot {
   final int dealsRemaining;
   final int leadsRemaining;
   final int closedDealsYtd;
+  final int contactedLeadsYtd;
+  final int appointmentsSetYtd;
+  final int reachedLeadsYtd;
+  final int currentSuccessRateBps;
   final int recommendedMonthlyLeads;
   final String pacingStatus;
   final String pacingMessage;
@@ -490,6 +498,10 @@ class GoalSnapshot {
       dealsRemaining: derived['deals_remaining'] as int? ?? 0,
       leadsRemaining: derived['leads_remaining'] as int? ?? 0,
       closedDealsYtd: derived['closed_deals_ytd'] as int? ?? 0,
+      contactedLeadsYtd: derived['contacted_leads_ytd'] as int? ?? 0,
+      appointmentsSetYtd: derived['appointments_set_ytd'] as int? ?? 0,
+      reachedLeadsYtd: derived['reached_leads_ytd'] as int? ?? 0,
+      currentSuccessRateBps: derived['current_success_rate_bps'] as int? ?? 0,
       recommendedMonthlyLeads:
           derived['recommended_monthly_leads'] as int? ?? 0,
       pacingStatus: pacing['status'] as String? ?? '',

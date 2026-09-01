@@ -40,6 +40,10 @@ class GoalDerivedSnapshot(BaseModel):
     appointments_needed: int
     leads_needed: int
     closed_deals_ytd: int
+    contacted_leads_ytd: int
+    appointments_set_ytd: int
+    reached_leads_ytd: int
+    current_success_rate_bps: int
     income_progress_percent: int
     deals_remaining: int
     appointments_remaining: int

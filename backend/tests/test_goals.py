@@ -168,6 +168,24 @@ def test_goal_service_counts_only_explicit_closed_deals_for_advisor_year(
     db.commit()
 
     assert GoalService.count_closed_deals_ytd(db=db, user=advisor, target_year=2026) == 1
+    outcome_counts = GoalService.count_outcomes_ytd(
+        db=db,
+        user=advisor,
+        target_year=2026,
+    )
+    assert outcome_counts == {"appointment_set": 1, "closed_deal": 1}
+
+    goal = GoalService.get_or_create_goal(db=db, user=advisor, target_year=2026)
+    derived = GoalService.calculate_derived_values(
+        goal=goal,
+        closed_deals_ytd=outcome_counts["closed_deal"],
+        appointments_set_ytd=outcome_counts["appointment_set"],
+        reached_leads_ytd=sum(outcome_counts.values()),
+    )
+    assert derived["contacted_leads_ytd"] == 0
+    assert derived["appointments_set_ytd"] == 1
+    assert derived["reached_leads_ytd"] == 2
+    assert derived["current_success_rate_bps"] == 5000
 
 
 def test_goal_service_package_recommendations_use_live_catalog(

@@ -125,6 +125,8 @@ class _GoalsScreenState extends State<GoalsScreen> {
                 ],
               ),
               const SizedBox(height: 10),
+              _SuccessRateCard(goal: goal),
+              const SizedBox(height: 10),
               _GoalTrendCard(goal: goal),
               const SizedBox(height: 10),
               _MonthlyGoalPanel(
@@ -182,6 +184,214 @@ class _GoalsScreenState extends State<GoalsScreen> {
       },
     );
   }
+}
+
+class _SuccessRateCard extends StatelessWidget {
+  const _SuccessRateCard({required this.goal});
+
+  final GoalSnapshot goal;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasActivity = goal.reachedLeadsYtd > 0;
+    final onTarget =
+        hasActivity &&
+        goal.currentSuccessRateBps >= goal.appointmentToDealRateBps;
+    final accent = onTarget ? const Color(0xFF0F9F82) : const Color(0xFFD58416);
+    final targetProgress = goal.appointmentToDealRateBps <= 0
+        ? 0.0
+        : (goal.currentSuccessRateBps / goal.appointmentToDealRateBps).clamp(
+            0.0,
+            1.0,
+          );
+
+    return Container(
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: context.isDarkMode
+              ? [const Color(0xFF171717), accent.withValues(alpha: .12)]
+              : [Colors.white, accent.withValues(alpha: .08)],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: accent.withValues(alpha: .28)),
+        boxShadow: context.appCardShadows,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: .13),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(Icons.insights_rounded, color: accent, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Conversion success',
+                      style: TextStyle(
+                        color: context.appInk,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    Text(
+                      'Closed deals compared with leads you reached.',
+                      style: TextStyle(color: context.appMuted, fontSize: 10.5),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  !hasActivity
+                      ? 'No activity yet'
+                      : onTarget
+                      ? 'On target'
+                      : 'Below target',
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _RateMetric(
+                  label: 'SET SUCCESS RATE',
+                  value: _formatRate(goal.appointmentToDealRateBps),
+                  caption: 'Your planned close rate',
+                  color: const Color(0xFF5967D8),
+                ),
+              ),
+              Container(width: 1, height: 48, color: context.appOutline),
+              Expanded(
+                child: _RateMetric(
+                  label: 'CURRENT SUCCESS RATE',
+                  value: _formatRate(goal.currentSuccessRateBps),
+                  caption:
+                      '${goal.closedDealsYtd} of ${goal.reachedLeadsYtd} reached',
+                  color: accent,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 13),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              minHeight: 7,
+              value: targetProgress,
+              backgroundColor: context.appOutline.withValues(alpha: .55),
+              valueColor: AlwaysStoppedAnimation(accent),
+            ),
+          ),
+          const SizedBox(height: 9),
+          Row(
+            children: [
+              Icon(
+                Icons.info_outline_rounded,
+                color: context.appMuted,
+                size: 15,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  '${goal.contactedLeadsYtd} contacted • '
+                  '${goal.appointmentsSetYtd} appointment set • '
+                  '${goal.closedDealsYtd} closed',
+                  style: TextStyle(
+                    color: context.appMuted,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RateMetric extends StatelessWidget {
+  const _RateMetric({
+    required this.label,
+    required this.value,
+    required this.caption,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final String caption;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: context.appMuted,
+              fontSize: 9,
+              fontWeight: FontWeight.w900,
+              letterSpacing: .7,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: TextStyle(
+              color: color,
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -.5,
+            ),
+          ),
+          Text(
+            caption,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: context.appMuted, fontSize: 9.5),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _formatRate(int basisPoints) {
+  final percentage = basisPoints / 100;
+  return percentage == percentage.roundToDouble()
+      ? '${percentage.round()}%'
+      : '${percentage.toStringAsFixed(1)}%';
 }
 
 class _GoalHero extends StatelessWidget {
