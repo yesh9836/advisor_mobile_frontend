@@ -798,36 +798,36 @@ class _GoalTrendPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round;
     final history = switch (range) {
       _TrendRange.sevenDays => const <double>[
+        0.08,
         0.24,
-        0.52,
-        0.36,
-        0.71,
-        0.49,
-        0.83,
+        0.24,
+        0.48,
+        0.63,
+        0.63,
         1.00,
       ],
       _TrendRange.month => const <double>[
-        0.18,
-        0.44,
-        0.31,
-        0.63,
-        0.47,
-        0.79,
-        0.66,
+        0.07,
+        0.22,
+        0.22,
+        0.39,
+        0.58,
+        0.58,
+        0.82,
         1.00,
       ],
       _TrendRange.year => const <double>[
         0.00,
-        0.18,
-        0.11,
-        0.34,
-        0.25,
-        0.49,
-        0.39,
-        0.67,
-        0.55,
-        0.81,
+        0.09,
+        0.16,
+        0.16,
+        0.31,
+        0.43,
+        0.43,
+        0.60,
         0.70,
+        0.70,
+        0.86,
         1.00,
       ],
     };
@@ -896,32 +896,14 @@ class _GoalTrendPainter extends CustomPainter {
   void _addSmoothCurve(Path path, List<Offset> points) {
     if (points.length < 2) return;
 
-    // Catmull-Rom-inspired cubic segments keep the line flowing through the
-    // history points. Clamping each control point to its segment prevents the
-    // curve from overshooting and producing artificial spikes.
+    // Earnings are cumulative. Horizontal cubic controls produce a smooth,
+    // monotonic transition inside every segment, including genuinely flat
+    // periods, without inventing a temporary drop between data points.
     for (var index = 0; index < points.length - 1; index++) {
-      final previous = index == 0 ? points[index] : points[index - 1];
       final current = points[index];
       final next = points[index + 1];
-      final following = index + 2 < points.length ? points[index + 2] : next;
-      final minY = current.dy < next.dy ? current.dy : next.dy;
-      final maxY = current.dy > next.dy ? current.dy : next.dy;
-      final control1 = Offset(
-        current.dx + (next.dx - previous.dx) / 6,
-        (current.dy + (next.dy - previous.dy) / 6).clamp(minY, maxY),
-      );
-      final control2 = Offset(
-        next.dx - (following.dx - current.dx) / 6,
-        (next.dy - (following.dy - current.dy) / 6).clamp(minY, maxY),
-      );
-      path.cubicTo(
-        control1.dx,
-        control1.dy,
-        control2.dx,
-        control2.dy,
-        next.dx,
-        next.dy,
-      );
+      final middleX = (current.dx + next.dx) / 2;
+      path.cubicTo(middleX, current.dy, middleX, next.dy, next.dx, next.dy);
     }
   }
 

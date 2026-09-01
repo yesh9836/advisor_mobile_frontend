@@ -293,22 +293,39 @@ class _NavigationGlyph extends StatelessWidget {
         Color(0xFFF19B32),
         Color(0xFF27A974),
       ];
-      return SizedBox.square(
-        dimension: 22,
-        child: Wrap(
-          spacing: 3,
-          runSpacing: 3,
+      return SizedBox(
+        width: 24,
+        height: 23,
+        child: Stack(
           children: [
-            for (var index = 0; index < 4; index++)
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 190),
-                width: 9,
-                height: 9,
-                decoration: BoxDecoration(
-                  color: selected ? colors[index] : idleColor,
-                  borderRadius: BorderRadius.circular(2.5),
-                ),
-              ),
+            _HomeBlock(
+              left: 1,
+              top: 1,
+              width: 8,
+              height: 8,
+              color: selected ? colors[0] : idleColor,
+            ),
+            _HomeBlock(
+              right: 1,
+              top: 1,
+              width: 10,
+              height: 6,
+              color: selected ? colors[1] : idleColor,
+            ),
+            _HomeBlock(
+              left: 1,
+              bottom: 1,
+              width: 6,
+              height: 10,
+              color: selected ? colors[2] : idleColor,
+            ),
+            _HomeBlock(
+              right: 1,
+              bottom: 1,
+              width: 12,
+              height: 12,
+              color: selected ? colors[3] : idleColor,
+            ),
           ],
         ),
       );
@@ -351,6 +368,45 @@ class _NavigationGlyph extends StatelessWidget {
       selected ? item.selectedIcon : item.icon,
       color: selected ? accent : idleColor,
       size: selected ? 22 : 21,
+    );
+  }
+}
+
+class _HomeBlock extends StatelessWidget {
+  const _HomeBlock({
+    this.left,
+    this.top,
+    this.right,
+    this.bottom,
+    required this.width,
+    required this.height,
+    required this.color,
+  });
+
+  final double? left;
+  final double? top;
+  final double? right;
+  final double? bottom;
+  final double width;
+  final double height;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: left,
+      top: top,
+      right: right,
+      bottom: bottom,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 190),
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(2.5),
+        ),
+      ),
     );
   }
 }
@@ -1377,20 +1433,21 @@ class _CompactDeliveryToggle extends StatelessWidget {
       button: true,
       toggled: value,
       label: label,
+      excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: enabled ? () => onChanged!(!value) : null,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 5),
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
           child: AnimatedOpacity(
             duration: const Duration(milliseconds: 160),
             opacity: enabled ? 1 : .55,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               curve: Curves.easeOutCubic,
-              width: 42,
-              height: 23,
-              padding: const EdgeInsets.all(2.5),
+              width: 58,
+              height: 22,
+              padding: const EdgeInsets.all(2),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: value
@@ -1408,25 +1465,51 @@ class _CompactDeliveryToggle extends StatelessWidget {
                       ]
                     : null,
               ),
-              child: AnimatedAlign(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOutCubic,
-                alignment: value ? Alignment.centerRight : Alignment.centerLeft,
-                child: Container(
-                  width: 18,
-                  height: 18,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: .18),
-                        blurRadius: 3,
-                        offset: const Offset(0, 1),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  AnimatedAlign(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOutCubic,
+                    alignment: value
+                        ? Alignment.centerLeft
+                        : Alignment.centerRight,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 7),
+                      child: Text(
+                        value ? 'ON' : 'OFF',
+                        style: TextStyle(
+                          color: value ? Colors.white : context.appMuted,
+                          fontSize: 8.5,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: .4,
+                        ),
                       ),
-                    ],
+                    ),
                   ),
-                ),
+                  AnimatedAlign(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOutCubic,
+                    alignment: value
+                        ? Alignment.centerRight
+                        : Alignment.centerLeft,
+                    child: Container(
+                      width: 18,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: .16),
+                            blurRadius: 3,
+                            offset: const Offset(0, 1),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
