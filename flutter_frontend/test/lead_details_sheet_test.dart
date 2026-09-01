@@ -21,6 +21,8 @@ void main() {
 
     expect(find.text('Lead Details'), findsOneWidget);
     expect(find.text('555-0100'), findsOneWidget);
+    expect(find.byKey(const Key('lead-phone-link')), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Call'), findsOneWidget);
     expect(find.text(r'$250k-$500k'), findsWidgets);
   });
 
@@ -53,7 +55,10 @@ void main() {
       find.widgetWithText(TextField, 'Notes'),
       'Meeting booked for Tuesday.',
     );
-    await tester.tap(find.widgetWithText(FilledButton, 'Save lead update'));
+    final saveButton = find.widgetWithText(FilledButton, 'Save lead update');
+    await tester.ensureVisible(saveButton);
+    await tester.pumpAndSettle();
+    await tester.tap(saveButton);
     await tester.pumpAndSettle();
 
     expect(repository.savedStatus, 'appointment_set');
