@@ -669,49 +669,68 @@ class _QuestionPageState extends State<_QuestionPage> {
               Semantics(
                 textField: true,
                 label: '${widget.title} value',
-                child: SizedBox(
-                  width: 230,
-                  child: TextField(
-                    key: ValueKey('onboarding-value-${widget.eyebrow}'),
-                    controller: _controller,
-                    focusNode: _focusNode,
-                    keyboardType: TextInputType.number,
-                    textInputAction: TextInputAction.done,
-                    inputFormatters: const [
-                      _ThousandsSeparatorInputFormatter(),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (widget.inputPrefix != null) ...[
+                      Text(
+                        widget.inputPrefix!,
+                        style: const TextStyle(
+                          color: AppColors.cyan,
+                          fontSize: 30,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
                     ],
-                    textAlign: TextAlign.center,
-                    onChanged: _handleTextChanged,
-                    onSubmitted: (_) => _commitValue(),
-                    style: const TextStyle(
-                      color: AppColors.cyan,
-                      fontSize: 34,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -1,
+                    SizedBox(
+                      width: widget.inputPrefix != null ? 190 : 105,
+                      child: TextField(
+                        key: ValueKey('onboarding-value-${widget.eyebrow}'),
+                        controller: _controller,
+                        focusNode: _focusNode,
+                        keyboardType: TextInputType.number,
+                        textInputAction: TextInputAction.done,
+                        inputFormatters: const [
+                          _ThousandsSeparatorInputFormatter(),
+                        ],
+                        textAlign: TextAlign.center,
+                        onChanged: _handleTextChanged,
+                        onSubmitted: (_) => _commitValue(),
+                        style: const TextStyle(
+                          color: AppColors.cyan,
+                          fontSize: 34,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -1,
+                        ),
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          filled: false,
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: UnderlineInputBorder(
+                            borderSide: BorderSide(
+                              color: AppColors.cyan,
+                              width: 2,
+                            ),
+                          ),
+                          contentPadding: EdgeInsets.symmetric(vertical: 4),
+                        ),
+                      ),
                     ),
-                    decoration: InputDecoration(
-                      isDense: true,
-                      filled: false,
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: const UnderlineInputBorder(
-                        borderSide: BorderSide(color: AppColors.cyan, width: 2),
+                    if (widget.inputSuffix != null) ...[
+                      const SizedBox(width: 5),
+                      Text(
+                        widget.inputSuffix!,
+                        style: const TextStyle(
+                          color: AppColors.cyan,
+                          fontSize: 27,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
-                      contentPadding: const EdgeInsets.symmetric(vertical: 4),
-                      prefixText: widget.inputPrefix,
-                      suffixText: widget.inputSuffix,
-                      prefixStyle: const TextStyle(
-                        color: AppColors.cyan,
-                        fontSize: 30,
-                        fontWeight: FontWeight.w900,
-                      ),
-                      suffixStyle: const TextStyle(
-                        color: AppColors.cyan,
-                        fontSize: 27,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
+                    ],
+                  ],
                 ),
               ),
               const SizedBox(height: 4),
