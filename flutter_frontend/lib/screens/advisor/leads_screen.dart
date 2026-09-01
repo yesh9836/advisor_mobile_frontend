@@ -22,11 +22,12 @@ class _LeadsScreenState extends State<LeadsScreen> {
   final _searchController = TextEditingController();
   Timer? _searchDebounce;
   String _selectedOutcome = 'all';
+  String _selectedDelivery = 'all';
   late Future<List<AdvisorLead>> _future = _loadLeads();
 
   Future<List<AdvisorLead>> _loadLeads() {
     return _repository.getLeads(
-      deliveryStatus: 'all',
+      deliveryStatus: _selectedDelivery,
       outcomeStatus: _selectedOutcome,
       search: _searchController.text,
     );
@@ -52,6 +53,20 @@ class _LeadsScreenState extends State<LeadsScreen> {
     _searchDebounce = Timer(const Duration(milliseconds: 350), _refreshLeads);
   }
 
+  Future<void> _openFilters() async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => _InboxFilterSheet(selected: _selectedDelivery),
+    );
+    if (!mounted || selected == null || selected == _selectedDelivery) return;
+    setState(() {
+      _selectedDelivery = selected;
+      _future = _loadLeads();
+    });
+  }
+
   @override
   void dispose() {
     _searchDebounce?.cancel();
@@ -73,12 +88,14 @@ class _LeadsScreenState extends State<LeadsScreen> {
               title: 'Lead Inbox',
               subtitle: 'Prioritize conversations and move prospects forward.',
               icon: Icons.inbox_rounded,
-              trailing: _CountBadge(count: leads.length),
+              titleBadge: _CountBadge(count: leads.length),
             ),
             const SizedBox(height: 10),
             _SearchField(
               controller: _searchController,
               onChanged: _onSearchChanged,
+              filterActive: _selectedDelivery != 'all',
+              onFilter: _openFilters,
             ),
             const SizedBox(height: 9),
             _StatusFilters(
@@ -182,10 +199,17 @@ class _CountBadge extends StatelessWidget {
 }
 
 class _SearchField extends StatelessWidget {
-  const _SearchField({required this.controller, required this.onChanged});
+  const _SearchField({
+    required this.controller,
+    required this.onChanged,
+    required this.filterActive,
+    required this.onFilter,
+  });
 
   final TextEditingController controller;
   final ValueChanged<String> onChanged;
+  final bool filterActive;
+  final VoidCallback onFilter;
 
   @override
   Widget build(BuildContext context) {
@@ -215,30 +239,155 @@ class _SearchField extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
-        Container(
-          height: 46,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            color: context.appSurface,
+        Material(
+          color: filterActive
+              ? const Color(0xFF078AA2).withValues(alpha: .12)
+              : context.appSurface,
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            key: const ValueKey('inbox-filter-button'),
+            onTap: onFilter,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: context.appOutline),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.filter_list_rounded, color: context.appInk, size: 19),
-              const SizedBox(width: 5),
-              Text(
-                'Filter',
-                style: TextStyle(
-                  color: context.appInk,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 12,
+            child: Container(
+              height: 46,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: filterActive
+                      ? const Color(0xFF18A0B8)
+                      : context.appOutline,
                 ),
               ),
-            ],
+              child: Row(
+                children: [
+                  Icon(
+                    filterActive
+                        ? Icons.filter_alt_rounded
+                        : Icons.filter_list_rounded,
+                    color: filterActive
+                        ? const Color(0xFF078AA2)
+                        : context.appInk,
+                    size: 19,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    'Filter',
+                    style: TextStyle(
+                      color: filterActive
+                          ? const Color(0xFF078AA2)
+                          : context.appInk,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _InboxFilterSheet extends StatelessWidget {
+  const _InboxFilterSheet({required this.selected});
+
+  final String selected;
+
+  static const _options = <(String, String, IconData)>[
+    ('all', 'All leads', Icons.layers_outlined),
+    ('available', 'Available', Icons.lock_open_rounded),
+    ('delivered', 'Delivered', Icons.verified_user_outlined),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(18, 10, 18, 22),
+        decoration: BoxDecoration(
+          color: context.appSurface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
+          boxShadow: context.appCardShadows,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: context.appOutline,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'Filter leads',
+              style: TextStyle(
+                color: context.appInk,
+                fontSize: 21,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Choose which delivery group to display.',
+              style: TextStyle(color: context.appMuted),
+            ),
+            const SizedBox(height: 16),
+            for (final option in _options)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Material(
+                  color: selected == option.$1
+                      ? const Color(0xFF18A0B8).withValues(alpha: .11)
+                      : context.appSoftFill,
+                  borderRadius: BorderRadius.circular(14),
+                  child: InkWell(
+                    key: ValueKey('delivery-filter-${option.$1}'),
+                    onTap: () => Navigator.of(context).pop(option.$1),
+                    borderRadius: BorderRadius.circular(14),
+                    child: Padding(
+                      padding: const EdgeInsets.all(13),
+                      child: Row(
+                        children: [
+                          Icon(
+                            option.$3,
+                            color: selected == option.$1
+                                ? const Color(0xFF078AA2)
+                                : context.appMuted,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              option.$2,
+                              style: TextStyle(
+                                color: context.appInk,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          if (selected == option.$1)
+                            const Icon(
+                              Icons.check_circle_rounded,
+                              color: Color(0xFF18A0B8),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

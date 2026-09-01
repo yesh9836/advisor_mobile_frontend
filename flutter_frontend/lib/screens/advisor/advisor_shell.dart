@@ -1445,25 +1445,33 @@ class _CompactDeliveryToggle extends StatelessWidget {
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               curve: Curves.easeOutCubic,
-              width: 58,
-              height: 22,
+              width: 66,
+              height: 24,
               padding: const EdgeInsets.all(2),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: value
-                      ? const [Color(0xFF24B8C5), Color(0xFF078AA2)]
-                      : [context.appOutline, context.appOutline],
+                      ? const [Color(0xFF76DD78), Color(0xFF28B75A)]
+                      : const [Color(0xFFFF8A9A), Color(0xFFEF536B)],
                 ),
                 borderRadius: BorderRadius.circular(999),
-                boxShadow: value
-                    ? [
-                        BoxShadow(
-                          color: const Color(0xFF18A0B8).withValues(alpha: .22),
-                          blurRadius: 7,
-                          offset: const Offset(0, 2),
-                        ),
-                      ]
-                    : null,
+                border: Border.all(
+                  color: value
+                      ? const Color(0xFF209D4C)
+                      : const Color(0xFFD8455C),
+                  width: .8,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color:
+                        (value
+                                ? const Color(0xFF28B75A)
+                                : const Color(0xFFEF536B))
+                            .withValues(alpha: .2),
+                    blurRadius: 7,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
               child: Stack(
                 alignment: Alignment.center,
@@ -1475,15 +1483,26 @@ class _CompactDeliveryToggle extends StatelessWidget {
                         ? Alignment.centerLeft
                         : Alignment.centerRight,
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 7),
-                      child: Text(
-                        value ? 'ON' : 'OFF',
-                        style: TextStyle(
-                          color: value ? Colors.white : context.appMuted,
-                          fontSize: 8.5,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: .4,
-                        ),
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            value ? Icons.check_rounded : Icons.close_rounded,
+                            size: 12,
+                            color: Colors.white,
+                          ),
+                          const SizedBox(width: 1),
+                          Text(
+                            value ? 'ON' : 'OFF',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 8,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: .25,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -1494,8 +1513,8 @@ class _CompactDeliveryToggle extends StatelessWidget {
                         ? Alignment.centerRight
                         : Alignment.centerLeft,
                     child: Container(
-                      width: 18,
-                      height: 18,
+                      width: 19,
+                      height: 19,
                       decoration: BoxDecoration(
                         color: Colors.white,
                         shape: BoxShape.circle,

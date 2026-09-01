@@ -318,6 +318,17 @@ class _GoalTrendCard extends StatefulWidget {
 
 class _GoalTrendCardState extends State<_GoalTrendCard> {
   _TrendRange _range = _TrendRange.year;
+  int? _selectedPointIndex;
+
+  void _selectPoint(Offset position, double width, double elapsedFraction) {
+    final history = _trendHistory(_range);
+    final usableWidth = (width - 8) * elapsedFraction.clamp(0.01, 1.0);
+    final fraction = ((position.dx - 4) / usableWidth).clamp(0.0, 1.0);
+    final index = (fraction * (history.length - 1)).round();
+    if (_selectedPointIndex != index) {
+      setState(() => _selectedPointIndex = index);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -343,6 +354,10 @@ class _GoalTrendCardState extends State<_GoalTrendCard> {
     final chartProjected = _range == _TrendRange.year
         ? trend.projectedCents
         : demoActualCents;
+    final selectedIndex = _selectedPointIndex;
+    final selectedEarnings = selectedIndex == null
+        ? null
+        : (demoActualCents * _trendHistory(_range)[selectedIndex]).round();
 
     return _Panel(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
@@ -378,7 +393,10 @@ class _GoalTrendCardState extends State<_GoalTrendCard> {
           const SizedBox(height: 12),
           _TrendRangeSelector(
             selected: _range,
-            onSelected: (range) => setState(() => _range = range),
+            onSelected: (range) => setState(() {
+              _range = range;
+              _selectedPointIndex = null;
+            }),
           ),
           const SizedBox(height: 8),
           Row(
@@ -405,26 +423,84 @@ class _GoalTrendCardState extends State<_GoalTrendCard> {
                 '${_range.label} demo trend. ${trend.label}. '
                 'Required ${_money(requiredCents)}. '
                 'Visualized ${_money(demoActualCents)}.',
+            hint: 'Tap or drag across the graph to inspect an earnings point.',
             child: SizedBox(
               height: 174,
               width: double.infinity,
-              child: CustomPaint(
-                painter: _GoalTrendPainter(
-                  range: _range,
-                  actualCents: demoActualCents,
-                  targetCents: targetCents,
-                  projectedCents: chartProjected,
-                  elapsedFraction: chartElapsed,
-                  actualColor: trend.color,
-                  goalColor: context.isDarkMode
-                      ? const Color(0xFF7DDDE8)
-                      : const Color(0xFF078AA2),
-                  gridColor: context.appOutline,
-                  labelColor: context.appMuted,
+              child: LayoutBuilder(
+                builder: (context, constraints) => GestureDetector(
+                  key: const ValueKey('goal-trend-interaction'),
+                  behavior: HitTestBehavior.opaque,
+                  onTapDown: (details) => _selectPoint(
+                    details.localPosition,
+                    constraints.maxWidth,
+                    chartElapsed,
+                  ),
+                  onHorizontalDragStart: (details) => _selectPoint(
+                    details.localPosition,
+                    constraints.maxWidth,
+                    chartElapsed,
+                  ),
+                  onHorizontalDragUpdate: (details) => _selectPoint(
+                    details.localPosition,
+                    constraints.maxWidth,
+                    chartElapsed,
+                  ),
+                  child: CustomPaint(
+                    painter: _GoalTrendPainter(
+                      range: _range,
+                      actualCents: demoActualCents,
+                      targetCents: targetCents,
+                      projectedCents: chartProjected,
+                      elapsedFraction: chartElapsed,
+                      selectedPointIndex: selectedIndex,
+                      actualColor: trend.color,
+                      goalColor: context.isDarkMode
+                          ? const Color(0xFF7DDDE8)
+                          : const Color(0xFF078AA2),
+                      gridColor: context.appOutline,
+                      labelColor: context.appMuted,
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
+          if (selectedIndex != null && selectedEarnings != null) ...[
+            const SizedBox(height: 7),
+            Container(
+              key: const ValueKey('goal-trend-selection-details'),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                color: trend.color.withValues(alpha: .1),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: trend.color.withValues(alpha: .32)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.touch_app_rounded, size: 15, color: trend.color),
+                  const SizedBox(width: 6),
+                  Text(
+                    _trendPointLabel(_range, selectedIndex, chartElapsed),
+                    style: TextStyle(
+                      color: context.appMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    _money(selectedEarnings),
+                    style: TextStyle(
+                      color: trend.color,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 10),
           Row(
             children: [
@@ -726,6 +802,54 @@ class _GoalTrend {
   }
 }
 
+List<double> _trendHistory(_TrendRange range) {
+  return switch (range) {
+    _TrendRange.sevenDays => const [0.08, 0.24, 0.24, 0.48, 0.63, 0.63, 1.0],
+    _TrendRange.month => const [0.07, 0.22, 0.22, 0.39, 0.58, 0.58, 0.82, 1.0],
+    _TrendRange.year => const [
+      0.0,
+      0.09,
+      0.16,
+      0.16,
+      0.31,
+      0.43,
+      0.43,
+      0.60,
+      0.70,
+      0.70,
+      0.86,
+      1.0,
+    ],
+  };
+}
+
+String _trendPointLabel(_TrendRange range, int index, double elapsedFraction) {
+  const months = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+  return switch (range) {
+    _TrendRange.sevenDays => index == 6 ? 'Today' : '${6 - index} days ago',
+    _TrendRange.month => 'Period ${index + 1} of 8',
+    _TrendRange.year =>
+      months[((index / (_trendHistory(range).length - 1)) *
+              elapsedFraction.clamp(0.0, 1.0) *
+              months.length)
+          .floor()
+          .clamp(0, months.length - 1)],
+  };
+}
+
 class _GoalTrendPainter extends CustomPainter {
   const _GoalTrendPainter({
     required this.range,
@@ -733,6 +857,7 @@ class _GoalTrendPainter extends CustomPainter {
     required this.targetCents,
     required this.projectedCents,
     required this.elapsedFraction,
+    required this.selectedPointIndex,
     required this.actualColor,
     required this.goalColor,
     required this.gridColor,
@@ -744,6 +869,7 @@ class _GoalTrendPainter extends CustomPainter {
   final int targetCents;
   final int projectedCents;
   final double elapsedFraction;
+  final int? selectedPointIndex;
   final Color actualColor;
   final Color goalColor;
   final Color gridColor;
@@ -796,41 +922,7 @@ class _GoalTrendPainter extends CustomPainter {
       ..strokeWidth = 3
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
-    final history = switch (range) {
-      _TrendRange.sevenDays => const <double>[
-        0.08,
-        0.24,
-        0.24,
-        0.48,
-        0.63,
-        0.63,
-        1.00,
-      ],
-      _TrendRange.month => const <double>[
-        0.07,
-        0.22,
-        0.22,
-        0.39,
-        0.58,
-        0.58,
-        0.82,
-        1.00,
-      ],
-      _TrendRange.year => const <double>[
-        0.00,
-        0.09,
-        0.16,
-        0.16,
-        0.31,
-        0.43,
-        0.43,
-        0.60,
-        0.70,
-        0.70,
-        0.86,
-        1.00,
-      ],
-    };
+    final history = _trendHistory(range);
     final demoPoints = <Offset>[
       for (var index = 0; index < history.length; index++)
         Offset(
@@ -846,6 +938,28 @@ class _GoalTrendPainter extends CustomPainter {
       canvas.drawCircle(point, 2.6, pointPaint);
     }
     canvas.drawCircle(demoPoints.last, 4.5, pointPaint);
+
+    final selectedIndex = selectedPointIndex;
+    if (selectedIndex != null &&
+        selectedIndex >= 0 &&
+        selectedIndex < demoPoints.length) {
+      final selectedPoint = demoPoints[selectedIndex];
+      final guidePaint = Paint()
+        ..color = actualColor.withValues(alpha: .32)
+        ..strokeWidth = 1.2;
+      canvas.drawLine(
+        Offset(selectedPoint.dx, top),
+        Offset(selectedPoint.dx, top + chartHeight),
+        guidePaint,
+      );
+      canvas.drawCircle(
+        selectedPoint,
+        8,
+        Paint()..color = actualColor.withValues(alpha: .18),
+      );
+      canvas.drawCircle(selectedPoint, 4.5, Paint()..color = actualColor);
+      canvas.drawCircle(selectedPoint, 2, Paint()..color = Colors.white);
+    }
 
     if (currentX < 1) {
       _drawDashedLine(
@@ -930,6 +1044,7 @@ class _GoalTrendPainter extends CustomPainter {
         targetCents != oldDelegate.targetCents ||
         projectedCents != oldDelegate.projectedCents ||
         elapsedFraction != oldDelegate.elapsedFraction ||
+        selectedPointIndex != oldDelegate.selectedPointIndex ||
         actualColor != oldDelegate.actualColor ||
         goalColor != oldDelegate.goalColor ||
         gridColor != oldDelegate.gridColor ||

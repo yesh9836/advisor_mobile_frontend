@@ -31,7 +31,7 @@ void main() {
     await tester.tap(find.text('Starter'));
     await tester.pumpAndSettle();
     expect(find.text('Continue to checkout'), findsOneWidget);
-    await tester.tap(find.text('TX'));
+    await tester.tap(find.text('CA'));
     await tester.tap(find.text('Continue to checkout'));
     await tester.pumpAndSettle();
 
@@ -58,6 +58,8 @@ void main() {
 
     await tester.tap(find.text('Starter'));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('CA'));
+    await tester.tap(find.text('TX'));
     await tester.tap(find.text('Continue to checkout'));
     await tester.pumpAndSettle();
 

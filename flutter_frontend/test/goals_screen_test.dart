@@ -37,6 +37,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Required in 7 days'), findsOneWidget);
     expect(find.text('Demo earnings'), findsOneWidget);
+    final trendInteraction = find.byKey(
+      const ValueKey('goal-trend-interaction'),
+    );
+    await tester.tapAt(tester.getCenter(trendInteraction));
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('goal-trend-selection-details')),
+      findsOneWidget,
+    );
     expect(find.text('12 leads recommended per month'), findsOneWidget);
 
     final monthlyGoalField = find.byType(TextField);

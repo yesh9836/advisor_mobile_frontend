@@ -76,7 +76,6 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
       summary: summary,
       onboarding: onboarding,
     );
-    _selectedStates.addAll(data.summary.targetStates);
     return data;
   }
 
