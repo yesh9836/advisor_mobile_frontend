@@ -7,7 +7,6 @@ import 'package:flutter_frontend/repositories/advisor_repository.dart';
 import 'package:flutter_frontend/repositories/auth_repository.dart';
 import 'package:flutter_frontend/screens/advisor/license_upload_sheet.dart';
 import 'package:flutter_frontend/theme/app_theme.dart';
-import 'package:flutter_frontend/theme/app_theme_controller.dart';
 
 class AdvisorOnboardingScreen extends StatefulWidget {
   const AdvisorOnboardingScreen({
@@ -344,7 +343,6 @@ class _OnboardingHeader extends StatelessWidget {
                   ),
                 ),
               ),
-              const AppThemeToggleButton(),
               if (canClose)
                 IconButton(
                   onPressed: onClose,

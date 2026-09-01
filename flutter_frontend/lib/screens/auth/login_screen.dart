@@ -3,7 +3,6 @@ import 'package:flutter_frontend/screens/advisor/advisor_entry_screen.dart';
 import 'package:flutter_frontend/screens/auth/forgot_password_screen.dart';
 import 'package:flutter_frontend/screens/auth/register_screen.dart';
 import 'package:flutter_frontend/theme/app_theme.dart';
-import 'package:flutter_frontend/theme/app_theme_controller.dart';
 import '../../models/auth_models.dart';
 import '../../repositories/auth_repository.dart';
 import '../../services/api_service.dart';
@@ -107,11 +106,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ],
                 ),
-              ),
-              const Positioned(
-                right: 18,
-                top: 12,
-                child: SafeArea(bottom: false, child: AppThemeToggleButton()),
               ),
               Align(
                 alignment: Alignment.bottomCenter,

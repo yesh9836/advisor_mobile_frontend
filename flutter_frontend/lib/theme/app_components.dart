@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_frontend/theme/app_theme.dart';
-import 'package:flutter_frontend/theme/app_theme_controller.dart';
 
 class AppScreenHeader extends StatelessWidget {
   const AppScreenHeader({
@@ -68,8 +67,6 @@ class AppScreenHeader extends StatelessWidget {
               ),
             ),
             if (trailing != null) ...[const SizedBox(width: 10), trailing!],
-            const SizedBox(width: 8),
-            const AppThemeToggleButton(),
           ],
         ),
       ],

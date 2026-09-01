@@ -1,5 +1,3 @@
-import 'dart:ui' show ImageFilter;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_frontend/models/advisor_models.dart';
 import 'package:flutter_frontend/models/auth_models.dart';
@@ -37,7 +35,6 @@ class _AdvisorShellState extends State<AdvisorShell> {
     0 => AdvisorDashboardScreen(
       onBuyLeads: () => _selectTab(2),
       onViewInbox: () => _selectTab(3),
-      onOpenProfile: () => _selectTab(4),
     ),
     1 => GoalsScreen(onSeeAllPackages: () => _selectTab(2)),
     2 => const SubscriptionScreen(),
@@ -78,47 +75,45 @@ class _AdvisorShellState extends State<AdvisorShell> {
           ),
         ),
       ),
-      bottomNavigationBar: ClipRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 13, sigmaY: 13),
+      bottomNavigationBar: Container(
+        padding: const EdgeInsets.fromLTRB(12, 48, 12, 9),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              context.appCanvas.withValues(alpha: 0),
+              context.appCanvas.withValues(alpha: .22),
+              context.appCanvas.withValues(alpha: .72),
+              context.appCanvas,
+            ],
+            stops: const [0, .32, .7, 1],
+          ),
+        ),
+        child: SafeArea(
+          top: false,
           child: Container(
-            padding: const EdgeInsets.fromLTRB(12, 17, 12, 9),
+            padding: const EdgeInsets.all(5),
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  context.appCanvas.withValues(alpha: 0),
-                  context.appCanvas.withValues(alpha: .88),
-                ],
+              color: context.appSurface.withValues(alpha: .94),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: context.appOutline.withValues(alpha: .7),
               ),
-            ),
-            child: SafeArea(
-              top: false,
-              child: Container(
-                padding: const EdgeInsets.all(5),
-                decoration: BoxDecoration(
-                  color: context.appSurface.withValues(alpha: .9),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: context.appOutline.withValues(alpha: .8),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(
+                    alpha: context.isDarkMode ? .38 : .13,
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(
-                        alpha: context.isDarkMode ? .38 : .13,
-                      ),
-                      blurRadius: 24,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
+                  blurRadius: 24,
+                  offset: const Offset(0, 10),
                 ),
-                clipBehavior: Clip.antiAlias,
-                child: _AdvisorNavigationBar(
-                  selectedIndex: _selectedIndex,
-                  onDestinationSelected: _selectTab,
-                ),
-              ),
+              ],
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: _AdvisorNavigationBar(
+              selectedIndex: _selectedIndex,
+              onDestinationSelected: _selectTab,
             ),
           ),
         ),
@@ -416,14 +411,12 @@ class AdvisorDashboardScreen extends StatefulWidget {
     super.key,
     required this.onBuyLeads,
     required this.onViewInbox,
-    required this.onOpenProfile,
     this.repository,
     this.authRepository,
   });
 
   final VoidCallback onBuyLeads;
   final VoidCallback onViewInbox;
-  final VoidCallback onOpenProfile;
   final AdvisorRepository? repository;
   final AuthRepository? authRepository;
 
@@ -540,11 +533,7 @@ class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
                 onRetry: _retryLoad,
               )
             else ...[
-              _HomeHeader(
-                user: data!.user,
-                summary: data.summary,
-                onOpenProfile: widget.onOpenProfile,
-              ),
+              _HomeHeader(user: data!.user, summary: data.summary),
               const SizedBox(height: 12),
               Container(
                 decoration: BoxDecoration(
@@ -688,15 +677,10 @@ class _DashboardData {
 }
 
 class _HomeHeader extends StatelessWidget {
-  const _HomeHeader({
-    required this.user,
-    required this.summary,
-    required this.onOpenProfile,
-  });
+  const _HomeHeader({required this.user, required this.summary});
 
   final UserProfile user;
   final LeadDashboardSummary summary;
-  final VoidCallback onOpenProfile;
 
   void _showNotificationSheet(BuildContext context) {
     final hasNotificationsEnabled =
@@ -809,45 +793,6 @@ class _HomeHeader extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             const AppThemeToggleButton(),
-            const SizedBox(width: 9),
-            Semantics(
-              button: true,
-              label: 'Open profile',
-              child: Tooltip(
-                message: 'Open profile',
-                child: DecoratedBox(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Color(0xFF252D6D), Color(0xFF27B7CE)],
-                    ),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    shape: const CircleBorder(),
-                    child: InkWell(
-                      onTap: onOpenProfile,
-                      customBorder: const CircleBorder(),
-                      child: SizedBox.square(
-                        dimension: 40,
-                        child: Center(
-                          child: Text(
-                            _initials(user.name),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
           ],
         ),
       ],
@@ -1652,18 +1597,6 @@ class _EmptyPanel extends StatelessWidget {
       ),
     );
   }
-}
-
-String _initials(String name) {
-  final parts = name
-      .trim()
-      .split(RegExp(r'\s+'))
-      .where((part) => part.isNotEmpty)
-      .toList();
-  if (parts.isEmpty) return 'AD';
-  if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
-  return '${parts.first.substring(0, 1)}${parts.last.substring(0, 1)}'
-      .toUpperCase();
 }
 
 String _leadInitials(AdvisorLead lead) {

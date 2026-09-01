@@ -145,6 +145,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 9),
             _ContactInfo(user: data.user),
             const SizedBox(height: 9),
+            const _AppearanceSettings(),
+            const SizedBox(height: 9),
             _LicensedStates(licenses: data.licenses, onAdd: _openLicenseUpload),
             const SizedBox(height: 9),
             _AccountActions(
@@ -241,7 +243,6 @@ class _ProfileHeader extends StatelessWidget {
                 ],
               ),
             ),
-            const AppThemeToggleButton(),
           ],
         ),
         const SizedBox(height: 10),
@@ -256,6 +257,93 @@ class _ProfileHeader extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _AppearanceSettings extends StatelessWidget {
+  const _AppearanceSettings();
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = AppThemeScope.maybeOf(context);
+    final isDark = controller?.isDark ?? context.isDarkMode;
+
+    return _Panel(
+      child: Row(
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color:
+                  (isDark ? const Color(0xFF7C69E8) : const Color(0xFFFFB020))
+                      .withValues(alpha: .13),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
+              color: isDark ? const Color(0xFF9A89F5) : const Color(0xFFE08B00),
+              size: 21,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Appearance',
+                  style: TextStyle(
+                    color: context.appInk,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  isDark ? 'Dark theme enabled' : 'Light theme enabled',
+                  style: TextStyle(color: context.appMuted, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          Semantics(
+            label: 'Dark theme',
+            toggled: isDark,
+            child: Switch(
+              value: isDark,
+              onChanged: controller == null
+                  ? null
+                  : (value) {
+                      if (value != controller.isDark) controller.toggle();
+                    },
+              thumbIcon: WidgetStateProperty.resolveWith(
+                (states) => Icon(
+                  states.contains(WidgetState.selected)
+                      ? Icons.nightlight_round
+                      : Icons.wb_sunny_rounded,
+                  size: 13,
+                ),
+              ),
+              thumbColor: WidgetStateProperty.resolveWith(
+                (states) => states.contains(WidgetState.selected)
+                    ? const Color(0xFFEEEAFE)
+                    : Colors.white,
+              ),
+              trackColor: WidgetStateProperty.resolveWith(
+                (states) => states.contains(WidgetState.selected)
+                    ? const Color(0xFF6755CC)
+                    : const Color(0xFFFFB020),
+              ),
+              trackOutlineColor: const WidgetStatePropertyAll(
+                Colors.transparent,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -4,7 +4,6 @@ import 'package:flutter_frontend/repositories/auth_repository.dart';
 import 'package:flutter_frontend/screens/advisor/advisor_entry_screen.dart';
 import 'package:flutter_frontend/services/api_service.dart';
 import 'package:flutter_frontend/theme/app_theme.dart';
-import 'package:flutter_frontend/theme/app_theme_controller.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -107,7 +106,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             ),
                           ),
-                          const AppThemeToggleButton(),
                         ],
                       ),
                       const SizedBox(height: 18),

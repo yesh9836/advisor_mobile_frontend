@@ -12,6 +12,7 @@ import 'package:flutter_frontend/screens/advisor/change_password_sheet.dart';
 import 'package:flutter_frontend/screens/advisor/license_upload_sheet.dart';
 import 'package:flutter_frontend/screens/advisor/notification_preferences_sheet.dart';
 import 'package:flutter_frontend/screens/advisor/profile_screen.dart';
+import 'package:flutter_frontend/theme/app_theme_controller.dart';
 
 void main() {
   testWidgets('submits a selected license document', (tester) async {
@@ -159,6 +160,40 @@ void main() {
     expect(find.text('License upload coming soon.'), findsNothing);
     expect(find.text('Upload License'), findsOneWidget);
     expect(find.text('Submit License'), findsOneWidget);
+  });
+
+  testWidgets('toggles dark theme from the Profile appearance slider', (
+    tester,
+  ) async {
+    final controller = AppThemeController();
+
+    await tester.pumpWidget(
+      AppThemeScope(
+        controller: controller,
+        child: MaterialApp(
+          home: Scaffold(
+            body: ProfileScreen(
+              authRepository: _FakeAuthRepository(),
+              advisorRepository: _FakeAdvisorRepository(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Appearance'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    expect(controller.isDark, isFalse);
+    expect(find.byType(Switch), findsOneWidget);
+    await tester.tap(find.byType(Switch));
+    await tester.pumpAndSettle();
+
+    expect(controller.isDark, isTrue);
+    expect(find.text('Dark theme enabled'), findsOneWidget);
   });
 
   testWidgets('changes password after validating confirmation', (tester) async {

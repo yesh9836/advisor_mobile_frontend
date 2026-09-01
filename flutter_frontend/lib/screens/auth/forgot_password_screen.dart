@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_frontend/repositories/auth_repository.dart';
 import 'package:flutter_frontend/theme/app_theme.dart';
-import 'package:flutter_frontend/theme/app_theme_controller.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({
@@ -76,7 +75,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       backgroundColor: context.appCanvas,
       appBar: AppBar(
         leading: const BackButton(),
-        actions: const [AppThemeToggleButton(), SizedBox(width: 16)],
         title: const Text(
           'Forgot Password',
           style: TextStyle(fontWeight: FontWeight.w900),

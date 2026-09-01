@@ -154,9 +154,7 @@ class _SessionRestoreError extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        actions: const [AppThemeToggleButton(), SizedBox(width: 16)],
-      ),
+      appBar: AppBar(),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
