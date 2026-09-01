@@ -562,6 +562,8 @@ class _ContactSection extends StatelessWidget {
                           children: [
                             Text(
                               'PHONE NUMBER',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 color: context.appMuted,
                                 fontSize: 9,
@@ -570,31 +572,45 @@ class _ContactSection extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 2),
-                            Text(
-                              phoneNumber,
-                              style: const TextStyle(
-                                color: Color(0xFF1687C8),
-                                fontSize: 17,
-                                fontWeight: FontWeight.w900,
-                                decoration: TextDecoration.underline,
-                                decorationColor: Color(0xFF1687C8),
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                phoneNumber,
+                                maxLines: 1,
+                                softWrap: false,
+                                style: const TextStyle(
+                                  color: Color(0xFF1687C8),
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w900,
+                                  decoration: TextDecoration.underline,
+                                  decorationColor: Color(0xFF1687C8),
+                                ),
                               ),
                             ),
                           ],
                         ),
                       ),
-                      FilledButton.icon(
-                        onPressed: onCall,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFF1687C8),
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 13,
-                            vertical: 10,
+                      const SizedBox(width: 10),
+                      SizedBox(
+                        width: 76,
+                        height: 40,
+                        child: FilledButton.icon(
+                          onPressed: onCall,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF1687C8),
+                            minimumSize: Size.zero,
+                            maximumSize: const Size(76, 40),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 9),
+                          ),
+                          icon: const Icon(Icons.call_rounded, size: 16),
+                          label: const Text(
+                            'Call',
+                            style: TextStyle(fontSize: 12),
                           ),
                         ),
-                        icon: const Icon(Icons.call_rounded, size: 17),
-                        label: const Text('Call'),
                       ),
                     ],
                   ),
@@ -1031,12 +1047,16 @@ class _DetailsSection extends StatelessWidget {
                 child: Icon(icon, color: accent, size: 19),
               ),
               const SizedBox(width: 10),
-              Text(
-                title,
-                style: TextStyle(
-                  color: context.appInk,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: context.appInk,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
               ),
             ],

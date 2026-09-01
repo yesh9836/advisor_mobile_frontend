@@ -7,6 +7,10 @@ import 'package:flutter_frontend/screens/advisor/leads_screen.dart';
 
 void main() {
   testWidgets('opens a lead from Inbox', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     final repository = _FakeLeadRepository();
 
     await tester.pumpWidget(
@@ -23,6 +27,7 @@ void main() {
     expect(find.text('555-0100'), findsOneWidget);
     expect(find.byKey(const Key('lead-phone-link')), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Call'), findsOneWidget);
+    expect(tester.widget<Text>(find.text('555-0100')).maxLines, 1);
     expect(find.text(r'$250k-$500k'), findsWidgets);
   });
 
