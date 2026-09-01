@@ -7,6 +7,30 @@ import 'package:flutter_frontend/repositories/auth_repository.dart';
 import 'package:flutter_frontend/screens/advisor/advisor_shell.dart';
 
 void main() {
+  testWidgets('shows five compact recent leads on Home', (tester) async {
+    final repository = _FakeAdvisorRepository(withLeads: true);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AdvisorDashboardScreen(
+            repository: repository,
+            authRepository: _FakeAuthRepository(),
+            onBuyLeads: () {},
+            onViewInbox: () {},
+            onOpenProfile: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    for (var index = 1; index <= 5; index++) {
+      expect(find.text('Recent Lead $index'), findsOneWidget);
+    }
+    expect(find.text('Recent Lead 6'), findsNothing);
+  });
+
   testWidgets('updates delivery settings from inline toggles', (tester) async {
     final repository = _FakeAdvisorRepository();
 
@@ -54,6 +78,9 @@ class _FakeAuthRepository extends AuthRepository {
 }
 
 class _FakeAdvisorRepository extends AdvisorRepository {
+  _FakeAdvisorRepository({this.withLeads = false});
+
+  final bool withLeads;
   bool? savedEmailEnabled;
   bool? savedSmsEnabled;
   int? savedExpectedVersion;
@@ -75,7 +102,21 @@ class _FakeAdvisorRepository extends AdvisorRepository {
     String deliveryStatus = 'all',
     String outcomeStatus = 'all',
     String? search,
-  }) async => const [];
+  }) async => withLeads
+      ? List.generate(
+          6,
+          (index) => AdvisorLead(
+            id: index + 1,
+            stateCode: 'CA',
+            firstName: 'Recent',
+            lastName: 'Lead ${index + 1}',
+            assets: r'$100k-$250k',
+            activity: 'Travel',
+            outcomeStatus: 'new',
+            receivedAt: DateTime(2026, 9, 1),
+          ),
+        )
+      : const [];
 
   @override
   Future<DeliverySettings> getDeliverySettings() async => DeliverySettings(

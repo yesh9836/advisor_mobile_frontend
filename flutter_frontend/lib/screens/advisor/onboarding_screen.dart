@@ -610,6 +610,7 @@ class _QuestionPageState extends State<_QuestionPage> {
   }
 
   void _handleTextChanged(String text) {
+    setState(() {});
     final parsed = _parseEditable(text);
     if (parsed != null && parsed >= widget.min && parsed <= widget.max) {
       widget.onChanged(parsed);
@@ -621,6 +622,22 @@ class _QuestionPageState extends State<_QuestionPage> {
     final next = (parsed ?? widget.value).clamp(widget.min, widget.max);
     widget.onChanged(next);
     _controller.text = _editableValue(next);
+  }
+
+  double get _editorWidth {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: _controller.text.isEmpty ? '0' : _controller.text,
+        style: const TextStyle(
+          fontSize: 34,
+          fontWeight: FontWeight.w900,
+          letterSpacing: -1,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+    return (painter.width + 12).clamp(58, 205);
   }
 
   @override
@@ -685,7 +702,7 @@ class _QuestionPageState extends State<_QuestionPage> {
                       const SizedBox(width: 6),
                     ],
                     SizedBox(
-                      width: widget.inputPrefix != null ? 190 : 105,
+                      width: _editorWidth,
                       child: TextField(
                         key: ValueKey('onboarding-value-${widget.eyebrow}'),
                         controller: _controller,

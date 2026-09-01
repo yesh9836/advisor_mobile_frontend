@@ -578,14 +578,14 @@ class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
                     children: [
                       for (
                         var index = 0;
-                        index < data.leads.length && index < 3;
+                        index < data.leads.length && index < 5;
                         index++
                       ) ...[
                         _LeadTile(
                           lead: data.leads[index],
                           onTap: () => _openLead(data.leads[index]),
                         ),
-                        if (index < data.leads.length - 1 && index < 2)
+                        if (index < data.leads.length - 1 && index < 4)
                           Divider(height: 1, color: context.appOutline),
                       ],
                     ],
@@ -1013,23 +1013,24 @@ class _LeadTile extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           color: Colors.transparent,
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               CircleAvatar(
-                radius: 18,
+                radius: 16,
                 backgroundColor: status.avatarColor,
                 child: Text(
                   _leadInitials(lead),
                   style: const TextStyle(
                     color: Colors.white,
+                    fontSize: 12,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 9),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1044,7 +1045,7 @@ class _LeadTile extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               color: context.appInk,
-                              fontSize: 15,
+                              fontSize: 13.5,
                               fontWeight: FontWeight.w900,
                             ),
                           ),
@@ -1057,12 +1058,16 @@ class _LeadTile extends StatelessWidget {
                             fontSize: 11,
                           ),
                         ),
+                        const SizedBox(width: 2),
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          size: 17,
+                          color: context.appMuted,
+                        ),
                       ],
                     ),
-                    const SizedBox(height: 5),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
+                    const SizedBox(height: 4),
+                    Row(
                       children: [
                         _MiniBadge(
                           label: lead.stateCode,
@@ -1075,34 +1080,17 @@ class _LeadTile extends StatelessWidget {
                           foreground: status.foreground,
                           dotColor: status.foreground,
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Flexible(
+                        const SizedBox(width: 7),
+                        Expanded(
                           child: Text(
-                            lead.assets ?? 'Price pending',
+                            '${lead.assets ?? 'Price pending'}  •  '
+                            '${lead.activity ?? 'Category pending'}',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               color: Color(0xFF18A0B8),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text('•', style: TextStyle(color: context.appMuted)),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            lead.activity ?? 'Category pending',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: context.appMuted,
-                              fontSize: 12,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
                             ),
                           ),
                         ),
