@@ -422,7 +422,8 @@ class _GoalTrendCardState extends State<_GoalTrendCard> {
             label:
                 '${_range.label} demo trend. ${trend.label}. '
                 'Required ${_money(requiredCents)}. '
-                'Visualized ${_money(demoActualCents)}.',
+                'Visualized ${_money(demoActualCents)}.'
+                '${selectedIndex == null || selectedEarnings == null ? '' : ' Selected ${_trendPointLabel(_range, selectedIndex, chartElapsed)}, earnings ${_money(selectedEarnings)}.'}',
             hint: 'Tap or drag across the graph to inspect an earnings point.',
             child: SizedBox(
               height: 174,
@@ -466,41 +467,6 @@ class _GoalTrendCardState extends State<_GoalTrendCard> {
               ),
             ),
           ),
-          if (selectedIndex != null && selectedEarnings != null) ...[
-            const SizedBox(height: 7),
-            Container(
-              key: const ValueKey('goal-trend-selection-details'),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-              decoration: BoxDecoration(
-                color: trend.color.withValues(alpha: .1),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: trend.color.withValues(alpha: .32)),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.touch_app_rounded, size: 15, color: trend.color),
-                  const SizedBox(width: 6),
-                  Text(
-                    _trendPointLabel(_range, selectedIndex, chartElapsed),
-                    style: TextStyle(
-                      color: context.appMuted,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    _money(selectedEarnings),
-                    style: TextStyle(
-                      color: trend.color,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
           const SizedBox(height: 10),
           Row(
             children: [
@@ -939,28 +905,6 @@ class _GoalTrendPainter extends CustomPainter {
     }
     canvas.drawCircle(demoPoints.last, 4.5, pointPaint);
 
-    final selectedIndex = selectedPointIndex;
-    if (selectedIndex != null &&
-        selectedIndex >= 0 &&
-        selectedIndex < demoPoints.length) {
-      final selectedPoint = demoPoints[selectedIndex];
-      final guidePaint = Paint()
-        ..color = actualColor.withValues(alpha: .32)
-        ..strokeWidth = 1.2;
-      canvas.drawLine(
-        Offset(selectedPoint.dx, top),
-        Offset(selectedPoint.dx, top + chartHeight),
-        guidePaint,
-      );
-      canvas.drawCircle(
-        selectedPoint,
-        8,
-        Paint()..color = actualColor.withValues(alpha: .18),
-      );
-      canvas.drawCircle(selectedPoint, 4.5, Paint()..color = actualColor);
-      canvas.drawCircle(selectedPoint, 2, Paint()..color = Colors.white);
-    }
-
     if (currentX < 1) {
       _drawDashedLine(
         canvas,
@@ -1005,6 +949,116 @@ class _GoalTrendPainter extends CustomPainter {
       );
       painter.paint(canvas, Offset(labelX, size.height - painter.height));
     }
+
+    final selectedIndex = selectedPointIndex;
+    if (selectedIndex != null &&
+        selectedIndex >= 0 &&
+        selectedIndex < demoPoints.length) {
+      final selectedPoint = demoPoints[selectedIndex];
+      final guidePaint = Paint()
+        ..color = actualColor.withValues(alpha: .32)
+        ..strokeWidth = 1.2;
+      canvas.drawLine(
+        Offset(selectedPoint.dx, top),
+        Offset(selectedPoint.dx, top + chartHeight),
+        guidePaint,
+      );
+      canvas.drawCircle(
+        selectedPoint,
+        8,
+        Paint()..color = actualColor.withValues(alpha: .18),
+      );
+      canvas.drawCircle(selectedPoint, 4.5, Paint()..color = actualColor);
+      canvas.drawCircle(selectedPoint, 2, Paint()..color = Colors.white);
+      _drawSelectionTooltip(
+        canvas,
+        size,
+        selectedPoint,
+        selectedIndex,
+        top,
+        chartHeight,
+      );
+    }
+  }
+
+  void _drawSelectionTooltip(
+    Canvas canvas,
+    Size size,
+    Offset point,
+    int pointIndex,
+    double chartTop,
+    double chartHeight,
+  ) {
+    final period = _trendPointLabel(range, pointIndex, elapsedFraction);
+    final earnings = (actualCents * _trendHistory(range)[pointIndex]).round();
+    final textPainter = TextPainter(
+      text: TextSpan(
+        children: [
+          TextSpan(
+            text: period,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 9.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          TextSpan(
+            text: '\n${_money(earnings)}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout(minWidth: 66, maxWidth: 96);
+    final bubbleSize = Size(textPainter.width + 16, textPainter.height + 10);
+    final placeRight = point.dx + 10 + bubbleSize.width <= size.width - 4;
+    final bubbleLeft = placeRight
+        ? point.dx + 10
+        : point.dx - 10 - bubbleSize.width;
+    final bubbleTop = (point.dy - bubbleSize.height / 2).clamp(
+      chartTop,
+      chartTop + chartHeight - bubbleSize.height,
+    );
+    final bubbleRect = Rect.fromLTWH(
+      bubbleLeft,
+      bubbleTop,
+      bubbleSize.width,
+      bubbleSize.height,
+    );
+    final bubbleRRect = RRect.fromRectAndRadius(
+      bubbleRect,
+      const Radius.circular(8),
+    );
+    final bubblePath = Path()..addRRect(bubbleRRect);
+    canvas.drawShadow(
+      bubblePath,
+      Colors.black.withValues(alpha: .28),
+      4,
+      false,
+    );
+    final bubblePaint = Paint()..color = actualColor;
+    canvas.drawRRect(bubbleRRect, bubblePaint);
+    final pointerCenterY = bubbleRect.center.dy.clamp(
+      bubbleRect.top + 7,
+      bubbleRect.bottom - 7,
+    );
+    final pointerPath = Path()..moveTo(point.dx, point.dy);
+    if (placeRight) {
+      pointerPath
+        ..lineTo(bubbleRect.left, pointerCenterY - 5)
+        ..lineTo(bubbleRect.left, pointerCenterY + 5);
+    } else {
+      pointerPath
+        ..lineTo(bubbleRect.right, pointerCenterY - 5)
+        ..lineTo(bubbleRect.right, pointerCenterY + 5);
+    }
+    pointerPath.close();
+    canvas.drawPath(pointerPath, bubblePaint);
+    textPainter.paint(canvas, Offset(bubbleRect.left + 8, bubbleRect.top + 5));
   }
 
   void _addSmoothCurve(Path path, List<Offset> points) {

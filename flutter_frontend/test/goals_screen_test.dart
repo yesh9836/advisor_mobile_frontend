@@ -43,7 +43,7 @@ void main() {
     await tester.tapAt(tester.getCenter(trendInteraction));
     await tester.pump();
     expect(
-      find.byKey(const ValueKey('goal-trend-selection-details')),
+      find.bySemanticsLabel(RegExp(r'Selected .* earnings')),
       findsOneWidget,
     );
     expect(find.text('12 leads recommended per month'), findsOneWidget);

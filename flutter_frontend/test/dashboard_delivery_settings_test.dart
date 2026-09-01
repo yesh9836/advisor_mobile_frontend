@@ -57,12 +57,13 @@ void main() {
     expect(find.text('Edit'), findsNothing);
     expect(find.bySemanticsLabel('Email Alerts toggle'), findsOneWidget);
     expect(find.bySemanticsLabel('SMS Alerts toggle'), findsOneWidget);
-    expect(find.text('ON'), findsNWidgets(2));
+    expect(find.text('ON'), findsNothing);
+    expect(find.text('OFF'), findsNothing);
     await tester.tap(find.bySemanticsLabel('Email Alerts toggle'));
     await tester.pumpAndSettle();
 
-    expect(find.text('OFF'), findsOneWidget);
-    expect(find.text('ON'), findsOneWidget);
+    expect(find.text('ON'), findsNothing);
+    expect(find.text('OFF'), findsNothing);
     expect(repository.savedEmailEnabled, isFalse);
     expect(repository.savedSmsEnabled, isTrue);
     expect(repository.savedExpectedVersion, 4);
