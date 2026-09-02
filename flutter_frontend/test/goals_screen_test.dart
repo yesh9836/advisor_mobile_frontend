@@ -49,6 +49,12 @@ void main() {
 
     expect(find.text('Deals Remaining'), findsOneWidget);
     expect(find.text('Closed YTD'), findsOneWidget);
+    await tester.tap(find.text('Deals Remaining'));
+    await tester.pumpAndSettle();
+    expect(find.text('How this is calculated'), findsOneWidget);
+    expect(find.textContaining('average commission per sale'), findsOneWidget);
+    Navigator.of(tester.element(find.text('How this is calculated'))).pop();
+    await tester.pumpAndSettle();
     expect(find.text('Conversion success'), findsOneWidget);
     expect(find.text('SET SUCCESS RATE'), findsOneWidget);
     expect(find.text('CURRENT SUCCESS RATE'), findsOneWidget);
@@ -84,7 +90,7 @@ void main() {
     );
     expect(find.text('12 leads recommended per month'), findsOneWidget);
 
-    await tester.drag(find.byType(ListView).first, const Offset(0, 520));
+    await tester.drag(find.byType(ListView).first, const Offset(0, 1400));
     await tester.pumpAndSettle();
     final monthlyGoalField = find.byType(TextField);
     await tester.ensureVisible(monthlyGoalField);

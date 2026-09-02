@@ -37,6 +37,7 @@ class _NotificationPreferencesSheetState
   bool _loading = true;
   bool _saving = false;
   String? _error;
+  String? _savedMessage;
 
   @override
   void initState() {
@@ -64,26 +65,46 @@ class _NotificationPreferencesSheetState
     }
   }
 
-  Future<void> _save() async {
+  Future<void> _savePreference({
+    bool? emailAlertsEnabled,
+    bool? smsAlertsEnabled,
+  }) async {
     final settings = _settings;
     if (_saving || settings == null) return;
+    final previousEmail = _emailEnabled;
+    final previousSms = _smsEnabled;
+    final nextEmail = emailAlertsEnabled ?? previousEmail;
+    final nextSms = smsAlertsEnabled ?? previousSms;
     setState(() {
       _saving = true;
       _error = null;
+      _savedMessage = null;
+      _emailEnabled = nextEmail;
+      _smsEnabled = nextSms;
     });
     try {
-      await widget.repository.updateDeliverySettings(
-        emailAlertsEnabled: _emailEnabled,
-        smsAlertsEnabled: _smsEnabled,
+      final updated = await widget.repository.updateDeliverySettings(
+        emailAlertsEnabled: nextEmail,
+        smsAlertsEnabled: nextSms,
         expectedVersion: settings.version,
       );
       if (!mounted) return;
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Notification preferences saved.')),
-      );
+      setState(() {
+        _settings = updated;
+        _emailEnabled = updated.emailAlertsEnabled;
+        _smsEnabled = updated.smsAlertsEnabled;
+        _savedMessage = emailAlertsEnabled != null
+            ? 'Email preference saved'
+            : 'SMS preference saved';
+      });
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) {
+        setState(() {
+          _emailEnabled = previousEmail;
+          _smsEnabled = previousSms;
+          _error = error.toString();
+        });
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -112,7 +133,7 @@ class _NotificationPreferencesSheetState
           ),
           const SizedBox(height: 6),
           Text(
-            'Choose how you want to be alerted when new leads are delivered.',
+            'Choose how you want to be alerted. Changes save automatically.',
             style: TextStyle(color: context.appMuted, height: 1.35),
           ),
           const SizedBox(height: 18),
@@ -144,7 +165,7 @@ class _NotificationPreferencesSheetState
               value: _emailEnabled,
               onChanged: _saving
                   ? null
-                  : (value) => setState(() => _emailEnabled = value),
+                  : (value) => _savePreference(emailAlertsEnabled: value),
             ),
             const Divider(),
             _NotificationPreferenceRow(
@@ -153,7 +174,7 @@ class _NotificationPreferencesSheetState
               value: _smsEnabled,
               onChanged: _saving
                   ? null
-                  : (value) => setState(() => _smsEnabled = value),
+                  : (value) => _savePreference(smsAlertsEnabled: value),
             ),
             if (_settings!.warnings.isNotEmpty) ...[
               const SizedBox(height: 10),
@@ -166,18 +187,35 @@ class _NotificationPreferencesSheetState
               const SizedBox(height: 10),
               Text(_error!, style: const TextStyle(color: Color(0xFFB91C1C))),
             ],
-            const SizedBox(height: 18),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: FilledButton(
-                onPressed: _saving ? null : _save,
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF18A0B8),
-                ),
-                child: Text(_saving ? 'Saving...' : 'Save preferences'),
+            if (_saving || _savedMessage != null) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  if (_saving)
+                    const SizedBox.square(
+                      dimension: 15,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    const Icon(
+                      Icons.check_circle_rounded,
+                      size: 17,
+                      color: Color(0xFF28B75A),
+                    ),
+                  const SizedBox(width: 7),
+                  Text(
+                    _saving ? 'Saving preference...' : _savedMessage!,
+                    style: TextStyle(
+                      color: _saving
+                          ? context.appMuted
+                          : const Color(0xFF218A4A),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
               ),
-            ),
+            ],
           ],
         ],
       ),

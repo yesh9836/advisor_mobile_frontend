@@ -1,6 +1,145 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_frontend/theme/app_theme.dart';
 
+class AppLoadingIndicator extends StatefulWidget {
+  const AppLoadingIndicator({super.key, this.label, this.compact = false});
+
+  final String? label;
+  final bool compact;
+
+  @override
+  State<AppLoadingIndicator> createState() => _AppLoadingIndicatorState();
+}
+
+class _AppLoadingIndicatorState extends State<AppLoadingIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = widget.compact ? 6.0 : 8.0;
+    return Semantics(
+      label: widget.label ?? 'Loading',
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedBuilder(
+            animation: _controller,
+            builder: (context, _) => Row(
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(3, (index) {
+                final phase = (_controller.value - (index * .16)) % 1;
+                final pulse = 1 - ((phase - .5).abs() * 2);
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2.5),
+                  child: Transform.translate(
+                    offset: Offset(0, -4 * pulse),
+                    child: Container(
+                      width: size,
+                      height: size,
+                      decoration: BoxDecoration(
+                        color: Color.lerp(
+                          AppColors.cyan,
+                          const Color(0xFF7964D9),
+                          index / 2,
+                        )!.withValues(alpha: .55 + (.45 * pulse)),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ),
+          ),
+          if (widget.label != null && !widget.compact) ...[
+            const SizedBox(height: 9),
+            Text(
+              widget.label!,
+              style: TextStyle(
+                color: context.appMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class AppRefreshIndicator extends StatefulWidget {
+  const AppRefreshIndicator({
+    super.key,
+    required this.onRefresh,
+    required this.child,
+  });
+
+  final RefreshCallback onRefresh;
+  final Widget child;
+
+  @override
+  State<AppRefreshIndicator> createState() => _AppRefreshIndicatorState();
+}
+
+class _AppRefreshIndicatorState extends State<AppRefreshIndicator> {
+  RefreshIndicatorStatus? _status;
+
+  @override
+  Widget build(BuildContext context) {
+    final visible =
+        _status == RefreshIndicatorStatus.armed ||
+        _status == RefreshIndicatorStatus.snap ||
+        _status == RefreshIndicatorStatus.refresh;
+    return Stack(
+      children: [
+        RefreshIndicator.noSpinner(
+          onRefresh: widget.onRefresh,
+          onStatusChange: (status) {
+            if (mounted) setState(() => _status = status);
+          },
+          child: widget.child,
+        ),
+        if (visible)
+          Positioned(
+            top: 8,
+            left: 0,
+            right: 0,
+            child: IgnorePointer(
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 13,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: context.appSurface.withValues(alpha: .96),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: context.appOutline),
+                    boxShadow: context.appCardShadows,
+                  ),
+                  child: const AppLoadingIndicator(
+                    label: 'Refreshing',
+                    compact: true,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class AppScreenHeader extends StatelessWidget {
   const AppScreenHeader({
     super.key,

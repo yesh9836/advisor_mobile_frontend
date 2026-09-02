@@ -25,11 +25,12 @@ abstract final class AppTheme {
     final baseText = ThemeData.light().textTheme.apply(
       bodyColor: AppColors.ink,
       displayColor: AppColors.ink,
-      fontFamily: 'sans-serif',
+      fontFamily: 'Manrope',
     );
 
     return ThemeData(
       useMaterial3: true,
+      fontFamily: 'Manrope',
       colorScheme: scheme,
       scaffoldBackgroundColor: AppColors.canvas,
       textTheme: baseText.copyWith(
@@ -222,11 +223,12 @@ abstract final class AppTheme {
     final baseText = ThemeData.dark().textTheme.apply(
       bodyColor: ink,
       displayColor: ink,
-      fontFamily: 'sans-serif',
+      fontFamily: 'Manrope',
     );
 
     return ThemeData(
       useMaterial3: true,
+      fontFamily: 'Manrope',
       brightness: Brightness.dark,
       colorScheme: scheme,
       scaffoldBackgroundColor: canvas,

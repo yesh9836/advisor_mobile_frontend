@@ -80,7 +80,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
       future: _future,
       builder: (context, snapshot) {
         final goal = _savedGoal ?? snapshot.data;
-        return RefreshIndicator(
+        return AppRefreshIndicator(
           onRefresh: _refreshGoals,
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
@@ -93,8 +93,11 @@ class _GoalsScreenState extends State<GoalsScreen> {
                 icon: Icons.track_changes_rounded,
               ),
               const SizedBox(height: 12),
-              if (snapshot.connectionState == ConnectionState.waiting)
-                const Center(child: CircularProgressIndicator())
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  goal == null)
+                const Center(
+                  child: AppLoadingIndicator(label: 'Loading goal plan'),
+                )
               else if (snapshot.hasError)
                 _Panel(
                   child: Column(
@@ -111,7 +114,15 @@ class _GoalsScreenState extends State<GoalsScreen> {
                   ),
                 )
               else ...[
-                _GoalHero(goal: goal!),
+                _GoalHero(
+                  goal: goal!,
+                  monthlyGoalEditor: _MonthlyGoalPanel(
+                    embedded: true,
+                    monthlyGoalCents: (goal.annualGoalCents / 12).round(),
+                    onSave: (monthlyGoalCents) =>
+                        _saveMonthlyGoal(goal, monthlyGoalCents),
+                  ),
+                ),
                 const SizedBox(height: 10),
                 GridView.count(
                   crossAxisCount: 2,
@@ -128,6 +139,8 @@ class _GoalsScreenState extends State<GoalsScreen> {
                       accent: Color(0xFFD58416),
                       lightSurface: Color(0xFFFFF8E8),
                       darkSurface: Color(0xFF2A2113),
+                      detail:
+                          'Estimated additional closed deals needed to reach your annual income target, based on your average commission per sale.',
                     ),
                     _StatCard(
                       value: '${goal.appointmentsRemaining}',
@@ -136,6 +149,8 @@ class _GoalsScreenState extends State<GoalsScreen> {
                       accent: Color(0xFF5967D8),
                       lightSurface: Color(0xFFF1F3FF),
                       darkSurface: Color(0xFF1C2341),
+                      detail:
+                          'Appointments still needed to produce the remaining deals at your current closing-rate assumption.',
                     ),
                     _StatCard(
                       value: '${goal.leadsRemaining}',
@@ -144,6 +159,8 @@ class _GoalsScreenState extends State<GoalsScreen> {
                       accent: Color(0xFF0F9F98),
                       lightSurface: Color(0xFFEAFBF8),
                       darkSurface: Color(0xFF102C2B),
+                      detail:
+                          'Qualified leads still needed to generate the required appointments using your lead-to-appointment rate.',
                     ),
                     _StatCard(
                       value: '${goal.closedDealsYtd}',
@@ -152,14 +169,10 @@ class _GoalsScreenState extends State<GoalsScreen> {
                       accent: Color(0xFF168A5B),
                       lightSurface: Color(0xFFEBFAF2),
                       darkSurface: Color(0xFF112B20),
+                      detail:
+                          'Deals marked Closed Deal during the current target year. This updates when a lead status is saved as closed.',
                     ),
                   ],
-                ),
-                const SizedBox(height: 10),
-                _MonthlyGoalPanel(
-                  monthlyGoalCents: (goal.annualGoalCents / 12).round(),
-                  onSave: (monthlyGoalCents) =>
-                      _saveMonthlyGoal(goal, monthlyGoalCents),
                 ),
                 const SizedBox(height: 10),
                 _SuccessRateCard(goal: goal),
@@ -428,9 +441,10 @@ String _formatRate(int basisPoints) {
 }
 
 class _GoalHero extends StatelessWidget {
-  const _GoalHero({required this.goal});
+  const _GoalHero({required this.goal, required this.monthlyGoalEditor});
 
   final GoalSnapshot goal;
+  final Widget monthlyGoalEditor;
 
   @override
   Widget build(BuildContext context) {
@@ -533,6 +547,8 @@ class _GoalHero extends StatelessWidget {
                 color: const Color(0xFF19B9D0),
               ),
             ),
+            const SizedBox(height: 12),
+            monthlyGoalEditor,
           ],
         ),
       ),
@@ -1351,10 +1367,12 @@ class _GoalTrendPainter extends CustomPainter {
 
 class _MonthlyGoalPanel extends StatefulWidget {
   const _MonthlyGoalPanel({
+    this.embedded = false,
     required this.monthlyGoalCents,
     required this.onSave,
   });
 
+  final bool embedded;
   final int monthlyGoalCents;
   final Future<void> Function(int monthlyGoalCents) onSave;
 
@@ -1421,33 +1439,41 @@ class _MonthlyGoalPanelState extends State<_MonthlyGoalPanel> {
 
   @override
   Widget build(BuildContext context) {
-    return _Panel(
-      padding: const EdgeInsets.all(14),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 330;
-
-          return Wrap(
-            spacing: 10,
-            runSpacing: 12,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              SizedBox(
-                width: compact ? constraints.maxWidth : 190,
-                child: Text(
-                  'Adjust Monthly Goal',
-                  style: TextStyle(
-                    color: context.appInk,
-                    fontWeight: FontWeight.w900,
-                  ),
+    final foreground = widget.embedded ? Colors.white : context.appInk;
+    final muted = widget.embedded ? Colors.white70 : context.appMuted;
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Adjust Monthly Goal',
+                style: TextStyle(
+                  color: foreground,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
-              SizedBox(
-                width: compact ? constraints.maxWidth - 106 : 190,
-                height: 48,
+            ),
+            Text(
+              'Annual target updates automatically',
+              style: TextStyle(color: muted, fontSize: 9),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: SizedBox(
+                height: 46,
                 child: TextField(
                   controller: _controller,
                   enabled: !_saving,
+                  style: TextStyle(
+                    color: foreground,
+                    fontWeight: FontWeight.w800,
+                  ),
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
@@ -1458,77 +1484,96 @@ class _MonthlyGoalPanelState extends State<_MonthlyGoalPanel> {
                   ],
                   decoration: InputDecoration(
                     labelText: 'Monthly income goal',
+                    labelStyle: TextStyle(color: muted),
                     floatingLabelBehavior: FloatingLabelBehavior.always,
                     prefixText: '\$ ',
+                    prefixStyle: TextStyle(color: foreground),
                     filled: true,
-                    fillColor: context.appSoftFill,
+                    fillColor: widget.embedded
+                        ? Colors.white.withValues(alpha: .12)
+                        : context.appSoftFill,
                     isDense: true,
                     contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 14,
+                      horizontal: 13,
+                      vertical: 13,
                     ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(13),
+                      borderSide: BorderSide(
+                        color: widget.embedded
+                            ? Colors.white30
+                            : context.appOutline,
+                      ),
                     ),
                   ),
                 ),
               ),
-              Container(
-                key: const ValueKey('monthly-goal-save-button-box'),
-                height: 48,
-                width: 96,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF36BDB5), Color(0xFF078A83)],
-                  ),
-                  borderRadius: BorderRadius.circular(14),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              key: const ValueKey('monthly-goal-save-button-box'),
+              height: 46,
+              width: 82,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF42D3C8), Color(0xFF07958D)],
                 ),
-                child: FilledButton(
-                  onPressed: _saving ? null : _save,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Colors.transparent,
-                    disabledBackgroundColor: Colors.transparent,
-                    shadowColor: Colors.transparent,
-                    minimumSize: Size.zero,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  child: _saving
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text('Save'),
-                ),
+                borderRadius: BorderRadius.circular(13),
               ),
-              if (_error != null)
-                SizedBox(
-                  width: constraints.maxWidth,
-                  child: Text(
-                    _error!,
-                    style: const TextStyle(color: Color(0xFFB91C1C)),
-                  ),
+              child: FilledButton(
+                onPressed: _saving ? null : _save,
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.transparent,
+                  disabledBackgroundColor: Colors.transparent,
+                  shadowColor: Colors.transparent,
+                  minimumSize: Size.zero,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
                 ),
-              if (_success != null)
-                SizedBox(
-                  width: constraints.maxWidth,
-                  child: Text(
-                    _success!,
-                    style: const TextStyle(
-                      color: Color(0xFF15803D),
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-            ],
-          );
-        },
+                child: _saving
+                    ? const AppLoadingIndicator(compact: true)
+                    : const Text('Save'),
+              ),
+            ),
+          ],
+        ),
+        if (_error != null) ...[
+          const SizedBox(height: 7),
+          Text(
+            _error!,
+            style: TextStyle(
+              color: widget.embedded
+                  ? const Color(0xFFFFD0D6)
+                  : const Color(0xFFB91C1C),
+              fontSize: 11,
+            ),
+          ),
+        ],
+        if (_success != null) ...[
+          const SizedBox(height: 7),
+          Text(
+            _success!,
+            style: TextStyle(
+              color: widget.embedded
+                  ? const Color(0xFFB8FFE1)
+                  : const Color(0xFF15803D),
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ],
+    );
+    if (!widget.embedded) {
+      return _Panel(padding: const EdgeInsets.all(14), child: content);
+    }
+    return Container(
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: .08),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: Colors.white24),
       ),
+      child: content,
     );
   }
 }
@@ -1614,6 +1659,7 @@ class _StatCard extends StatelessWidget {
     required this.accent,
     required this.lightSurface,
     required this.darkSurface,
+    required this.detail,
   });
 
   final String value;
@@ -1622,6 +1668,76 @@ class _StatCard extends StatelessWidget {
   final Color accent;
   final Color lightSurface;
   final Color darkSurface;
+  final String detail;
+
+  void _showDetails(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: .13),
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: Icon(icon, color: accent),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          value,
+                          style: TextStyle(
+                            color: accent,
+                            fontSize: 25,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        Text(
+                          label,
+                          style: TextStyle(
+                            color: context.appInk,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 17),
+              Text(
+                'How this is calculated',
+                style: TextStyle(
+                  color: context.appInk,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                detail,
+                style: TextStyle(color: context.appMuted, height: 1.45),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1630,60 +1746,85 @@ class _StatCard extends StatelessWidget {
         ? Color.lerp(accent, Colors.white, 0.14)!
         : accent;
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [surface, Color.lerp(surface, context.appSurface, 0.42)!],
-        ),
-        borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: displayAccent.withValues(alpha: 0.2)),
-        boxShadow: context.appCardShadows,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: displayAccent,
-                    fontSize: 23,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
+    return Semantics(
+      button: true,
+      label: '$label, $value. Tap for details.',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _showDetails(context),
+          borderRadius: BorderRadius.circular(17),
+          child: Ink(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  surface,
+                  Color.lerp(surface, context.appSurface, 0.42)!,
+                ],
               ),
-              Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  color: displayAccent.withValues(
-                    alpha: context.isDarkMode ? 0.18 : 0.12,
-                  ),
-                  borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(17),
+              border: Border.all(color: displayAccent.withValues(alpha: 0.2)),
+              boxShadow: context.appCardShadows,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        value,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: displayAccent,
+                          fontSize: 23,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: displayAccent.withValues(
+                          alpha: context.isDarkMode ? 0.18 : 0.12,
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(icon, color: displayAccent, size: 17),
+                    ),
+                  ],
                 ),
-                child: Icon(icon, color: displayAccent, size: 17),
-              ),
-            ],
-          ),
-          const Spacer(),
-          Text(
-            label,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: context.appMuted,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
+                const Spacer(),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        label,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: context.appMuted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      Icons.info_outline_rounded,
+                      size: 14,
+                      color: displayAccent,
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }

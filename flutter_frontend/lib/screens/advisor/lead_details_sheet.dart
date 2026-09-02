@@ -67,6 +67,7 @@ class _LeadDetailsSheetState extends State<LeadDetailsSheet> {
       ? widget.lead.outcomeStatus
       : null;
   bool _saving = false;
+  bool _showNotes = false;
   String? _error;
   String? _success;
 
@@ -169,6 +170,7 @@ class _LeadDetailsSheetState extends State<LeadDetailsSheet> {
                   statuses: _statuses,
                   status: _status,
                   notesController: _notesController,
+                  showNotes: _showNotes,
                   saving: _saving,
                   error: _error,
                   success: _success,
@@ -177,6 +179,9 @@ class _LeadDetailsSheetState extends State<LeadDetailsSheet> {
                       _status = value;
                       _success = null;
                     });
+                  },
+                  onToggleNotes: () {
+                    setState(() => _showNotes = !_showNotes);
                   },
                   onSave: _status == null ? null : _save,
                 )
@@ -716,10 +721,12 @@ class _LeadUpdatePanel extends StatelessWidget {
     required this.statuses,
     required this.status,
     required this.notesController,
+    required this.showNotes,
     required this.saving,
     required this.error,
     required this.success,
     required this.onStatusChanged,
+    required this.onToggleNotes,
     required this.onSave,
   });
 
@@ -727,14 +734,18 @@ class _LeadUpdatePanel extends StatelessWidget {
   final Map<String, String> statuses;
   final String? status;
   final TextEditingController notesController;
+  final bool showNotes;
   final bool saving;
   final String? error;
   final String? success;
   final ValueChanged<String?> onStatusChanged;
+  final VoidCallback onToggleNotes;
   final VoidCallback? onSave;
 
   @override
   Widget build(BuildContext context) {
+    final statusColor = _outcomeColor(status);
+    final hasNotes = notesController.text.trim().isNotEmpty;
     return Container(
       padding: EdgeInsets.fromLTRB(
         embedded ? 0 : 16,
@@ -793,39 +804,110 @@ class _LeadUpdatePanel extends StatelessWidget {
           DropdownButtonFormField<String>(
             isExpanded: true,
             initialValue: status,
-            decoration: const InputDecoration(
+            iconEnabledColor: statusColor,
+            decoration: InputDecoration(
               labelText: 'Lead status',
-              prefixIcon: Icon(Icons.flag_outlined),
+              labelStyle: TextStyle(
+                color: statusColor,
+                fontWeight: FontWeight.w800,
+              ),
+              prefixIcon: Icon(Icons.flag_outlined, color: statusColor),
+              filled: true,
+              fillColor: statusColor.withValues(alpha: .09),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(
+                  color: statusColor.withValues(alpha: .38),
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: statusColor, width: 1.5),
+              ),
             ),
             hint: const Text('Select status'),
             items: statuses.entries
                 .map(
                   (entry) => DropdownMenuItem(
                     value: entry.key,
-                    child: Text(entry.value),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.circle,
+                          color: _outcomeColor(entry.key),
+                          size: 9,
+                        ),
+                        const SizedBox(width: 9),
+                        Text(
+                          entry.value,
+                          style: TextStyle(
+                            color: _outcomeColor(entry.key),
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 )
                 .toList(),
             onChanged: saving ? null : onStatusChanged,
           ),
-          const SizedBox(height: 11),
-          TextField(
-            controller: notesController,
-            enabled: !saving,
-            minLines: embedded ? 2 : 3,
-            maxLines: embedded ? 3 : 6,
-            maxLength: 2000,
-            decoration: const InputDecoration(
-              labelText: 'Notes',
-              hintText: 'Add call notes, appointment time, or objections.',
-              alignLabelWithHint: true,
-              counterText: '',
-              prefixIcon: Padding(
-                padding: EdgeInsets.only(bottom: 50),
-                child: Icon(Icons.edit_note_rounded),
+          const SizedBox(height: 8),
+          if (!showNotes)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                key: const Key('lead-add-notes-button'),
+                onPressed: saving ? null : onToggleNotes,
+                icon: Icon(
+                  hasNotes
+                      ? Icons.edit_note_rounded
+                      : Icons.add_comment_outlined,
+                  size: 18,
+                ),
+                label: Text(hasNotes ? 'Edit notes' : 'Add notes'),
+              ),
+            )
+          else ...[
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Notes (optional)',
+                    style: TextStyle(
+                      color: context.appMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  key: const Key('lead-hide-notes-button'),
+                  tooltip: 'Hide notes',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: saving ? null : onToggleNotes,
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                ),
+              ],
+            ),
+            TextField(
+              key: const Key('lead-notes-field'),
+              controller: notesController,
+              enabled: !saving,
+              minLines: embedded ? 2 : 3,
+              maxLines: embedded ? 3 : 6,
+              maxLength: 2000,
+              decoration: const InputDecoration(
+                hintText: 'Add call notes, appointment time, or objections.',
+                alignLabelWithHint: true,
+                counterText: '',
+                prefixIcon: Padding(
+                  padding: EdgeInsets.only(bottom: 50),
+                  child: Icon(Icons.edit_note_rounded),
+                ),
               ),
             ),
-          ),
+          ],
           if (error != null) ...[
             const SizedBox(height: 6),
             Text(error!, style: const TextStyle(color: Color(0xFFB91C1C))),

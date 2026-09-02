@@ -53,8 +53,12 @@ void main() {
     await tester.tap(find.text('Appointment Set').last);
     await tester.pumpAndSettle();
 
+    expect(find.byKey(const Key('lead-notes-field')), findsNothing);
+    await tester.tap(find.byKey(const Key('lead-add-notes-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('Notes (optional)'), findsOneWidget);
     await tester.enterText(
-      find.widgetWithText(TextField, 'Notes'),
+      find.byKey(const Key('lead-notes-field')),
       'Meeting booked for Tuesday.',
     );
     final saveButton = find.widgetWithText(FilledButton, 'Save lead update');

@@ -8,6 +8,7 @@ import 'package:flutter_frontend/screens/advisor/lead_details_sheet.dart';
 import 'package:flutter_frontend/screens/advisor/leads_screen.dart';
 import 'package:flutter_frontend/screens/advisor/profile_screen.dart';
 import 'package:flutter_frontend/screens/advisor/subscription_screen.dart';
+import 'package:flutter_frontend/theme/app_components.dart';
 import 'package:flutter_frontend/theme/app_theme.dart';
 import 'package:flutter_frontend/theme/app_theme_controller.dart';
 
@@ -22,7 +23,9 @@ class AdvisorShell extends StatefulWidget {
 
 class _AdvisorShellState extends State<AdvisorShell> {
   late int _selectedIndex = widget.initialIndex.clamp(0, 4);
-  late double _navigationPosition = _selectedIndex.toDouble();
+  late final ValueNotifier<double> _navigationPosition = ValueNotifier(
+    _selectedIndex.toDouble(),
+  );
   late final List<Widget?> _screens;
   late final PageController _pageController = PageController(
     initialPage: _selectedIndex,
@@ -39,8 +42,10 @@ class _AdvisorShellState extends State<AdvisorShell> {
 
   void _trackPageTransition() {
     final page = _pageController.page;
-    if (page == null || (page - _navigationPosition).abs() < .001) return;
-    setState(() => _navigationPosition = page);
+    if (page == null || (page - _navigationPosition.value).abs() < .001) {
+      return;
+    }
+    _navigationPosition.value = page;
   }
 
   Widget _createScreen(int index) => switch (index) {
@@ -89,6 +94,7 @@ class _AdvisorShellState extends State<AdvisorShell> {
   void dispose() {
     _pageController.removeListener(_trackPageTransition);
     _pageController.dispose();
+    _navigationPosition.dispose();
     _outcomeRevision.dispose();
     super.dispose();
   }
@@ -177,10 +183,13 @@ class _AdvisorShellState extends State<AdvisorShell> {
                   ],
                 ),
                 clipBehavior: Clip.antiAlias,
-                child: _AdvisorNavigationBar(
-                  selectedIndex: _selectedIndex,
-                  transitionPosition: _navigationPosition,
-                  onDestinationSelected: _selectTab,
+                child: ValueListenableBuilder<double>(
+                  valueListenable: _navigationPosition,
+                  builder: (context, position, _) => _AdvisorNavigationBar(
+                    selectedIndex: _selectedIndex,
+                    transitionPosition: position,
+                    onDestinationSelected: _selectTab,
+                  ),
                 ),
               ),
             ),
@@ -613,14 +622,17 @@ class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
       future: _future,
       builder: (context, snapshot) {
         final data = snapshot.data;
-        return RefreshIndicator(
+        return AppRefreshIndicator(
           onRefresh: _refreshDashboard,
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 112),
             children: [
-              if (snapshot.connectionState == ConnectionState.waiting)
-                const Center(child: CircularProgressIndicator())
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  data == null)
+                const Center(
+                  child: AppLoadingIndicator(label: 'Loading dashboard'),
+                )
               else if (snapshot.hasError)
                 _EmptyPanel(
                   message: snapshot.error.toString(),
@@ -788,7 +800,7 @@ class _HomeHeader extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '${_greetingFor(DateTime.now())},',
+                    'Welcome back,',
                     style: TextStyle(
                       color: context.appMuted,
                       fontSize: 13,
@@ -816,14 +828,6 @@ class _HomeHeader extends StatelessWidget {
       ],
     );
   }
-}
-
-String _greetingFor(DateTime localTime) {
-  final hour = localTime.hour;
-  if (hour >= 5 && hour < 12) return 'Good morning';
-  if (hour >= 12 && hour < 17) return 'Good afternoon';
-  if (hour >= 17 && hour < 22) return 'Good evening';
-  return 'Good night';
 }
 
 class _MetricCard extends StatelessWidget {

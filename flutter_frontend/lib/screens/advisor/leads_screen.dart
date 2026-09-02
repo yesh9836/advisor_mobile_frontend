@@ -72,6 +72,15 @@ class _LeadsScreenState extends State<LeadsScreen> {
     await future;
   }
 
+  Future<void> _pullToRefresh() async {
+    final future = _loadFirstPage();
+    setState(() {
+      _future = future;
+      _loadMoreError = null;
+    });
+    await future;
+  }
+
   void _onScroll() {
     if (!_scrollController.hasClients ||
         _scrollController.position.extentAfter > 260) {
@@ -161,8 +170,8 @@ class _LeadsScreenState extends State<LeadsScreen> {
       future: _future,
       builder: (context, snapshot) {
         final leads = _leads;
-        return RefreshIndicator(
-          onRefresh: _refreshLeads,
+        return AppRefreshIndicator(
+          onRefresh: _pullToRefresh,
           child: ListView(
             controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
@@ -198,10 +207,13 @@ class _LeadsScreenState extends State<LeadsScreen> {
                 },
               ),
               const SizedBox(height: 11),
-              if (snapshot.connectionState == ConnectionState.waiting)
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  leads.isEmpty)
                 const Padding(
                   padding: EdgeInsets.only(top: 40),
-                  child: Center(child: CircularProgressIndicator()),
+                  child: Center(
+                    child: AppLoadingIndicator(label: 'Loading leads'),
+                  ),
                 )
               else if (snapshot.hasError)
                 Card(

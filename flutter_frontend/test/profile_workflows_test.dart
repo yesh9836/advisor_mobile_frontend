@@ -223,7 +223,9 @@ void main() {
     expect(repository.newPassword, 'NewPass123!');
   });
 
-  testWidgets('loads and saves notification preferences', (tester) async {
+  testWidgets('automatically saves notification preference toggles', (
+    tester,
+  ) async {
     final repository = _FakeAdvisorRepository();
     await tester.pumpWidget(
       MaterialApp(
@@ -234,14 +236,23 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('Save preferences'), findsNothing);
+
     await tester.tap(find.text('Email Alerts'));
+    await tester.pumpAndSettle();
+
+    expect(repository.savedEmailEnabled, isFalse);
+    expect(repository.savedSmsEnabled, isFalse);
+    expect(repository.savedExpectedVersion, 4);
+    expect(find.text('Email preference saved'), findsOneWidget);
+
     await tester.tap(find.text('SMS Alerts'));
-    await tester.tap(find.widgetWithText(FilledButton, 'Save preferences'));
     await tester.pumpAndSettle();
 
     expect(repository.savedEmailEnabled, isFalse);
     expect(repository.savedSmsEnabled, isTrue);
-    expect(repository.savedExpectedVersion, 4);
+    expect(repository.savedExpectedVersion, 5);
+    expect(find.text('SMS preference saved'), findsOneWidget);
   });
 }
 

@@ -260,7 +260,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
     return FutureBuilder<_BuyData>(
       future: _future,
       builder: (context, snapshot) {
-        return RefreshIndicator(
+        return AppRefreshIndicator(
           onRefresh: _refresh,
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
@@ -273,8 +273,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                 icon: Icons.shopping_bag_rounded,
               ),
               const SizedBox(height: 11),
-              if (snapshot.connectionState == ConnectionState.waiting)
-                const Center(child: CircularProgressIndicator())
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  snapshot.data == null)
+                const Center(
+                  child: AppLoadingIndicator(label: 'Loading packages'),
+                )
               else if (snapshot.hasError)
                 Card(
                   child: Padding(

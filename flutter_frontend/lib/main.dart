@@ -44,7 +44,7 @@ class _SpectaculeadsAppState extends State<SpectaculeadsApp> {
           theme: AppTheme.light,
           darkTheme: AppTheme.dark,
           themeMode: _themeController.mode,
-          themeAnimationDuration: const Duration(milliseconds: 620),
+          themeAnimationDuration: const Duration(milliseconds: 400),
           themeAnimationCurve: Curves.easeInOutCubic,
           builder: (context, child) => _ThemeFlowTransition(
             isDark: _themeController.isDark,
@@ -77,7 +77,7 @@ class _ThemeFlowTransitionState extends State<_ThemeFlowTransition>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 680),
+    duration: const Duration(milliseconds: 460),
   );
 
   @override
@@ -126,10 +126,13 @@ class _ThemeFlowTransitionState extends State<_ThemeFlowTransition>
                         radius: widget.isDark
                             ? maxRadius * (1 - progress)
                             : maxRadius * progress,
-                        color: const Color(0xFFFFFBF0),
-                        opacity: widget.isDark
-                            ? .82 * (1 - (progress * .18))
-                            : .58 * (1 - progress),
+                        color: widget.isDark
+                            ? const Color(0xFF050505)
+                            : AppColors.canvas,
+                        opacity: progress < .8
+                            ? .32
+                            : .32 * ((1 - progress) / .2),
+                        inverse: widget.isDark,
                       ),
                     );
                   },
@@ -158,28 +161,37 @@ class _ThemeFlowPainter extends CustomPainter {
     required this.radius,
     required this.color,
     required this.opacity,
+    required this.inverse,
   });
 
   final Offset origin;
   final double radius;
   final Color color;
   final double opacity;
+  final bool inverse;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (radius <= 0 || opacity <= 0) return;
-    canvas.drawCircle(
-      origin,
-      radius,
-      Paint()..color = color.withValues(alpha: opacity),
-    );
+    final paint = Paint()..color = color.withValues(alpha: opacity);
+    if (!inverse) {
+      canvas.drawCircle(origin, radius, paint);
+      return;
+    }
+    final path = Path()
+      ..fillType = PathFillType.evenOdd
+      ..addRect(Offset.zero & size)
+      ..addOval(Rect.fromCircle(center: origin, radius: radius));
+    canvas.drawPath(path, paint);
   }
 
   @override
   bool shouldRepaint(covariant _ThemeFlowPainter oldDelegate) =>
       oldDelegate.radius != radius ||
       oldDelegate.color != color ||
-      oldDelegate.origin != origin;
+      oldDelegate.origin != origin ||
+      oldDelegate.opacity != opacity ||
+      oldDelegate.inverse != inverse;
 }
 
 class SessionBootstrap extends StatefulWidget {
