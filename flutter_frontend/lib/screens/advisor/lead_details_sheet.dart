@@ -270,7 +270,6 @@ class _LeadDetailsSheetState extends State<LeadDetailsSheet> {
                 'Primary interest',
                 _lead.activity,
                 Icons.star_outline_rounded,
-                fullWidth: true,
               ),
               _DetailValue(
                 'Retirement timeline',
@@ -286,13 +285,11 @@ class _LeadDetailsSheetState extends State<LeadDetailsSheet> {
                 'Investment goals',
                 _lead.mainPurposeForInvesting.join(', '),
                 Icons.flag_outlined,
-                fullWidth: true,
               ),
               _DetailValue(
                 'Current strategies',
                 _lead.currentInvestmentStrategies.join(', '),
                 Icons.auto_graph_rounded,
-                fullWidth: true,
               ),
               _DetailValue(
                 'Has financial advisor',
@@ -308,7 +305,6 @@ class _LeadDetailsSheetState extends State<LeadDetailsSheet> {
                 'Additional notes',
                 _lead.additionalNotes,
                 Icons.notes_rounded,
-                fullWidth: true,
               ),
             ],
           ),
@@ -926,6 +922,19 @@ class _LeadUpdatePanel extends StatelessWidget {
             onChanged: saving ? null : onStatusChanged,
           ),
           const SizedBox(height: 8),
+          if (!showNotes && hasNotes) ...[
+            Text(
+              notesController.text.trim(),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: context.appMuted,
+                fontSize: 10.5,
+                height: 1.25,
+              ),
+            ),
+            const SizedBox(height: 3),
+          ],
           if (!showNotes)
             Row(
               children: [
@@ -1117,16 +1126,16 @@ class _DetailsSection extends StatelessWidget {
           const SizedBox(height: 12),
           LayoutBuilder(
             builder: (context, constraints) {
-              final itemWidth = (constraints.maxWidth - 8) / 2;
               return Wrap(
-                spacing: 8,
-                runSpacing: 8,
+                runSpacing: 6,
                 children: [
                   for (final row in visibleRows)
                     Container(
-                      width: row.fullWidth ? constraints.maxWidth : itemWidth,
-                      constraints: const BoxConstraints(minHeight: 76),
-                      padding: const EdgeInsets.all(11),
+                      width: constraints.maxWidth,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 11,
+                        vertical: 9,
+                      ),
                       decoration: BoxDecoration(
                         color: context.appSoftFill,
                         borderRadius: BorderRadius.circular(12),
@@ -1134,38 +1143,34 @@ class _DetailsSection extends StatelessWidget {
                           color: accent.withValues(alpha: .12),
                         ),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          Row(
-                            children: [
-                              Icon(row.icon, color: accent, size: 15),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  row.label.toUpperCase(),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: context.appMuted,
-                                    fontSize: 9.5,
-                                    fontWeight: FontWeight.w600,
-                                    letterSpacing: .5,
-                                  ),
-                                ),
+                          Icon(row.icon, color: accent, size: 16),
+                          const SizedBox(width: 9),
+                          Expanded(
+                            flex: 5,
+                            child: Text(
+                              row.label,
+                              style: TextStyle(
+                                color: context.appMuted,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w600,
                               ),
-                            ],
+                            ),
                           ),
-                          const SizedBox(height: 7),
-                          Text(
-                            row.value!.trim(),
-                            maxLines: row.fullWidth ? 4 : 3,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: context.appInk,
-                              fontSize: 12.5,
-                              height: 1.25,
-                              fontWeight: FontWeight.w600,
+                          const SizedBox(width: 10),
+                          Expanded(
+                            flex: 6,
+                            child: Text(
+                              row.value!.trim(),
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                color: context.appInk,
+                                fontSize: 11.5,
+                                height: 1.25,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                         ],
@@ -1182,17 +1187,11 @@ class _DetailsSection extends StatelessWidget {
 }
 
 class _DetailValue {
-  const _DetailValue(
-    this.label,
-    this.value,
-    this.icon, {
-    this.fullWidth = false,
-  });
+  const _DetailValue(this.label, this.value, this.icon);
 
   final String label;
   final String? value;
   final IconData icon;
-  final bool fullWidth;
 }
 
 String? _text(String? value) {

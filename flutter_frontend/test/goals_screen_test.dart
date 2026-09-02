@@ -122,7 +122,7 @@ void main() {
       find.byKey(const ValueKey('monthly-goal-adjust-button')),
       findsOneWidget,
     );
-    expect(find.text(r'$2500'), findsOneWidget);
+    expect(find.text(r'$2,500'), findsOneWidget);
   });
 
   testWidgets('rejects an invalid monthly goal without calling the API', (
@@ -191,6 +191,27 @@ class _FakeAdvisorRepository extends AdvisorRepository {
       isDownloaded: true,
     ),
   ];
+
+  @override
+  Future<AdvisorLeadPage> getLeadsPage({
+    int page = 1,
+    int size = 20,
+    String deliveryStatus = 'all',
+    String outcomeStatus = 'all',
+    String? search,
+  }) async {
+    final items = await getLeads(
+      deliveryStatus: deliveryStatus,
+      outcomeStatus: outcomeStatus,
+      search: search,
+    );
+    return AdvisorLeadPage(
+      items: items,
+      total: items.length,
+      page: page,
+      size: size,
+    );
+  }
 
   @override
   Future<GoalSnapshot> saveMonthlyGoal({

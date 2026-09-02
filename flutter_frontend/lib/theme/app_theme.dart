@@ -416,26 +416,30 @@ extension AppThemeContext on BuildContext {
   List<BoxShadow> get appCardShadows => isDarkMode
       ? [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.34),
-            blurRadius: 20,
-            offset: const Offset(0, 9),
+            color: Colors.black.withValues(alpha: 0.28),
+            blurRadius: 26,
+            spreadRadius: -8,
+            offset: const Offset(0, 10),
           ),
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.16),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 10,
+            spreadRadius: -5,
+            offset: const Offset(0, 3),
           ),
         ]
       : const [
           BoxShadow(
-            color: Color(0x1F173A54),
-            blurRadius: 20,
-            offset: Offset(0, 8),
+            color: Color(0x24173A54),
+            blurRadius: 28,
+            spreadRadius: -9,
+            offset: Offset(0, 11),
           ),
           BoxShadow(
             color: Color(0x0D173A54),
-            blurRadius: 4,
-            offset: Offset(0, 2),
+            blurRadius: 10,
+            spreadRadius: -5,
+            offset: Offset(0, 3),
           ),
         ];
 }

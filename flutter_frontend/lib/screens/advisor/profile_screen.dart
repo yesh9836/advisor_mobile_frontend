@@ -288,17 +288,17 @@ class _AppearanceSettings extends StatelessWidget {
       children: [
         AnimatedContainer(
           duration: const Duration(milliseconds: 220),
-          width: 40,
-          height: 40,
+          width: 34,
+          height: 34,
           decoration: BoxDecoration(
             color: (isDark ? const Color(0xFF7C69E8) : const Color(0xFFFFB020))
                 .withValues(alpha: .13),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
           ),
           child: Icon(
             isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
             color: isDark ? const Color(0xFF9A89F5) : const Color(0xFFE08B00),
-            size: 21,
+            size: 19,
           ),
         ),
         const SizedBox(width: 12),
@@ -527,6 +527,8 @@ class _AccountActions extends StatelessWidget {
     return _Panel(
       child: Column(
         children: [
+          const _AppearanceSettings(),
+          const _DividerLine(),
           _ActionRow(
             icon: Icons.credit_card_outlined,
             label: 'Billing History',
@@ -541,11 +543,9 @@ class _AccountActions extends StatelessWidget {
           const _DividerLine(),
           _ActionRow(
             icon: Icons.notifications_none,
-            label: 'Notification Prefs',
+            label: 'Notification Preferences',
             onTap: onNotificationPreferences,
           ),
-          const _DividerLine(),
-          const _AppearanceSettings(),
         ],
       ),
     );

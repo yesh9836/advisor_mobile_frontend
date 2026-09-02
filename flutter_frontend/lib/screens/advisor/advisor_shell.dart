@@ -856,40 +856,47 @@ class _MetricCard extends StatelessWidget {
         : iconColor;
 
     return Container(
-      constraints: const BoxConstraints(minHeight: 122),
+      constraints: const BoxConstraints(minHeight: 106),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 12, 8, 11),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: context.isDarkMode
-                    ? displayIconColor.withValues(alpha: 0.24)
-                    : iconBackground,
-                shape: BoxShape.circle,
-                border: context.isDarkMode
-                    ? Border.all(
-                        color: displayIconColor.withValues(alpha: 0.22),
-                      )
-                    : null,
-              ),
-              child: Icon(icon, color: displayIconColor, size: 19),
+            Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: context.isDarkMode
+                        ? displayIconColor.withValues(alpha: 0.24)
+                        : iconBackground,
+                    shape: BoxShape.circle,
+                    border: context.isDarkMode
+                        ? Border.all(
+                            color: displayIconColor.withValues(alpha: 0.22),
+                          )
+                        : null,
+                  ),
+                  child: Icon(icon, color: displayIconColor, size: 19),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: context.appInk,
+                      fontSize: 19,
+                      fontWeight: FontWeight.w700,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 7),
-            Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: context.appInk,
-                fontSize: 19,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 3),
             Text(
               label,
               maxLines: 2,
@@ -1576,4 +1583,13 @@ String _relativeTime(DateTime? dateTime) {
   return '${weeks}w ago';
 }
 
-String _money(double value) => '\$${value.round()}';
+String _money(double value) => '\$${_groupDigits(value.round())}';
+
+String _groupDigits(int value) {
+  final digits = value.abs().toString();
+  final grouped = digits.replaceAllMapped(
+    RegExp(r'\B(?=(\d{3})+(?!\d))'),
+    (_) => ',',
+  );
+  return value < 0 ? '-$grouped' : grouped;
+}

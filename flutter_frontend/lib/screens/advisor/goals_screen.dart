@@ -130,7 +130,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
                   physics: const NeverScrollableScrollPhysics(),
                   crossAxisSpacing: 12,
                   mainAxisSpacing: 12,
-                  mainAxisExtent: 100,
+                  mainAxisExtent: 92,
                   children: [
                     _StatCard(
                       value: '${goal.dealsRemaining}',
@@ -141,8 +141,10 @@ class _GoalsScreenState extends State<GoalsScreen> {
                       darkSurface: Color(0xFF2A2113),
                       detail: 'Income gap divided by your average commission.',
                       recordsTitle: 'Recently closed deals',
-                      loadRecords: () =>
-                          _repository.getLeads(outcomeStatus: 'closed_deal'),
+                      loadRecords: () async => (await _repository.getLeadsPage(
+                        size: 100,
+                        outcomeStatus: 'closed_deal',
+                      )).items,
                     ),
                     _StatCard(
                       value: '${goal.appointmentsRemaining}',
@@ -153,9 +155,10 @@ class _GoalsScreenState extends State<GoalsScreen> {
                       darkSurface: Color(0xFF1C2341),
                       detail: 'Deals remaining adjusted by your closing rate.',
                       recordsTitle: 'Appointments awaiting follow-up',
-                      loadRecords: () => _repository.getLeads(
+                      loadRecords: () async => (await _repository.getLeadsPage(
+                        size: 100,
                         outcomeStatus: 'appointment_set',
-                      ),
+                      )).items,
                     ),
                     _StatCard(
                       value: '${goal.leadsRemaining}',
@@ -167,7 +170,8 @@ class _GoalsScreenState extends State<GoalsScreen> {
                       detail:
                           'Appointments needed adjusted by lead conversion.',
                       recordsTitle: 'Active leads in your pipeline',
-                      loadRecords: () => _repository.getLeads(),
+                      loadRecords: () async =>
+                          (await _repository.getLeadsPage(size: 100)).items,
                     ),
                     _StatCard(
                       value: '${goal.closedDealsYtd}',
@@ -178,8 +182,10 @@ class _GoalsScreenState extends State<GoalsScreen> {
                       darkSurface: Color(0xFF112B20),
                       detail: 'Leads marked Closed Deal this target year.',
                       recordsTitle: 'Deals closed this year',
-                      loadRecords: () =>
-                          _repository.getLeads(outcomeStatus: 'closed_deal'),
+                      loadRecords: () async => (await _repository.getLeadsPage(
+                        size: 100,
+                        outcomeStatus: 'closed_deal',
+                      )).items,
                     ),
                   ],
                 ),
@@ -526,6 +532,7 @@ class _GoalHero extends StatelessWidget {
                           color: Colors.white,
                           fontSize: 23,
                           fontWeight: FontWeight.w700,
+                          fontFeatures: [FontFeature.tabularFigures()],
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -539,6 +546,7 @@ class _GoalHero extends StatelessWidget {
                           color: Color(0xFF7DD3FC),
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
+                          fontFeatures: [FontFeature.tabularFigures()],
                         ),
                       ),
                     ],
@@ -1723,6 +1731,7 @@ class _StatCard extends StatelessWidget {
     final records = loadRecords();
     showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       showDragHandle: true,
       builder: (context) => SafeArea(
         top: false,
@@ -1800,10 +1809,12 @@ class _StatCard extends StatelessWidget {
                     );
                   }
                   return ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 230),
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.sizeOf(context).height * .55,
+                    ),
                     child: ListView.separated(
                       shrinkWrap: true,
-                      itemCount: leads.length.clamp(0, 6),
+                      itemCount: leads.length,
                       separatorBuilder: (_, _) =>
                           Divider(height: 1, color: context.appOutline),
                       itemBuilder: (context, index) {
@@ -1908,21 +1919,9 @@ class _StatCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Expanded(
-                      child: Text(
-                        value,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: displayAccent,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
                     Container(
-                      width: 30,
-                      height: 30,
+                      width: 28,
+                      height: 28,
                       decoration: BoxDecoration(
                         color: displayAccent.withValues(
                           alpha: context.isDarkMode ? 0.18 : 0.12,
@@ -1931,11 +1930,22 @@ class _StatCard extends StatelessWidget {
                       ),
                       child: Icon(icon, color: displayAccent, size: 17),
                     ),
+                    const SizedBox(width: 8),
+                    Text(
+                      value,
+                      maxLines: 1,
+                      style: TextStyle(
+                        color: displayAccent,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 9),
+                const SizedBox(height: 5),
                 SizedBox(
-                  height: 30,
+                  height: 27,
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -2132,7 +2142,16 @@ IconData _packageIcon(String name) {
   return Icons.inventory_2_outlined;
 }
 
-String _money(int cents) => '\$${(cents / 100).round()}';
+String _money(int cents) => '\$${_groupDigits((cents / 100).round())}';
+
+String _groupDigits(int value) {
+  final digits = value.abs().toString();
+  final grouped = digits.replaceAllMapped(
+    RegExp(r'\B(?=(\d{3})+(?!\d))'),
+    (_) => ',',
+  );
+  return value < 0 ? '-$grouped' : grouped;
+}
 
 String _dollarsInput(int cents) {
   final dollars = cents / 100;
