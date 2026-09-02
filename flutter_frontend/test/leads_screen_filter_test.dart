@@ -5,6 +5,28 @@ import 'package:flutter_frontend/repositories/advisor_repository.dart';
 import 'package:flutter_frontend/screens/advisor/leads_screen.dart';
 
 void main() {
+  testWidgets('shows the API total and loads another page near the bottom', (
+    tester,
+  ) async {
+    final repository = _FilterAdvisorRepository(total: 45);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: LeadsScreen(repository: repository)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('45'), findsOneWidget);
+    expect(repository.pageRequests, [1]);
+
+    await tester.drag(find.byType(ListView).first, const Offset(0, -2200));
+    await tester.pumpAndSettle();
+
+    expect(repository.pageRequests, contains(2));
+    expect(find.text('Test 21'), findsOneWidget);
+  });
+
   testWidgets('opens and applies the Inbox delivery filter', (tester) async {
     final repository = _FilterAdvisorRepository();
 
@@ -62,24 +84,35 @@ void main() {
 }
 
 class _FilterAdvisorRepository extends AdvisorRepository {
+  _FilterAdvisorRepository({this.total = 1});
+
+  final int total;
   final List<String> deliveryStatuses = [];
+  final List<int> pageRequests = [];
 
   @override
-  Future<List<AdvisorLead>> getLeads({
+  Future<AdvisorLeadPage> getLeadsPage({
+    int page = 1,
+    int size = 20,
     String deliveryStatus = 'all',
     String outcomeStatus = 'all',
     String? search,
   }) async {
     deliveryStatuses.add(deliveryStatus);
-    return [
-      AdvisorLead(
-        id: 1,
+    pageRequests.add(page);
+    final firstId = ((page - 1) * size) + 1;
+    final count = (total - firstId + 1).clamp(0, size);
+    final items = List.generate(
+      count,
+      (index) => AdvisorLead(
+        id: firstId + index,
         stateCode: 'CA',
         firstName: 'Test',
-        lastName: 'Lead',
+        lastName: '${firstId + index}',
         outcomeStatus: 'new',
         isDownloaded: deliveryStatus == 'delivered',
       ),
-    ];
+    );
+    return AdvisorLeadPage(items: items, total: total, page: page, size: size);
   }
 }

@@ -151,6 +151,20 @@ class AdvisorLead {
   }
 }
 
+class AdvisorLeadPage {
+  const AdvisorLeadPage({
+    required this.items,
+    required this.total,
+    required this.page,
+    required this.size,
+  });
+
+  final List<AdvisorLead> items;
+  final int total;
+  final int page;
+  final int size;
+}
+
 DateTime? _parseDateTime(String? value) {
   if (value == null || value.trim().isEmpty) return null;
   return DateTime.tryParse(value)?.toLocal();

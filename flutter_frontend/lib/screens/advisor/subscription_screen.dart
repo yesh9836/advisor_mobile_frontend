@@ -17,10 +17,12 @@ class SubscriptionScreen extends StatefulWidget {
     super.key,
     this.repository,
     this.checkoutUrlLauncher,
+    this.initialPackageId,
   });
 
   final AdvisorRepository? repository;
   final CheckoutUrlLauncher? checkoutUrlLauncher;
+  final int? initialPackageId;
 
   @override
   State<SubscriptionScreen> createState() => _SubscriptionScreenState();
@@ -50,7 +52,24 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _selectedPackageId = widget.initialPackageId;
     _future = _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant SubscriptionScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialPackageId != null &&
+        widget.initialPackageId != oldWidget.initialPackageId) {
+      setState(() => _selectedPackageId = widget.initialPackageId);
+    }
+  }
+
+  void _refresh() {
+    setState(() {
+      _error = null;
+      _future = _load();
+    });
   }
 
   @override
@@ -242,11 +261,16 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
         return ListView(
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 112),
           children: [
-            const AppScreenHeader(
+            AppScreenHeader(
               eyebrow: 'Grow your pipeline',
               title: 'Buy Leads',
               subtitle: 'Choose a package and target the states that matter.',
               icon: Icons.shopping_bag_rounded,
+              trailing: IconButton.filledTonal(
+                tooltip: 'Refresh packages',
+                onPressed: _refresh,
+                icon: const Icon(Icons.refresh_rounded),
+              ),
             ),
             const SizedBox(height: 11),
             if (snapshot.connectionState == ConnectionState.waiting)
@@ -261,7 +285,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                       Text(snapshot.error.toString()),
                       const SizedBox(height: 12),
                       OutlinedButton.icon(
-                        onPressed: () => setState(() => _future = _load()),
+                        onPressed: _refresh,
                         icon: const Icon(Icons.wifi_protected_setup_rounded),
                         label: Text(
                           snapshot.error.toString().toLowerCase().contains(

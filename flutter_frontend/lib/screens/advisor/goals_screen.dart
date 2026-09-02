@@ -10,10 +10,12 @@ class GoalsScreen extends StatefulWidget {
     super.key,
     required this.onSeeAllPackages,
     this.repository,
+    this.outcomeRevision,
   });
 
-  final VoidCallback onSeeAllPackages;
+  final ValueChanged<int?> onSeeAllPackages;
   final AdvisorRepository? repository;
+  final Listenable? outcomeRevision;
 
   @override
   State<GoalsScreen> createState() => _GoalsScreenState();
@@ -24,6 +26,26 @@ class _GoalsScreenState extends State<GoalsScreen> {
       widget.repository ?? AdvisorRepository();
   late Future<GoalSnapshot> _future = _repository.getGoal();
   GoalSnapshot? _savedGoal;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.outcomeRevision?.addListener(_retry);
+  }
+
+  @override
+  void didUpdateWidget(covariant GoalsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.outcomeRevision == widget.outcomeRevision) return;
+    oldWidget.outcomeRevision?.removeListener(_retry);
+    widget.outcomeRevision?.addListener(_retry);
+  }
+
+  @override
+  void dispose() {
+    widget.outcomeRevision?.removeListener(_retry);
+    super.dispose();
+  }
 
   void _retry() {
     setState(() {
@@ -55,11 +77,16 @@ class _GoalsScreenState extends State<GoalsScreen> {
         return ListView(
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 112),
           children: [
-            const AppScreenHeader(
+            AppScreenHeader(
               eyebrow: 'Performance plan',
               title: 'Goals',
               subtitle: 'Track your annual target and next best actions.',
               icon: Icons.track_changes_rounded,
+              trailing: IconButton.filledTonal(
+                tooltip: 'Refresh goals',
+                onPressed: _retry,
+                icon: const Icon(Icons.refresh_rounded),
+              ),
             ),
             const SizedBox(height: 12),
             if (snapshot.connectionState == ConnectionState.waiting)
@@ -125,15 +152,15 @@ class _GoalsScreenState extends State<GoalsScreen> {
                 ],
               ),
               const SizedBox(height: 10),
-              _SuccessRateCard(goal: goal),
-              const SizedBox(height: 10),
-              _GoalTrendCard(goal: goal),
-              const SizedBox(height: 10),
               _MonthlyGoalPanel(
                 monthlyGoalCents: (goal.annualGoalCents / 12).round(),
                 onSave: (monthlyGoalCents) =>
                     _saveMonthlyGoal(goal, monthlyGoalCents),
               ),
+              const SizedBox(height: 10),
+              _SuccessRateCard(goal: goal),
+              const SizedBox(height: 10),
+              _GoalTrendCard(goal: goal),
               if (goal.pacingMessage.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 _PacingPanel(goal: goal),
@@ -152,7 +179,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
                     ),
                   ),
                   TextButton(
-                    onPressed: widget.onSeeAllPackages,
+                    onPressed: () => widget.onSeeAllPackages(null),
                     child: const Text('See all →'),
                   ),
                 ],
@@ -174,7 +201,8 @@ class _GoalsScreenState extends State<GoalsScreen> {
                     separatorBuilder: (_, _) => const SizedBox(width: 12),
                     itemBuilder: (context, index) => _PackagePreview(
                       package: goal.packages[index],
-                      onSelect: widget.onSeeAllPackages,
+                      onSelect: () =>
+                          widget.onSeeAllPackages(goal.packages[index].id),
                     ),
                   ),
                 ),

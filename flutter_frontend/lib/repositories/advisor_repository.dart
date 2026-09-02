@@ -68,10 +68,25 @@ class AdvisorRepository {
     String outcomeStatus = 'all',
     String? search,
   }) async {
+    final page = await getLeadsPage(
+      deliveryStatus: deliveryStatus,
+      outcomeStatus: outcomeStatus,
+      search: search,
+    );
+    return page.items;
+  }
+
+  Future<AdvisorLeadPage> getLeadsPage({
+    int page = 1,
+    int size = 20,
+    String deliveryStatus = 'all',
+    String outcomeStatus = 'all',
+    String? search,
+  }) async {
     final query = Uri(
       queryParameters: {
-        'page': '1',
-        'size': '20',
+        'page': '$page',
+        'size': '$size',
         'delivery_status': deliveryStatus,
         'outcome_status': outcomeStatus,
         if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
@@ -82,13 +97,19 @@ class AdvisorRepository {
       throw AuthException.fromResponse(response.body, 'Unable to load leads.');
     }
     final data = decodeResponseObject(response.body, 'Unable to load leads.');
-    return (data['items'] as List? ?? [])
+    final items = (data['items'] as List? ?? [])
         .map(
           (item) => AdvisorLead.fromJson(
             requireResponseObject(item, 'Unable to load leads.'),
           ),
         )
         .toList();
+    return AdvisorLeadPage(
+      items: items,
+      total: data['total'] as int? ?? items.length,
+      page: data['page'] as int? ?? page,
+      size: data['size'] as int? ?? size,
+    );
   }
 
   Future<AdvisorLead> updateLeadOutcome({

@@ -8,9 +8,10 @@ import 'package:flutter_frontend/theme/app_components.dart';
 import 'package:flutter_frontend/theme/app_theme.dart';
 
 class LeadsScreen extends StatefulWidget {
-  const LeadsScreen({super.key, this.repository});
+  const LeadsScreen({super.key, this.repository, this.onLeadOutcomeUpdated});
 
   final AdvisorRepository? repository;
+  final VoidCallback? onLeadOutcomeUpdated;
 
   @override
   State<LeadsScreen> createState() => _LeadsScreenState();
@@ -20,23 +21,89 @@ class _LeadsScreenState extends State<LeadsScreen> {
   late final AdvisorRepository _repository =
       widget.repository ?? AdvisorRepository();
   final _searchController = TextEditingController();
+  final _scrollController = ScrollController();
   Timer? _searchDebounce;
   String _selectedOutcome = 'all';
   String _selectedDelivery = 'all';
-  late Future<List<AdvisorLead>> _future = _loadLeads();
+  static const _pageSize = 20;
+  late Future<AdvisorLeadPage> _future = _loadFirstPage();
+  final List<AdvisorLead> _leads = [];
+  int _total = 0;
+  int _nextPage = 2;
+  bool _loadingMore = false;
+  String? _loadMoreError;
 
-  Future<List<AdvisorLead>> _loadLeads() {
-    return _repository.getLeads(
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  Future<AdvisorLeadPage> _loadFirstPage() async {
+    final result = await _repository.getLeadsPage(
+      page: 1,
+      size: _pageSize,
       deliveryStatus: _selectedDelivery,
       outcomeStatus: _selectedOutcome,
       search: _searchController.text,
     );
+    if (mounted) {
+      setState(() {
+        _leads
+          ..clear()
+          ..addAll(result.items);
+        _total = result.total;
+        _nextPage = result.page + 1;
+        _loadMoreError = null;
+      });
+    }
+    return result;
   }
 
   void _refreshLeads() {
     setState(() {
-      _future = _loadLeads();
+      _leads.clear();
+      _total = 0;
+      _nextPage = 2;
+      _loadMoreError = null;
+      _future = _loadFirstPage();
     });
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients ||
+        _scrollController.position.extentAfter > 260) {
+      return;
+    }
+    unawaited(_loadMore());
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || _leads.length >= _total || _total == 0) return;
+    setState(() {
+      _loadingMore = true;
+      _loadMoreError = null;
+    });
+    try {
+      final result = await _repository.getLeadsPage(
+        page: _nextPage,
+        size: _pageSize,
+        deliveryStatus: _selectedDelivery,
+        outcomeStatus: _selectedOutcome,
+        search: _searchController.text,
+      );
+      if (!mounted) return;
+      final existingIds = _leads.map((lead) => lead.id).toSet();
+      setState(() {
+        _leads.addAll(result.items.where((lead) => existingIds.add(lead.id)));
+        _total = result.total;
+        _nextPage = result.page + 1;
+      });
+    } catch (error) {
+      if (mounted) setState(() => _loadMoreError = error.toString());
+    } finally {
+      if (mounted) setState(() => _loadingMore = false);
+    }
   }
 
   Future<void> _openLead(AdvisorLead lead) {
@@ -44,7 +111,10 @@ class _LeadsScreenState extends State<LeadsScreen> {
       context: context,
       lead: lead,
       repository: _repository,
-      onUpdated: (_) => _refreshLeads(),
+      onUpdated: (_) {
+        _refreshLeads();
+        widget.onLeadOutcomeUpdated?.call();
+      },
     );
   }
 
@@ -63,7 +133,10 @@ class _LeadsScreenState extends State<LeadsScreen> {
     if (!mounted || selected == null || selected == _selectedDelivery) return;
     setState(() {
       _selectedDelivery = selected;
-      _future = _loadLeads();
+      _leads.clear();
+      _total = 0;
+      _nextPage = 2;
+      _future = _loadFirstPage();
     });
   }
 
@@ -71,16 +144,20 @@ class _LeadsScreenState extends State<LeadsScreen> {
   void dispose() {
     _searchDebounce?.cancel();
     _searchController.dispose();
+    _scrollController
+      ..removeListener(_onScroll)
+      ..dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<AdvisorLead>>(
+    return FutureBuilder<AdvisorLeadPage>(
       future: _future,
       builder: (context, snapshot) {
-        final leads = snapshot.data ?? [];
+        final leads = _leads;
         return ListView(
+          controller: _scrollController,
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 112),
           children: [
             AppScreenHeader(
@@ -88,6 +165,11 @@ class _LeadsScreenState extends State<LeadsScreen> {
               title: 'Lead Inbox',
               subtitle: 'Prioritize conversations and move prospects forward.',
               icon: Icons.inbox_rounded,
+              trailing: IconButton.filledTonal(
+                tooltip: 'Refresh leads',
+                onPressed: _refreshLeads,
+                icon: const Icon(Icons.refresh_rounded),
+              ),
             ),
             const SizedBox(height: 10),
             _SearchField(
@@ -99,12 +181,15 @@ class _LeadsScreenState extends State<LeadsScreen> {
             const SizedBox(height: 9),
             _StatusFilters(
               selected: _selectedOutcome,
-              selectedCount: snapshot.hasData ? leads.length : null,
+              selectedCount: snapshot.hasData ? _total : null,
               onSelected: (value) {
                 if (_selectedOutcome == value) return;
                 setState(() {
                   _selectedOutcome = value;
-                  _future = _loadLeads();
+                  _leads.clear();
+                  _total = 0;
+                  _nextPage = 2;
+                  _future = _loadFirstPage();
                 });
               },
             ),
@@ -124,9 +209,7 @@ class _LeadsScreenState extends State<LeadsScreen> {
                       Text(snapshot.error.toString()),
                       const SizedBox(height: 12),
                       OutlinedButton.icon(
-                        onPressed: () => setState(() {
-                          _future = _loadLeads();
-                        }),
+                        onPressed: _refreshLeads,
                         icon: const Icon(Icons.wifi_protected_setup_rounded),
                         label: Text(
                           snapshot.error.toString().toLowerCase().contains(
@@ -162,6 +245,22 @@ class _LeadsScreenState extends State<LeadsScreen> {
                         Divider(height: 1, color: context.appOutline),
                     ],
                   ],
+                ),
+              ),
+            if (_loadingMore)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 18),
+                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              )
+            else if (_loadMoreError != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Center(
+                  child: TextButton.icon(
+                    onPressed: _loadMore,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Retry loading more leads'),
+                  ),
                 ),
               ),
           ],

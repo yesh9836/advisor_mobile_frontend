@@ -23,6 +23,10 @@ class AdvisorShell extends StatefulWidget {
 class _AdvisorShellState extends State<AdvisorShell> {
   late int _selectedIndex = widget.initialIndex.clamp(0, 4);
   late final List<Widget?> _screens;
+  late final PageController _pageController = PageController(
+    initialPage: _selectedIndex,
+  );
+  final ValueNotifier<int> _outcomeRevision = ValueNotifier<int>(0);
 
   @override
   void initState() {
@@ -33,12 +37,16 @@ class _AdvisorShellState extends State<AdvisorShell> {
 
   Widget _createScreen(int index) => switch (index) {
     0 => AdvisorDashboardScreen(
-      onBuyLeads: () => _selectTab(2),
+      onBuyLeads: () => _openBuyPage(),
       onViewInbox: () => _selectTab(3),
+      onLeadOutcomeUpdated: _notifyOutcomeUpdated,
     ),
-    1 => GoalsScreen(onSeeAllPackages: () => _selectTab(2)),
+    1 => GoalsScreen(
+      onSeeAllPackages: _openBuyPage,
+      outcomeRevision: _outcomeRevision,
+    ),
     2 => const SubscriptionScreen(),
-    3 => const LeadsScreen(),
+    3 => LeadsScreen(onLeadOutcomeUpdated: _notifyOutcomeUpdated),
     4 => const ProfileScreen(),
     _ => const SizedBox.shrink(),
   };
@@ -49,6 +57,31 @@ class _AdvisorShellState extends State<AdvisorShell> {
       _screens[index] ??= _createScreen(index);
       _selectedIndex = index;
     });
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _openBuyPage([int? packageId]) {
+    if (packageId != null) {
+      setState(() {
+        _screens[2] = SubscriptionScreen(initialPackageId: packageId);
+      });
+    }
+    _selectTab(2);
+  }
+
+  void _notifyOutcomeUpdated() {
+    _outcomeRevision.value++;
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    _outcomeRevision.dispose();
+    super.dispose();
   }
 
   @override
@@ -69,12 +102,18 @@ class _AdvisorShellState extends State<AdvisorShell> {
               ),
             ),
             child: SafeArea(
-              child: IndexedStack(
-                index: _selectedIndex,
-                children: [
-                  for (final screen in _screens)
-                    screen ?? const SizedBox.shrink(),
-                ],
+              child: PageView.builder(
+                controller: _pageController,
+                itemCount: _screens.length,
+                onPageChanged: (index) {
+                  if (_selectedIndex == index) return;
+                  setState(() {
+                    _screens[index] ??= _createScreen(index);
+                    _selectedIndex = index;
+                  });
+                },
+                itemBuilder: (context, index) =>
+                    _screens[index] ??= _createScreen(index),
               ),
             ),
           ),
@@ -84,7 +123,7 @@ class _AdvisorShellState extends State<AdvisorShell> {
             bottom: 0,
             child: IgnorePointer(
               child: SizedBox(
-                height: 94 + MediaQuery.viewPaddingOf(context).bottom,
+                height: 142 + MediaQuery.viewPaddingOf(context).bottom,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -92,11 +131,12 @@ class _AdvisorShellState extends State<AdvisorShell> {
                       end: Alignment.bottomCenter,
                       colors: [
                         context.appCanvas.withValues(alpha: 0),
-                        context.appCanvas.withValues(alpha: .1),
-                        context.appCanvas.withValues(alpha: .48),
-                        context.appCanvas.withValues(alpha: .82),
+                        context.appCanvas.withValues(alpha: .08),
+                        context.appCanvas.withValues(alpha: .34),
+                        context.appCanvas.withValues(alpha: .72),
+                        context.appCanvas,
                       ],
-                      stops: const [0, .28, .68, 1],
+                      stops: const [0, .22, .5, .76, 1],
                     ),
                   ),
                 ),
@@ -259,11 +299,16 @@ class _AdvisorNavigationButton extends StatelessWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  _NavigationGlyph(
-                    item: item,
-                    selected: selected,
-                    accent: accent,
-                    idleColor: idleColor,
+                  AnimatedScale(
+                    duration: const Duration(milliseconds: 230),
+                    curve: Curves.easeOutBack,
+                    scale: selected ? 1.09 : 1,
+                    child: _NavigationGlyph(
+                      item: item,
+                      selected: selected,
+                      accent: accent,
+                      idleColor: idleColor,
+                    ),
                   ),
                   const SizedBox(height: 3),
                   Text(
@@ -432,12 +477,14 @@ class AdvisorDashboardScreen extends StatefulWidget {
     required this.onViewInbox,
     this.repository,
     this.authRepository,
+    this.onLeadOutcomeUpdated,
   });
 
   final VoidCallback onBuyLeads;
   final VoidCallback onViewInbox;
   final AdvisorRepository? repository;
   final AuthRepository? authRepository;
+  final VoidCallback? onLeadOutcomeUpdated;
 
   @override
   State<AdvisorDashboardScreen> createState() => _AdvisorDashboardScreenState();
@@ -528,6 +575,7 @@ class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
       lead: lead,
       repository: _repository,
       onUpdated: (_) {
+        widget.onLeadOutcomeUpdated?.call();
         setState(() {
           _future = _load();
         });
@@ -552,7 +600,7 @@ class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
                 onRetry: _retryLoad,
               )
             else ...[
-              _HomeHeader(user: data!.user, summary: data.summary),
+              _HomeHeader(user: data!.user, onRefresh: _retryLoad),
               const SizedBox(height: 12),
               Container(
                 decoration: BoxDecoration(
@@ -696,62 +744,10 @@ class _DashboardData {
 }
 
 class _HomeHeader extends StatelessWidget {
-  const _HomeHeader({required this.user, required this.summary});
+  const _HomeHeader({required this.user, required this.onRefresh});
 
   final UserProfile user;
-  final LeadDashboardSummary summary;
-
-  void _showNotificationSheet(BuildContext context) {
-    final hasNotificationsEnabled =
-        summary.emailAlertsEnabled || summary.smsAlertsEnabled;
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Lead notifications',
-                style: TextStyle(
-                  color: context.appInk,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Delivery alerts for your new leads.',
-                style: TextStyle(color: context.appMuted),
-              ),
-              const SizedBox(height: 18),
-              _NotificationStatusRow(
-                icon: Icons.mail_outline,
-                label: 'Email alerts',
-                enabled: summary.emailAlertsEnabled,
-              ),
-              const SizedBox(height: 12),
-              _NotificationStatusRow(
-                icon: Icons.sms_outlined,
-                label: 'SMS alerts',
-                enabled: summary.smsAlertsEnabled,
-              ),
-              if (!hasNotificationsEnabled) ...[
-                const SizedBox(height: 16),
-                const Text(
-                  'Turn on an alert channel so new lead deliveries do not go unnoticed.',
-                  style: TextStyle(color: Color(0xFFB45309), height: 1.35),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  final VoidCallback onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -765,7 +761,7 @@ class _HomeHeader extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Good morning,',
+                    '${_greetingFor(DateTime.now())},',
                     style: TextStyle(
                       color: context.appMuted,
                       fontSize: 13,
@@ -787,28 +783,10 @@ class _HomeHeader extends StatelessWidget {
                 ],
               ),
             ),
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                _CircleIconButton(
-                  icon: Icons.notifications_none,
-                  semanticLabel: 'Open notification settings',
-                  onPressed: () => _showNotificationSheet(context),
-                ),
-                if (!summary.emailAlertsEnabled && !summary.smsAlertsEnabled)
-                  Positioned(
-                    right: 5,
-                    top: 5,
-                    child: Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFEF4444),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ),
-              ],
+            _CircleIconButton(
+              icon: Icons.refresh_rounded,
+              semanticLabel: 'Refresh Home',
+              onPressed: onRefresh,
             ),
             const SizedBox(width: 8),
             const AppThemeToggleButton(),
@@ -817,6 +795,14 @@ class _HomeHeader extends StatelessWidget {
       ],
     );
   }
+}
+
+String _greetingFor(DateTime localTime) {
+  final hour = localTime.hour;
+  if (hour >= 5 && hour < 12) return 'Good morning';
+  if (hour >= 12 && hour < 17) return 'Good afternoon';
+  if (hour >= 17 && hour < 22) return 'Good evening';
+  return 'Good night';
 }
 
 class _CircleIconButton extends StatelessWidget {
@@ -859,42 +845,6 @@ class _CircleIconButton extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _NotificationStatusRow extends StatelessWidget {
-  const _NotificationStatusRow({
-    required this.icon,
-    required this.label,
-    required this.enabled,
-  });
-
-  final IconData icon;
-  final String label;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = enabled ? const Color(0xFF16A34A) : const Color(0xFF607987);
-    return Row(
-      children: [
-        Icon(icon, color: const Color(0xFF18A0B8)),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            label,
-            style: TextStyle(
-              color: context.appInk,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ),
-        Text(
-          enabled ? 'On' : 'Off',
-          style: TextStyle(color: color, fontWeight: FontWeight.w900),
-        ),
-      ],
     );
   }
 }

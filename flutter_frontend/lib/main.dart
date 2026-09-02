@@ -48,6 +48,7 @@ class _SpectaculeadsAppState extends State<SpectaculeadsApp> {
           themeAnimationCurve: Curves.easeInOutCubic,
           builder: (context, child) => _ThemeFlowTransition(
             isDark: _themeController.isDark,
+            origin: _themeController.transitionOrigin,
             child: child ?? const SizedBox.shrink(),
           ),
           home: SessionBootstrap(authRepository: widget.authRepository),
@@ -58,9 +59,14 @@ class _SpectaculeadsAppState extends State<SpectaculeadsApp> {
 }
 
 class _ThemeFlowTransition extends StatefulWidget {
-  const _ThemeFlowTransition({required this.isDark, required this.child});
+  const _ThemeFlowTransition({
+    required this.isDark,
+    required this.origin,
+    required this.child,
+  });
 
   final bool isDark;
+  final Offset? origin;
   final Widget child;
 
   @override
@@ -105,51 +111,23 @@ class _ThemeFlowTransitionState extends State<_ThemeFlowTransition>
                 final progress = Curves.easeInOutCubic.transform(
                   _controller.value,
                 );
-                final waveOpacity =
-                    (1 - (progress * 2 - 1).abs()).clamp(0.0, 1.0) *
-                    (widget.isDark ? .34 : .44);
-
                 return LayoutBuilder(
                   builder: (context, constraints) {
-                    final travel = constraints.maxWidth * 1.85;
-                    final start = widget.isDark ? travel * .58 : -travel * .58;
-                    final end = -start;
-                    final offset = start + ((end - start) * progress);
-
-                    return Transform.translate(
-                      offset: Offset(offset, 0),
-                      child: Opacity(
-                        key: const ValueKey('theme-flow-overlay'),
-                        opacity: waveOpacity,
-                        child: Align(
-                          alignment: Alignment.center,
-                          child: FractionallySizedBox(
-                            widthFactor: 1.15,
-                            heightFactor: 1,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.centerLeft,
-                                  end: Alignment.centerRight,
-                                  colors: widget.isDark
-                                      ? const [
-                                          Colors.transparent,
-                                          Color(0xFF071015),
-                                          Color(0xFF0D7788),
-                                          Colors.transparent,
-                                        ]
-                                      : const [
-                                          Colors.transparent,
-                                          Color(0xFFFFD66B),
-                                          Colors.white,
-                                          Colors.transparent,
-                                        ],
-                                  stops: const [0, .32, .68, 1],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
+                    final origin =
+                        widget.origin ?? Offset(constraints.maxWidth - 34, 72);
+                    final maxRadius = _furthestCornerDistance(
+                      origin,
+                      Size(constraints.maxWidth, constraints.maxHeight),
+                    );
+                    return CustomPaint(
+                      key: const ValueKey('theme-flow-overlay'),
+                      painter: _ThemeFlowPainter(
+                        origin: origin,
+                        radius: maxRadius * progress,
+                        color: widget.isDark
+                            ? const Color(0xFF050505)
+                            : const Color(0xFFFFFBF0),
+                        opacity: (1 - progress) * .42,
                       ),
                     );
                   },
@@ -161,6 +139,45 @@ class _ThemeFlowTransitionState extends State<_ThemeFlowTransition>
       ],
     );
   }
+}
+
+double _furthestCornerDistance(Offset origin, Size size) {
+  return [
+    Offset.zero,
+    Offset(size.width, 0),
+    Offset(0, size.height),
+    Offset(size.width, size.height),
+  ].map((corner) => (corner - origin).distance).reduce((a, b) => a > b ? a : b);
+}
+
+class _ThemeFlowPainter extends CustomPainter {
+  const _ThemeFlowPainter({
+    required this.origin,
+    required this.radius,
+    required this.color,
+    required this.opacity,
+  });
+
+  final Offset origin;
+  final double radius;
+  final Color color;
+  final double opacity;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (radius <= 0 || opacity <= 0) return;
+    canvas.drawCircle(
+      origin,
+      radius,
+      Paint()..color = color.withValues(alpha: opacity),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _ThemeFlowPainter oldDelegate) =>
+      oldDelegate.radius != radius ||
+      oldDelegate.color != color ||
+      oldDelegate.origin != origin;
 }
 
 class SessionBootstrap extends StatefulWidget {

@@ -138,30 +138,18 @@ class _NotificationPreferencesSheetState
               ),
             )
           else ...[
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              secondary: const Icon(
-                Icons.mail_outline,
-                color: Color(0xFF18A0B8),
-              ),
-              title: const Text('Email alerts'),
-              subtitle: const Text('Receive lead delivery updates by email.'),
+            _NotificationPreferenceRow(
+              icon: Icons.mail_outline,
+              label: 'Email Alerts',
               value: _emailEnabled,
               onChanged: _saving
                   ? null
                   : (value) => setState(() => _emailEnabled = value),
             ),
             const Divider(),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              secondary: const Icon(
-                Icons.sms_outlined,
-                color: Color(0xFF18A0B8),
-              ),
-              title: const Text('SMS alerts'),
-              subtitle: const Text(
-                'Receive lead delivery updates by text message.',
-              ),
+            _NotificationPreferenceRow(
+              icon: Icons.sms_outlined,
+              label: 'SMS Alerts',
               value: _smsEnabled,
               onChanged: _saving
                   ? null
@@ -192,6 +180,117 @@ class _NotificationPreferencesSheetState
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _NotificationPreferenceRow extends StatelessWidget {
+  const _NotificationPreferenceRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onChanged == null ? null : () => onChanged!(!value),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: const Color(0xFF18A0B8).withValues(alpha: .1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: const Color(0xFF18A0B8), size: 18),
+            ),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: context.appInk,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            _PreferenceToggle(value: value, onChanged: onChanged),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PreferenceToggle extends StatelessWidget {
+  const _PreferenceToggle({required this.value, required this.onChanged});
+
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      toggled: value,
+      label: 'Toggle notification preference',
+      child: GestureDetector(
+        onTap: onChanged == null ? null : () => onChanged!(!value),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          width: 50,
+          height: 24,
+          padding: const EdgeInsets.all(2),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: value
+                  ? const [Color(0xFF76DD78), Color(0xFF28B75A)]
+                  : const [Color(0xFFFF8A9A), Color(0xFFEF536B)],
+            ),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              AnimatedAlign(
+                duration: const Duration(milliseconds: 200),
+                alignment: value ? Alignment.centerLeft : Alignment.centerRight,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 7),
+                  child: Icon(
+                    value ? Icons.check_rounded : Icons.close_rounded,
+                    size: 14,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              AnimatedAlign(
+                duration: const Duration(milliseconds: 200),
+                alignment: value ? Alignment.centerRight : Alignment.centerLeft,
+                child: Container(
+                  width: 19,
+                  height: 19,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

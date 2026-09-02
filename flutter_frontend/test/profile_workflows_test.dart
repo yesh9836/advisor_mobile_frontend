@@ -234,8 +234,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Email alerts'));
-    await tester.tap(find.text('SMS alerts'));
+    await tester.tap(find.text('Email Alerts'));
+    await tester.tap(find.text('SMS Alerts'));
     await tester.tap(find.widgetWithText(FilledButton, 'Save preferences'));
     await tester.pumpAndSettle();
 

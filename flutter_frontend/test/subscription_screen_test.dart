@@ -6,6 +6,22 @@ import 'package:flutter_frontend/repositories/advisor_repository.dart';
 import 'package:flutter_frontend/screens/advisor/subscription_screen.dart';
 
 void main() {
+  testWidgets('preselects a package opened from Goals', (tester) async {
+    final repository = _FakeAdvisorRepository();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SubscriptionScreen(repository: repository, initialPackageId: 7),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Continue to checkout'), findsOneWidget);
+    expect(find.byIcon(Icons.check_circle), findsOneWidget);
+  });
+
   testWidgets('saves selected package and target states before checkout', (
     tester,
   ) async {

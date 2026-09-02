@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 
 class AppThemeController extends ChangeNotifier {
   ThemeMode _mode = ThemeMode.light;
+  Offset? _transitionOrigin;
 
   ThemeMode get mode => _mode;
   bool get isDark => _mode == ThemeMode.dark;
+  Offset? get transitionOrigin => _transitionOrigin;
 
-  void toggle() {
+  void toggle({Offset? origin}) {
+    _transitionOrigin = origin;
     _mode = isDark ? ThemeMode.light : ThemeMode.dark;
     notifyListeners();
   }
@@ -48,7 +51,11 @@ class AppThemeToggleButton extends StatelessWidget {
         color: colors.surface,
         shape: const CircleBorder(),
         child: InkWell(
-          onTap: controller.toggle,
+          onTap: () {
+            final box = context.findRenderObject() as RenderBox?;
+            final origin = box?.localToGlobal(box.size.center(Offset.zero));
+            controller.toggle(origin: origin);
+          },
           customBorder: const CircleBorder(),
           child: Container(
             width: 38,

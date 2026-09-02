@@ -5,6 +5,34 @@ import 'package:flutter_frontend/repositories/advisor_repository.dart';
 import 'package:flutter_frontend/screens/advisor/goals_screen.dart';
 
 void main() {
+  testWidgets('refreshes conversion success after a lead outcome changes', (
+    tester,
+  ) async {
+    final revision = ValueNotifier<int>(0);
+    addTearDown(revision.dispose);
+    final repository = _RefreshingGoalRepository();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GoalsScreen(
+            repository: repository,
+            outcomeRevision: revision,
+            onSeeAllPackages: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('20%'), findsOneWidget);
+    revision.value++;
+    await tester.pumpAndSettle();
+
+    expect(find.text('50%'), findsOneWidget);
+    expect(repository.loadCount, 2);
+  });
+
   testWidgets('saves an edited monthly goal and refreshes goal metrics', (
     tester,
   ) async {
@@ -13,7 +41,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: GoalsScreen(repository: repository, onSeeAllPackages: () {}),
+          body: GoalsScreen(repository: repository, onSeeAllPackages: (_) {}),
         ),
       ),
     );
@@ -56,6 +84,8 @@ void main() {
     );
     expect(find.text('12 leads recommended per month'), findsOneWidget);
 
+    await tester.drag(find.byType(ListView).first, const Offset(0, 520));
+    await tester.pumpAndSettle();
     final monthlyGoalField = find.byType(TextField);
     await tester.ensureVisible(monthlyGoalField);
     final title = find.text('Adjust Monthly Goal');
@@ -71,7 +101,10 @@ void main() {
     expect(tester.getSize(title), titleSizeBeforeEditing);
     expect(tester.getSize(buttonBox), buttonSizeBeforeEditing);
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    final saveButton = find.widgetWithText(FilledButton, 'Save');
+    await tester.ensureVisible(saveButton);
+    await tester.pumpAndSettle();
+    await tester.tap(saveButton);
     await tester.pumpAndSettle();
 
     expect(repository.savedMonthlyGoalCents, 250000);
@@ -88,19 +121,21 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: GoalsScreen(repository: repository, onSeeAllPackages: () {}),
+          body: GoalsScreen(repository: repository, onSeeAllPackages: (_) {}),
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    await tester.drag(find.byType(ListView).first, const Offset(0, -600));
+    await tester.drag(find.byType(ListView).first, const Offset(0, -260));
     await tester.pumpAndSettle();
-
     final monthlyGoalField = find.byType(TextField);
     await tester.ensureVisible(monthlyGoalField);
     await tester.enterText(monthlyGoalField, '0');
-    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    final saveButton = find.widgetWithText(FilledButton, 'Save');
+    await tester.ensureVisible(saveButton);
+    await tester.pumpAndSettle();
+    await tester.tap(saveButton);
     await tester.pump();
 
     expect(
@@ -132,7 +167,23 @@ class _FakeAdvisorRepository extends AdvisorRepository {
   }
 }
 
-GoalSnapshot _goal({required int annualGoalCents}) {
+class _RefreshingGoalRepository extends AdvisorRepository {
+  int loadCount = 0;
+
+  @override
+  Future<GoalSnapshot> getGoal() async {
+    loadCount++;
+    return _goal(
+      annualGoalCents: 1200000,
+      currentSuccessRateBps: loadCount == 1 ? 2000 : 5000,
+    );
+  }
+}
+
+GoalSnapshot _goal({
+  required int annualGoalCents,
+  int currentSuccessRateBps = 2500,
+}) {
   return GoalSnapshot(
     targetYear: 2026,
     earnedYtdCents: 300000,
@@ -151,7 +202,7 @@ GoalSnapshot _goal({required int annualGoalCents}) {
     contactedLeadsYtd: 10,
     appointmentsSetYtd: 2,
     reachedLeadsYtd: 16,
-    currentSuccessRateBps: 2500,
+    currentSuccessRateBps: currentSuccessRateBps,
     recommendedMonthlyLeads: 12,
     pacingStatus: 'behind',
     pacingMessage: 'Increase your monthly lead pace.',

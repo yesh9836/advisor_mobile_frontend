@@ -141,7 +141,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         return ListView(
           padding: const EdgeInsets.fromLTRB(14, 10, 14, 112),
           children: [
-            _ProfileHeader(user: data.user, licenses: data.licenses),
+            _ProfileHeader(
+              user: data.user,
+              licenses: data.licenses,
+              onRefresh: _refreshProfile,
+            ),
             const SizedBox(height: 9),
             _ContactInfo(user: data.user),
             const SizedBox(height: 9),
@@ -171,10 +175,15 @@ class _ProfileData {
 }
 
 class _ProfileHeader extends StatelessWidget {
-  const _ProfileHeader({required this.user, required this.licenses});
+  const _ProfileHeader({
+    required this.user,
+    required this.licenses,
+    required this.onRefresh,
+  });
 
   final UserProfile user;
   final List<AdvisorLicense> licenses;
+  final VoidCallback onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -243,6 +252,11 @@ class _ProfileHeader extends StatelessWidget {
                 ],
               ),
             ),
+            IconButton.filledTonal(
+              tooltip: 'Refresh profile',
+              onPressed: onRefresh,
+              icon: const Icon(Icons.refresh_rounded),
+            ),
           ],
         ),
         const SizedBox(height: 10),
@@ -309,36 +323,45 @@ class _AppearanceSettings extends StatelessWidget {
               ],
             ),
           ),
-          Semantics(
-            label: 'Dark theme',
-            toggled: isDark,
-            child: Switch(
-              value: isDark,
-              onChanged: controller == null
-                  ? null
-                  : (value) {
-                      if (value != controller.isDark) controller.toggle();
-                    },
-              thumbIcon: WidgetStateProperty.resolveWith(
-                (states) => Icon(
-                  states.contains(WidgetState.selected)
-                      ? Icons.nightlight_round
-                      : Icons.wb_sunny_rounded,
-                  size: 13,
+          Builder(
+            builder: (toggleContext) => Semantics(
+              label: 'Dark theme',
+              toggled: isDark,
+              child: Switch(
+                value: isDark,
+                onChanged: controller == null
+                    ? null
+                    : (value) {
+                        if (value == controller.isDark) return;
+                        final box =
+                            toggleContext.findRenderObject() as RenderBox?;
+                        controller.toggle(
+                          origin: box?.localToGlobal(
+                            box.size.center(Offset.zero),
+                          ),
+                        );
+                      },
+                thumbIcon: WidgetStateProperty.resolveWith(
+                  (states) => Icon(
+                    states.contains(WidgetState.selected)
+                        ? Icons.nightlight_round
+                        : Icons.wb_sunny_rounded,
+                    size: 13,
+                  ),
                 ),
-              ),
-              thumbColor: WidgetStateProperty.resolveWith(
-                (states) => states.contains(WidgetState.selected)
-                    ? const Color(0xFFEEEAFE)
-                    : Colors.white,
-              ),
-              trackColor: WidgetStateProperty.resolveWith(
-                (states) => states.contains(WidgetState.selected)
-                    ? const Color(0xFF6755CC)
-                    : const Color(0xFFFFB020),
-              ),
-              trackOutlineColor: const WidgetStatePropertyAll(
-                Colors.transparent,
+                thumbColor: WidgetStateProperty.resolveWith(
+                  (states) => states.contains(WidgetState.selected)
+                      ? const Color(0xFFEEEAFE)
+                      : Colors.white,
+                ),
+                trackColor: WidgetStateProperty.resolveWith(
+                  (states) => states.contains(WidgetState.selected)
+                      ? const Color(0xFF6755CC)
+                      : const Color(0xFFFFB020),
+                ),
+                trackOutlineColor: const WidgetStatePropertyAll(
+                  Colors.transparent,
+                ),
               ),
             ),
           ),

@@ -48,9 +48,6 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.drag(find.byType(ListView), const Offset(0, -700));
-    await tester.pumpAndSettle();
-
     await tester.tap(find.byType(DropdownButtonFormField<String>));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Appointment Set').last);
@@ -135,6 +132,15 @@ class _FakeLeadRepository extends AdvisorRepository {
     String outcomeStatus = 'all',
     String? search,
   }) async => [lead];
+
+  @override
+  Future<AdvisorLeadPage> getLeadsPage({
+    int page = 1,
+    int size = 20,
+    String deliveryStatus = 'all',
+    String outcomeStatus = 'all',
+    String? search,
+  }) async => AdvisorLeadPage(items: [lead], total: 1, page: page, size: size);
 
   @override
   Future<AdvisorLead> updateLeadOutcome({

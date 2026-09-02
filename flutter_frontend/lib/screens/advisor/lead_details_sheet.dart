@@ -163,6 +163,24 @@ class _LeadDetailsSheetState extends State<LeadDetailsSheet> {
           statusLabel: _statuses[_status] ?? 'New Lead',
           statusColor: _outcomeColor(_status),
           onClose: () => Navigator.of(context).pop(),
+          updatePanel: _canUpdate
+              ? _LeadUpdatePanel(
+                  embedded: true,
+                  statuses: _statuses,
+                  status: _status,
+                  notesController: _notesController,
+                  saving: _saving,
+                  error: _error,
+                  success: _success,
+                  onStatusChanged: (value) {
+                    setState(() {
+                      _status = value;
+                      _success = null;
+                    });
+                  },
+                  onSave: _status == null ? null : _save,
+                )
+              : null,
         ),
         const SizedBox(height: 14),
         if (!_canUpdate)
@@ -270,22 +288,6 @@ class _LeadDetailsSheetState extends State<LeadDetailsSheet> {
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          _LeadUpdatePanel(
-            statuses: _statuses,
-            status: _status,
-            notesController: _notesController,
-            saving: _saving,
-            error: _error,
-            success: _success,
-            onStatusChanged: (value) {
-              setState(() {
-                _status = value;
-                _success = null;
-              });
-            },
-            onSave: _status == null ? null : _save,
-          ),
         ],
       ],
     );
@@ -299,6 +301,7 @@ class _LeadHero extends StatelessWidget {
     required this.statusLabel,
     required this.statusColor,
     required this.onClose,
+    this.updatePanel,
   });
 
   final AdvisorLead lead;
@@ -306,6 +309,7 @@ class _LeadHero extends StatelessWidget {
   final String statusLabel;
   final Color statusColor;
   final VoidCallback onClose;
+  final Widget? updatePanel;
 
   @override
   Widget build(BuildContext context) {
@@ -428,6 +432,11 @@ class _LeadHero extends StatelessWidget {
               ),
             ],
           ),
+          if (updatePanel != null) ...[
+            const SizedBox(height: 14),
+            Divider(height: 1, color: context.appOutline),
+            updatePanel!,
+          ],
         ],
       ),
     );
@@ -823,6 +832,7 @@ class _SnapshotRow extends StatelessWidget {
 
 class _LeadUpdatePanel extends StatelessWidget {
   const _LeadUpdatePanel({
+    this.embedded = false,
     required this.statuses,
     required this.status,
     required this.notesController,
@@ -833,6 +843,7 @@ class _LeadUpdatePanel extends StatelessWidget {
     required this.onSave,
   });
 
+  final bool embedded;
   final Map<String, String> statuses;
   final String? status;
   final TextEditingController notesController;
@@ -845,12 +856,17 @@ class _LeadUpdatePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(
+        embedded ? 0 : 16,
+        16,
+        embedded ? 0 : 16,
+        embedded ? 0 : 16,
+      ),
       decoration: BoxDecoration(
-        color: context.appSurface,
+        color: embedded ? Colors.transparent : context.appSurface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: context.appOutline),
-        boxShadow: context.appCardShadows,
+        border: embedded ? null : Border.all(color: context.appOutline),
+        boxShadow: embedded ? null : context.appCardShadows,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -894,6 +910,7 @@ class _LeadUpdatePanel extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           DropdownButtonFormField<String>(
+            isExpanded: true,
             initialValue: status,
             decoration: const InputDecoration(
               labelText: 'Lead status',
