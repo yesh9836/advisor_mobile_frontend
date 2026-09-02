@@ -137,6 +137,26 @@ class _LeadDetailsSheetState extends State<LeadDetailsSheet> {
     }
   }
 
+  Future<void> _messageLead() async {
+    final phone = _text(_lead.mobilePhone);
+    if (phone == null) return;
+    try {
+      final opened = await launchUrl(
+        Uri(scheme: 'sms', path: phone),
+        mode: LaunchMode.externalApplication,
+      );
+      if (opened || !mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to open the messaging app.')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to open the messaging app.')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListView(
@@ -200,6 +220,7 @@ class _LeadDetailsSheetState extends State<LeadDetailsSheet> {
             preferredFollowUp: _lead.preferredFollowUpMethod,
             bestTimeToReach: _lead.bestTimeToReach,
             onCall: _callLead,
+            onMessage: _messageLead,
           ),
           const SizedBox(height: 12),
           _DetailsSection(
@@ -339,7 +360,7 @@ class _LeadHero extends StatelessWidget {
                   style: TextStyle(
                     color: context.appMuted,
                     fontSize: 11,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                     letterSpacing: 1.2,
                   ),
                 ),
@@ -381,7 +402,7 @@ class _LeadHero extends StatelessWidget {
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 16,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
@@ -397,7 +418,7 @@ class _LeadHero extends StatelessWidget {
                       style: TextStyle(
                         color: context.appInk,
                         fontSize: 20,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w700,
                         letterSpacing: -.4,
                       ),
                     ),
@@ -478,7 +499,7 @@ class _HeroPill extends StatelessWidget {
             style: TextStyle(
               color: color,
               fontSize: 11,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -493,12 +514,14 @@ class _ContactSection extends StatelessWidget {
     required this.preferredFollowUp,
     required this.bestTimeToReach,
     required this.onCall,
+    required this.onMessage,
   });
 
   final String? phone;
   final String? preferredFollowUp;
   final String? bestTimeToReach;
   final VoidCallback onCall;
+  final VoidCallback onMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -539,7 +562,7 @@ class _ContactSection extends StatelessWidget {
                       style: TextStyle(
                         color: context.appInk,
                         fontSize: 16,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                     Text(
@@ -581,7 +604,7 @@ class _ContactSection extends StatelessWidget {
                               style: TextStyle(
                                 color: context.appMuted,
                                 fontSize: 9,
-                                fontWeight: FontWeight.w900,
+                                fontWeight: FontWeight.w700,
                                 letterSpacing: .7,
                               ),
                             ),
@@ -596,7 +619,7 @@ class _ContactSection extends StatelessWidget {
                                 style: const TextStyle(
                                   color: Color(0xFF1687C8),
                                   fontSize: 17,
-                                  fontWeight: FontWeight.w900,
+                                  fontWeight: FontWeight.w700,
                                   decoration: TextDecoration.underline,
                                   decorationColor: Color(0xFF1687C8),
                                 ),
@@ -605,31 +628,50 @@ class _ContactSection extends StatelessWidget {
                           ],
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      SizedBox(
-                        width: 76,
-                        height: 40,
-                        child: FilledButton.icon(
-                          onPressed: onCall,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFF1687C8),
-                            minimumSize: Size.zero,
-                            maximumSize: const Size(76, 40),
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            visualDensity: VisualDensity.compact,
-                            padding: const EdgeInsets.symmetric(horizontal: 9),
-                          ),
-                          icon: const Icon(Icons.call_rounded, size: 16),
-                          label: const Text(
-                            'Call',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
               ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 38,
+                    child: FilledButton.icon(
+                      onPressed: onCall,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF1687C8),
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      icon: const Icon(Icons.call_rounded, size: 16),
+                      label: const Text('Call'),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: SizedBox(
+                    height: 38,
+                    child: OutlinedButton.icon(
+                      onPressed: onMessage,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF1687C8),
+                        side: const BorderSide(color: Color(0xFF1687C8)),
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      icon: const Icon(
+                        Icons.chat_bubble_outline_rounded,
+                        size: 16,
+                      ),
+                      label: const Text('Message'),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
           if (_text(preferredFollowUp) != null ||
@@ -703,7 +745,7 @@ class _ContactMeta extends StatelessWidget {
                   style: TextStyle(
                     color: context.appInk,
                     fontSize: 11.5,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
@@ -788,7 +830,7 @@ class _LeadUpdatePanel extends StatelessWidget {
                         style: TextStyle(
                           color: context.appInk,
                           fontSize: 17,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                       Text(
@@ -803,25 +845,32 @@ class _LeadUpdatePanel extends StatelessWidget {
           SizedBox(height: embedded ? 0 : 14),
           DropdownButtonFormField<String>(
             isExpanded: true,
+            isDense: true,
             initialValue: status,
             iconEnabledColor: statusColor,
             decoration: InputDecoration(
               labelText: 'Lead status',
               labelStyle: TextStyle(
                 color: statusColor,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w600,
               ),
               prefixIcon: Icon(Icons.flag_outlined, color: statusColor),
+              prefixIconConstraints: const BoxConstraints(minWidth: 38),
               filled: true,
               fillColor: statusColor.withValues(alpha: .09),
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 11,
+                vertical: 9,
+              ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide(
                   color: statusColor.withValues(alpha: .38),
                 ),
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide(color: statusColor, width: 1.5),
               ),
             ),
@@ -842,7 +891,7 @@ class _LeadUpdatePanel extends StatelessWidget {
                           entry.value,
                           style: TextStyle(
                             color: _outcomeColor(entry.key),
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ],
@@ -877,7 +926,7 @@ class _LeadUpdatePanel extends StatelessWidget {
                     style: TextStyle(
                       color: context.appMuted,
                       fontSize: 11,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
@@ -894,8 +943,8 @@ class _LeadUpdatePanel extends StatelessWidget {
               key: const Key('lead-notes-field'),
               controller: notesController,
               enabled: !saving,
-              minLines: embedded ? 2 : 3,
-              maxLines: embedded ? 3 : 6,
+              minLines: 2,
+              maxLines: embedded ? 3 : 5,
               maxLength: 2000,
               decoration: const InputDecoration(
                 hintText: 'Add call notes, appointment time, or objections.',
@@ -926,28 +975,38 @@ class _LeadUpdatePanel extends StatelessWidget {
                   success!,
                   style: const TextStyle(
                     color: Color(0xFF15803D),
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
             ),
           ],
-          SizedBox(height: embedded ? 8 : 11),
-          SizedBox(
-            width: double.infinity,
-            height: embedded ? 44 : 48,
-            child: FilledButton.icon(
-              onPressed: saving ? null : onSave,
-              icon: saving
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(Icons.save_outlined),
-              label: Text(saving ? 'Saving…' : 'Save lead update'),
+          SizedBox(height: embedded ? 5 : 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: SizedBox(
+              width: 148,
+              height: 38,
+              child: FilledButton.icon(
+                onPressed: saving ? null : onSave,
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                icon: saving
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.save_outlined, size: 16),
+                label: Text(
+                  saving ? 'Saving…' : 'Save update',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
             ),
           ),
         ],
@@ -1036,7 +1095,7 @@ class _DetailsSection extends StatelessWidget {
                   style: TextStyle(
                     color: context.appInk,
                     fontSize: 16,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
@@ -1077,7 +1136,7 @@ class _DetailsSection extends StatelessWidget {
                                   style: TextStyle(
                                     color: context.appMuted,
                                     fontSize: 9.5,
-                                    fontWeight: FontWeight.w800,
+                                    fontWeight: FontWeight.w600,
                                     letterSpacing: .5,
                                   ),
                                 ),
@@ -1093,7 +1152,7 @@ class _DetailsSection extends StatelessWidget {
                               color: context.appInk,
                               fontSize: 12.5,
                               height: 1.25,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ],

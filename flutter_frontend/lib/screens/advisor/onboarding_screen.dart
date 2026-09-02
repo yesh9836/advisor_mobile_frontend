@@ -339,7 +339,7 @@ class _OnboardingHeader extends StatelessWidget {
                   style: TextStyle(
                     color: context.appInk,
                     fontSize: 17,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
@@ -397,7 +397,7 @@ class _WelcomePage extends StatelessWidget {
           style: TextStyle(
             color: AppColors.cyan,
             fontSize: 10,
-            fontWeight: FontWeight.w900,
+            fontWeight: FontWeight.w700,
             letterSpacing: 1.4,
           ),
         ),
@@ -408,7 +408,7 @@ class _WelcomePage extends StatelessWidget {
             color: context.appInk,
             fontSize: 29,
             height: 1.05,
-            fontWeight: FontWeight.w900,
+            fontWeight: FontWeight.w700,
             letterSpacing: -0.8,
           ),
         ),
@@ -485,7 +485,7 @@ class _WelcomeStep extends StatelessWidget {
                   title,
                   style: TextStyle(
                     color: context.appInk,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
                 const SizedBox(height: 3),
@@ -501,7 +501,7 @@ class _WelcomeStep extends StatelessWidget {
             style: TextStyle(
               color: context.appOutline,
               fontSize: 19,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -628,7 +628,7 @@ class _QuestionPageState extends State<_QuestionPage> {
         text: _controller.text.isEmpty ? '0' : _controller.text,
         style: const TextStyle(
           fontSize: 34,
-          fontWeight: FontWeight.w900,
+          fontWeight: FontWeight.w700,
           letterSpacing: -1,
         ),
       ),
@@ -650,7 +650,7 @@ class _QuestionPageState extends State<_QuestionPage> {
           style: const TextStyle(
             color: AppColors.cyan,
             fontSize: 10,
-            fontWeight: FontWeight.w900,
+            fontWeight: FontWeight.w700,
             letterSpacing: 1.4,
           ),
         ),
@@ -661,7 +661,7 @@ class _QuestionPageState extends State<_QuestionPage> {
             color: context.appInk,
             fontSize: 25,
             height: 1.12,
-            fontWeight: FontWeight.w900,
+            fontWeight: FontWeight.w700,
             letterSpacing: -.5,
           ),
         ),
@@ -694,7 +694,7 @@ class _QuestionPageState extends State<_QuestionPage> {
                         style: const TextStyle(
                           color: AppColors.cyan,
                           fontSize: 30,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                       const SizedBox(width: 6),
@@ -716,7 +716,7 @@ class _QuestionPageState extends State<_QuestionPage> {
                         style: const TextStyle(
                           color: AppColors.cyan,
                           fontSize: 34,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                           letterSpacing: -1,
                         ),
                         decoration: const InputDecoration(
@@ -741,7 +741,7 @@ class _QuestionPageState extends State<_QuestionPage> {
                         style: const TextStyle(
                           color: AppColors.cyan,
                           fontSize: 27,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ],
@@ -822,7 +822,7 @@ class _ReviewPage extends StatelessWidget {
           style: TextStyle(
             color: AppColors.cyan,
             fontSize: 10,
-            fontWeight: FontWeight.w900,
+            fontWeight: FontWeight.w700,
             letterSpacing: 1.4,
           ),
         ),
@@ -832,7 +832,7 @@ class _ReviewPage extends StatelessWidget {
           style: TextStyle(
             color: context.appInk,
             fontSize: 25,
-            fontWeight: FontWeight.w900,
+            fontWeight: FontWeight.w700,
           ),
         ),
         const SizedBox(height: 10),
@@ -853,7 +853,7 @@ class _ReviewPage extends StatelessWidget {
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: .68),
                   fontSize: 10,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w600,
                   letterSpacing: 1,
                 ),
               ),
@@ -863,7 +863,7 @@ class _ReviewPage extends StatelessWidget {
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 30,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
               const SizedBox(height: 15),
@@ -910,7 +910,7 @@ class _ReviewPage extends StatelessWidget {
                 'Verification consent',
                 style: TextStyle(
                   color: context.appInk,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
               subtitle: Text(
@@ -946,7 +946,7 @@ class _PlanMetric extends StatelessWidget {
             style: const TextStyle(
               color: Colors.white,
               fontSize: 21,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w700,
             ),
           ),
           Text(
@@ -1030,7 +1030,7 @@ class _LicenseStatusCard extends StatelessWidget {
                   title,
                   style: TextStyle(
                     color: context.appInk,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
                 const SizedBox(height: 3),

@@ -78,7 +78,7 @@ class _AdvisorEntryScreenState extends State<AdvisorEntryScreen> {
                       style: TextStyle(
                         color: context.appInk,
                         fontSize: 18,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                     const SizedBox(height: 8),

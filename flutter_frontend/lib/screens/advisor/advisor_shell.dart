@@ -119,6 +119,7 @@ class _AdvisorShellState extends State<AdvisorShell> {
             child: SafeArea(
               child: PageView.builder(
                 controller: _pageController,
+                allowImplicitScrolling: true,
                 itemCount: _screens.length,
                 onPageChanged: (index) {
                   if (_selectedIndex == index) return;
@@ -127,8 +128,9 @@ class _AdvisorShellState extends State<AdvisorShell> {
                     _selectedIndex = index;
                   });
                 },
-                itemBuilder: (context, index) =>
-                    _screens[index] ??= _createScreen(index),
+                itemBuilder: (context, index) => RepaintBoundary(
+                  child: _screens[index] ??= _createScreen(index),
+                ),
               ),
             ),
           ),
@@ -344,7 +346,7 @@ class _AdvisorNavigationButton extends StatelessWidget {
                       color: displayColor,
                       fontSize: 9.5,
                       fontWeight: selectionProgress > .5
-                          ? FontWeight.w900
+                          ? FontWeight.w700
                           : FontWeight.w700,
                     ),
                   ),
@@ -699,7 +701,7 @@ class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
                       ),
                       textStyle: const TextStyle(
                         fontSize: 15,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),
@@ -815,7 +817,7 @@ class _HomeHeader extends StatelessWidget {
                     style: TextStyle(
                       color: context.appInk,
                       fontSize: 22,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w700,
                       letterSpacing: -0.5,
                     ),
                   ),
@@ -884,7 +886,7 @@ class _MetricCard extends StatelessWidget {
               style: TextStyle(
                 color: context.appInk,
                 fontSize: 19,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
               ),
             ),
             const SizedBox(height: 3),
@@ -895,7 +897,7 @@ class _MetricCard extends StatelessWidget {
               style: TextStyle(
                 color: context.appInk,
                 fontSize: 11,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
                 height: 1.15,
               ),
             ),
@@ -931,7 +933,7 @@ class _SectionHeader extends StatelessWidget {
             style: TextStyle(
               color: context.appInk,
               fontSize: 16,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ),
@@ -977,7 +979,7 @@ class _LeadTile extends StatelessWidget {
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 12,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
@@ -997,7 +999,7 @@ class _LeadTile extends StatelessWidget {
                             style: TextStyle(
                               color: context.appInk,
                               fontSize: 13.5,
-                              fontWeight: FontWeight.w900,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),
@@ -1041,7 +1043,7 @@ class _LeadTile extends StatelessWidget {
                             style: const TextStyle(
                               color: Color(0xFF18A0B8),
                               fontSize: 11.5,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
@@ -1093,7 +1095,7 @@ class _DeliverySettings extends StatelessWidget {
                   style: TextStyle(
                     color: context.appInk,
                     fontSize: 16,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
@@ -1191,7 +1193,7 @@ class _DeliverySettingsEditorState extends State<_DeliverySettingsEditor> {
               style: TextStyle(
                 color: context.appInk,
                 fontSize: 21,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
               ),
             ),
             const SizedBox(height: 6),
@@ -1296,7 +1298,7 @@ class _SettingRow extends StatelessWidget {
             label,
             style: TextStyle(
               color: context.appInk,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ),
@@ -1458,7 +1460,7 @@ class _MiniBadge extends StatelessWidget {
             style: TextStyle(
               color: foreground,
               fontSize: 10,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],

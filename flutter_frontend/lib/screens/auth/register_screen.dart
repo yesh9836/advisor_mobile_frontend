@@ -114,7 +114,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 24,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                       const SizedBox(height: 6),
@@ -341,7 +341,7 @@ class _RegisterPanel extends StatelessWidget {
                       )
                     : const Text(
                         'Create Account',
-                        style: TextStyle(fontWeight: FontWeight.w800),
+                        style: TextStyle(fontWeight: FontWeight.w600),
                       ),
               ),
               const SizedBox(height: 14),
@@ -364,7 +364,7 @@ class _RegisterPanel extends StatelessWidget {
                       'Sign In',
                       style: TextStyle(
                         fontSize: 14,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),
@@ -469,7 +469,7 @@ class _FieldLabel extends StatelessWidget {
       style: TextStyle(
         color: context.appMuted,
         fontSize: 11,
-        fontWeight: FontWeight.w900,
+        fontWeight: FontWeight.w700,
         letterSpacing: 1.1,
       ),
     );

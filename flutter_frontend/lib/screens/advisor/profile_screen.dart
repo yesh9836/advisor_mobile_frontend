@@ -215,7 +215,7 @@ class _ProfileHeader extends StatelessWidget {
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 18,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
@@ -233,7 +233,7 @@ class _ProfileHeader extends StatelessWidget {
                     style: const TextStyle(
                       color: AppColors.cyan,
                       fontSize: 9,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w700,
                       letterSpacing: 1.15,
                     ),
                   ),
@@ -245,7 +245,7 @@ class _ProfileHeader extends StatelessWidget {
                     style: TextStyle(
                       color: context.appInk,
                       fontSize: 20,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w700,
                       letterSpacing: -0.4,
                     ),
                   ),
@@ -311,7 +311,7 @@ class _AppearanceSettings extends StatelessWidget {
                 style: TextStyle(
                   color: context.appInk,
                   fontSize: 14,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
               const SizedBox(height: 2),
@@ -424,7 +424,7 @@ class _LicensedStates extends StatelessWidget {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(999),
                   ),
-                  textStyle: const TextStyle(fontWeight: FontWeight.w900),
+                  textStyle: const TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
             ],
@@ -470,7 +470,7 @@ class _LicenseRow extends StatelessWidget {
               license.state,
               style: TextStyle(
                 color: status.avatarForeground,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
                 fontSize: 12,
               ),
             ),
@@ -486,7 +486,7 @@ class _LicenseRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: context.appInk,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
                 const SizedBox(height: 3),
@@ -585,7 +585,7 @@ class _ActionRow extends StatelessWidget {
                   label,
                   style: TextStyle(
                     color: context.appInk,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
@@ -627,7 +627,7 @@ class _SignOutButton extends StatelessWidget {
         minimumSize: const Size.fromHeight(44),
         side: const BorderSide(color: Color(0xFFFF8A8A)),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        textStyle: const TextStyle(fontWeight: FontWeight.w900),
+        textStyle: const TextStyle(fontWeight: FontWeight.w700),
       ),
     );
   }
@@ -665,7 +665,7 @@ class _SectionTitle extends StatelessWidget {
       style: TextStyle(
         color: context.appMuted,
         fontSize: 11,
-        fontWeight: FontWeight.w900,
+        fontWeight: FontWeight.w700,
         letterSpacing: 1.2,
       ),
     );
@@ -701,7 +701,7 @@ class _InfoRow extends StatelessWidget {
               style: TextStyle(
                 color: context.appInk,
                 fontSize: 13,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
@@ -738,7 +738,7 @@ class _StatusPill extends StatelessWidget {
         style: TextStyle(
           color: status.badgeForeground,
           fontSize: 10,
-          fontWeight: FontWeight.w900,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );

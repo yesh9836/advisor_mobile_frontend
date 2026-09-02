@@ -57,7 +57,7 @@ class _BillingHistorySheetState extends State<BillingHistorySheet> {
                         style: TextStyle(
                           color: context.appInk,
                           fontSize: 24,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                       Text(
@@ -105,7 +105,7 @@ class _BillingHistorySheetState extends State<BillingHistorySheet> {
                 style: TextStyle(
                   color: context.appInk,
                   fontSize: 18,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
               const SizedBox(height: 10),
@@ -154,7 +154,7 @@ class _PaymentMethodCard extends StatelessWidget {
                   '${paymentMethod.brand.toUpperCase()} •••• ${paymentMethod.last4}',
                   style: const TextStyle(
                     color: Colors.white,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
                 Text(
@@ -212,7 +212,7 @@ class _InvoiceCard extends StatelessWidget {
                       : 'Lead purchase',
                   style: TextStyle(
                     color: context.appInk,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
                 const SizedBox(height: 3),
@@ -228,7 +228,7 @@ class _InvoiceCard extends StatelessWidget {
             _formatAmount(invoice.amountPaidCents, invoice.currency),
             style: TextStyle(
               color: context.appInk,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],

@@ -180,7 +180,7 @@ class AppScreenHeader extends StatelessWidget {
                           style: TextStyle(
                             color: context.appInk,
                             fontSize: 23,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w700,
                             letterSpacing: -0.45,
                           ),
                         ),

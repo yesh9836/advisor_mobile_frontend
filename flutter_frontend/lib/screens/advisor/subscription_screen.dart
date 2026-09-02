@@ -470,7 +470,7 @@ class _LicenseReviewBanner extends StatelessWidget {
                   title,
                   style: TextStyle(
                     color: context.appInk,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -522,7 +522,7 @@ class _TargetStates extends StatelessWidget {
               'Target States',
               style: TextStyle(
                 color: context.appInk,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
               ),
             ),
             const SizedBox(height: 9),
@@ -591,7 +591,7 @@ class _StateChip extends StatelessWidget {
                 style: TextStyle(
                   color: selected ? const Color(0xFF078AA2) : context.appMuted,
                   fontSize: 12,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ],
@@ -667,7 +667,7 @@ class _PackageCard extends StatelessWidget {
                               style: TextStyle(
                                 color: context.appInk,
                                 fontSize: 16,
-                                fontWeight: FontWeight.w900,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                           ),
@@ -693,7 +693,7 @@ class _PackageCard extends StatelessWidget {
                               ? const Color(0xFF18A0B8)
                               : context.appInk,
                           fontSize: 24,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                       Row(
@@ -777,7 +777,7 @@ class _PackageBadge extends StatelessWidget {
         style: const TextStyle(
           color: Color(0xFF18A0B8),
           fontSize: 10,
-          fontWeight: FontWeight.w900,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );

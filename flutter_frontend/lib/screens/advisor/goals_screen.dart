@@ -139,8 +139,10 @@ class _GoalsScreenState extends State<GoalsScreen> {
                       accent: Color(0xFFD58416),
                       lightSurface: Color(0xFFFFF8E8),
                       darkSurface: Color(0xFF2A2113),
-                      detail:
-                          'Estimated additional closed deals needed to reach your annual income target, based on your average commission per sale.',
+                      detail: 'Income gap divided by your average commission.',
+                      recordsTitle: 'Recently closed deals',
+                      loadRecords: () =>
+                          _repository.getLeads(outcomeStatus: 'closed_deal'),
                     ),
                     _StatCard(
                       value: '${goal.appointmentsRemaining}',
@@ -149,8 +151,11 @@ class _GoalsScreenState extends State<GoalsScreen> {
                       accent: Color(0xFF5967D8),
                       lightSurface: Color(0xFFF1F3FF),
                       darkSurface: Color(0xFF1C2341),
-                      detail:
-                          'Appointments still needed to produce the remaining deals at your current closing-rate assumption.',
+                      detail: 'Deals remaining adjusted by your closing rate.',
+                      recordsTitle: 'Appointments awaiting follow-up',
+                      loadRecords: () => _repository.getLeads(
+                        outcomeStatus: 'appointment_set',
+                      ),
                     ),
                     _StatCard(
                       value: '${goal.leadsRemaining}',
@@ -160,7 +165,9 @@ class _GoalsScreenState extends State<GoalsScreen> {
                       lightSurface: Color(0xFFEAFBF8),
                       darkSurface: Color(0xFF102C2B),
                       detail:
-                          'Qualified leads still needed to generate the required appointments using your lead-to-appointment rate.',
+                          'Appointments needed adjusted by lead conversion.',
+                      recordsTitle: 'Active leads in your pipeline',
+                      loadRecords: () => _repository.getLeads(),
                     ),
                     _StatCard(
                       value: '${goal.closedDealsYtd}',
@@ -169,8 +176,10 @@ class _GoalsScreenState extends State<GoalsScreen> {
                       accent: Color(0xFF168A5B),
                       lightSurface: Color(0xFFEBFAF2),
                       darkSurface: Color(0xFF112B20),
-                      detail:
-                          'Deals marked Closed Deal during the current target year. This updates when a lead status is saved as closed.',
+                      detail: 'Leads marked Closed Deal this target year.',
+                      recordsTitle: 'Deals closed this year',
+                      loadRecords: () =>
+                          _repository.getLeads(outcomeStatus: 'closed_deal'),
                     ),
                   ],
                 ),
@@ -191,7 +200,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
                         style: TextStyle(
                           color: context.appInk,
                           fontSize: 16,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),
@@ -289,7 +298,7 @@ class _SuccessRateCard extends StatelessWidget {
                       style: TextStyle(
                         color: context.appInk,
                         fontSize: 15,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                     Text(
@@ -314,7 +323,7 @@ class _SuccessRateCard extends StatelessWidget {
                   style: TextStyle(
                     color: accent,
                     fontSize: 9.5,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
@@ -407,7 +416,7 @@ class _RateMetric extends StatelessWidget {
             style: TextStyle(
               color: context.appMuted,
               fontSize: 9,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w700,
               letterSpacing: .7,
             ),
           ),
@@ -417,7 +426,7 @@ class _RateMetric extends StatelessWidget {
             style: TextStyle(
               color: color,
               fontSize: 22,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w700,
               letterSpacing: -.5,
             ),
           ),
@@ -495,7 +504,7 @@ class _GoalHero extends StatelessWidget {
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           color: Colors.white,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                           height: 1.1,
                         ),
                       ),
@@ -516,7 +525,7 @@ class _GoalHero extends StatelessWidget {
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 23,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -529,7 +538,7 @@ class _GoalHero extends StatelessWidget {
                         style: const TextStyle(
                           color: Color(0xFF7DD3FC),
                           fontSize: 18,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ],
@@ -537,17 +546,7 @@ class _GoalHero extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 13),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(999),
-              child: LinearProgressIndicator(
-                value: progress,
-                minHeight: 6,
-                backgroundColor: Colors.white24,
-                color: const Color(0xFF19B9D0),
-              ),
-            ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             monthlyGoalEditor,
           ],
         ),
@@ -634,7 +633,7 @@ class _GoalTrendCardState extends State<_GoalTrendCard> {
                       style: TextStyle(
                         color: context.appInk,
                         fontSize: 16,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -829,7 +828,7 @@ class _TrendRangeSelector extends StatelessWidget {
                               ? const Color(0xFF078AA2)
                               : context.appMuted,
                           fontSize: 12,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),
@@ -867,7 +866,7 @@ class _TrendStatusBadge extends StatelessWidget {
             style: TextStyle(
               color: trend.color,
               fontSize: 11,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -896,7 +895,7 @@ class _TrendMetric extends StatelessWidget {
           style: TextStyle(
             color: context.appInk,
             fontSize: 15,
-            fontWeight: FontWeight.w900,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ],
@@ -1266,7 +1265,7 @@ class _GoalTrendPainter extends CustomPainter {
             style: const TextStyle(
               color: Colors.white,
               fontSize: 11,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -1385,6 +1384,7 @@ class _MonthlyGoalPanelState extends State<_MonthlyGoalPanel> {
     text: _dollarsInput(widget.monthlyGoalCents),
   );
   bool _saving = false;
+  bool _editing = false;
   String? _error;
   String? _success;
 
@@ -1422,6 +1422,7 @@ class _MonthlyGoalPanelState extends State<_MonthlyGoalPanel> {
       if (!mounted) return;
       setState(() {
         _success = 'Goal saved.';
+        _editing = false;
       });
     } catch (error) {
       if (!mounted) return;
@@ -1441,6 +1442,50 @@ class _MonthlyGoalPanelState extends State<_MonthlyGoalPanel> {
   Widget build(BuildContext context) {
     final foreground = widget.embedded ? Colors.white : context.appInk;
     final muted = widget.embedded ? Colors.white70 : context.appMuted;
+    if (!_editing) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          color: widget.embedded
+              ? Colors.white.withValues(alpha: .08)
+              : context.appSoftFill,
+          borderRadius: BorderRadius.circular(13),
+          border: Border.all(
+            color: widget.embedded ? Colors.white24 : context.appOutline,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.tune_rounded, color: muted, size: 17),
+            const SizedBox(width: 8),
+            Text('Monthly goal', style: TextStyle(color: muted, fontSize: 11)),
+            const Spacer(),
+            Text(
+              _money(widget.monthlyGoalCents),
+              style: TextStyle(
+                color: foreground,
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(width: 8),
+            TextButton(
+              key: const ValueKey('monthly-goal-adjust-button'),
+              onPressed: () => setState(() => _editing = true),
+              style: TextButton.styleFrom(
+                foregroundColor: widget.embedded
+                    ? const Color(0xFF70E5EA)
+                    : const Color(0xFF0F9F98),
+                padding: const EdgeInsets.symmetric(horizontal: 9),
+                minimumSize: const Size(0, 32),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text('Adjust'),
+            ),
+          ],
+        ),
+      );
+    }
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1448,15 +1493,15 @@ class _MonthlyGoalPanelState extends State<_MonthlyGoalPanel> {
           children: [
             Expanded(
               child: Text(
-                'Adjust Monthly Goal',
+                'Monthly goal',
                 style: TextStyle(
                   color: foreground,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
             Text(
-              'Annual target updates automatically',
+              'Updates annual target',
               style: TextStyle(color: muted, fontSize: 9),
             ),
           ],
@@ -1466,13 +1511,13 @@ class _MonthlyGoalPanelState extends State<_MonthlyGoalPanel> {
           children: [
             Expanded(
               child: SizedBox(
-                height: 46,
+                height: 42,
                 child: TextField(
                   controller: _controller,
                   enabled: !_saving,
                   style: TextStyle(
                     color: foreground,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w600,
                   ),
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
@@ -1512,8 +1557,8 @@ class _MonthlyGoalPanelState extends State<_MonthlyGoalPanel> {
             const SizedBox(width: 8),
             Container(
               key: const ValueKey('monthly-goal-save-button-box'),
-              height: 46,
-              width: 82,
+              height: 42,
+              width: 76,
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
                   colors: [Color(0xFF42D3C8), Color(0xFF07958D)],
@@ -1557,7 +1602,7 @@ class _MonthlyGoalPanelState extends State<_MonthlyGoalPanel> {
                   ? const Color(0xFFB8FFE1)
                   : const Color(0xFF15803D),
               fontSize: 11,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
@@ -1567,7 +1612,7 @@ class _MonthlyGoalPanelState extends State<_MonthlyGoalPanel> {
       return _Panel(padding: const EdgeInsets.all(14), child: content);
     }
     return Container(
-      padding: const EdgeInsets.all(11),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: .08),
         borderRadius: BorderRadius.circular(15),
@@ -1624,7 +1669,7 @@ class _PacingPanel extends StatelessWidget {
                   'Pacing tip',
                   style: TextStyle(
                     color: context.appInk,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -1638,7 +1683,7 @@ class _PacingPanel extends StatelessWidget {
                     '${goal.recommendedMonthlyLeads} leads recommended per month',
                     style: TextStyle(
                       color: const Color(0xFF2BAFA8),
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ],
@@ -1660,6 +1705,8 @@ class _StatCard extends StatelessWidget {
     required this.lightSurface,
     required this.darkSurface,
     required this.detail,
+    required this.recordsTitle,
+    required this.loadRecords,
   });
 
   final String value;
@@ -1669,8 +1716,11 @@ class _StatCard extends StatelessWidget {
   final Color lightSurface;
   final Color darkSurface;
   final String detail;
+  final String recordsTitle;
+  final Future<List<AdvisorLead>> Function() loadRecords;
 
   void _showDetails(BuildContext context) {
+    final records = loadRecords();
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -1703,14 +1753,14 @@ class _StatCard extends StatelessWidget {
                           style: TextStyle(
                             color: accent,
                             fontSize: 25,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                         Text(
                           label,
                           style: TextStyle(
                             color: context.appInk,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ],
@@ -1718,19 +1768,103 @@ class _StatCard extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 17),
+              const SizedBox(height: 14),
               Text(
-                'How this is calculated',
+                recordsTitle,
                 style: TextStyle(
                   color: context.appInk,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w900,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
+              FutureBuilder<List<AdvisorLead>>(
+                future: records,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: AppLoadingIndicator(
+                        compact: true,
+                        label: 'Loading activity',
+                      ),
+                    );
+                  }
+                  final leads = snapshot.data ?? const <AdvisorLead>[];
+                  if (snapshot.hasError || leads.isEmpty) {
+                    return Text(
+                      snapshot.hasError
+                          ? 'Activity could not be loaded right now.'
+                          : 'No matching activity yet.',
+                      style: TextStyle(color: context.appMuted, fontSize: 12),
+                    );
+                  }
+                  return ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 230),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: leads.length.clamp(0, 6),
+                      separatorBuilder: (_, _) =>
+                          Divider(height: 1, color: context.appOutline),
+                      itemBuilder: (context, index) {
+                        final lead = leads[index];
+                        final status = switch (lead.outcomeStatus) {
+                          'closed_deal' => 'Closed deal',
+                          'appointment_set' => 'Appointment set',
+                          'contacted' => 'Contacted',
+                          _ => 'New lead',
+                        };
+                        return ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: CircleAvatar(
+                            radius: 16,
+                            backgroundColor: accent.withValues(alpha: .14),
+                            foregroundColor: accent,
+                            child: Text(
+                              lead.displayName.isEmpty
+                                  ? 'L'
+                                  : lead.displayName.substring(0, 1),
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                          title: Text(
+                            lead.displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          subtitle: Text(
+                            '${lead.stateCode}  •  $status',
+                            style: TextStyle(
+                              color: context.appMuted,
+                              fontSize: 10.5,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              Divider(height: 1, color: context.appOutline),
+              const SizedBox(height: 10),
+              Text(
+                'Calculation',
+                style: TextStyle(
+                  color: context.appInk,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 3),
               Text(
                 detail,
-                style: TextStyle(color: context.appMuted, height: 1.45),
+                style: TextStyle(color: context.appMuted, fontSize: 11),
               ),
             ],
           ),
@@ -1781,8 +1915,8 @@ class _StatCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: displayAccent,
-                          fontSize: 23,
-                          fontWeight: FontWeight.w900,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),
@@ -1799,27 +1933,32 @@ class _StatCard extends StatelessWidget {
                     ),
                   ],
                 ),
-                const Spacer(),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        label,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: context.appMuted,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
+                const SizedBox(height: 9),
+                SizedBox(
+                  height: 30,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          label,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: context.appMuted,
+                            fontSize: 11,
+                            height: 1.15,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                    ),
-                    Icon(
-                      Icons.info_outline_rounded,
-                      size: 14,
-                      color: displayAccent,
-                    ),
-                  ],
+                      Icon(
+                        Icons.info_outline_rounded,
+                        size: 13,
+                        color: displayAccent,
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -1862,7 +2001,7 @@ class _PackagePreview extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: context.appInk,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
@@ -1881,7 +2020,7 @@ class _PackagePreview extends StatelessWidget {
                   style: TextStyle(
                     color: context.appInk,
                     fontSize: 28,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
                 Padding(
@@ -1891,7 +2030,7 @@ class _PackagePreview extends StatelessWidget {
                     style: TextStyle(
                       color: context.appMuted,
                       fontSize: 10,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
@@ -1956,7 +2095,7 @@ class _TinyBadge extends StatelessWidget {
         style: const TextStyle(
           color: Color(0xFF18A0B8),
           fontSize: 9,
-          fontWeight: FontWeight.w900,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );

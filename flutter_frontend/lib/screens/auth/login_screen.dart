@@ -190,7 +190,7 @@ class _BrandHeader extends StatelessWidget {
           style: TextStyle(
             color: Colors.white,
             fontSize: 25,
-            fontWeight: FontWeight.w900,
+            fontWeight: FontWeight.w700,
             letterSpacing: 0,
           ),
         ),
@@ -200,7 +200,7 @@ class _BrandHeader extends StatelessWidget {
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.62),
             fontSize: 11,
-            fontWeight: FontWeight.w800,
+            fontWeight: FontWeight.w600,
             letterSpacing: 0.8,
           ),
         ),
@@ -259,7 +259,7 @@ class _LoginPanel extends StatelessWidget {
                 style: TextStyle(
                   color: context.appInk,
                   fontSize: 22,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
               const SizedBox(height: 4),
@@ -357,7 +357,7 @@ class _LoginPanel extends StatelessWidget {
                       )
                     : const Text(
                         'Sign In',
-                        style: TextStyle(fontWeight: FontWeight.w800),
+                        style: TextStyle(fontWeight: FontWeight.w600),
                       ),
               ),
               const SizedBox(height: 12),
@@ -380,7 +380,7 @@ class _LoginPanel extends StatelessWidget {
                       'Register',
                       style: TextStyle(
                         fontSize: 13,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
@@ -437,7 +437,7 @@ class _FieldLabel extends StatelessWidget {
       style: TextStyle(
         color: context.appMuted,
         fontSize: 11,
-        fontWeight: FontWeight.w900,
+        fontWeight: FontWeight.w700,
         letterSpacing: 1.1,
       ),
     );

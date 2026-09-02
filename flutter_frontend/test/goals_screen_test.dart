@@ -51,9 +51,10 @@ void main() {
     expect(find.text('Closed YTD'), findsOneWidget);
     await tester.tap(find.text('Deals Remaining'));
     await tester.pumpAndSettle();
-    expect(find.text('How this is calculated'), findsOneWidget);
-    expect(find.textContaining('average commission per sale'), findsOneWidget);
-    Navigator.of(tester.element(find.text('How this is calculated'))).pop();
+    expect(find.text('Recently closed deals'), findsOneWidget);
+    expect(find.text('Calculation'), findsOneWidget);
+    expect(find.text('Test Closed Lead'), findsOneWidget);
+    Navigator.of(tester.element(find.text('Calculation'))).pop();
     await tester.pumpAndSettle();
     expect(find.text('Conversion success'), findsOneWidget);
     expect(find.text('SET SUCCESS RATE'), findsOneWidget);
@@ -92,9 +93,11 @@ void main() {
 
     await tester.drag(find.byType(ListView).first, const Offset(0, 1400));
     await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('monthly-goal-adjust-button')));
+    await tester.pumpAndSettle();
     final monthlyGoalField = find.byType(TextField);
     await tester.ensureVisible(monthlyGoalField);
-    final title = find.text('Adjust Monthly Goal');
+    final title = find.text('Monthly goal');
     final buttonBox = find.byKey(
       const ValueKey('monthly-goal-save-button-box'),
     );
@@ -115,8 +118,11 @@ void main() {
 
     expect(repository.savedMonthlyGoalCents, 250000);
     expect(repository.savedCurrentGoal, same(repository.initialGoal));
-    expect(find.text('Goal saved.'), findsOneWidget);
-    expect(tester.widget<TextField>(monthlyGoalField).controller?.text, '2500');
+    expect(
+      find.byKey(const ValueKey('monthly-goal-adjust-button')),
+      findsOneWidget,
+    );
+    expect(find.text(r'$2500'), findsOneWidget);
   });
 
   testWidgets('rejects an invalid monthly goal without calling the API', (
@@ -134,6 +140,13 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.drag(find.byType(ListView).first, const Offset(0, -260));
+    await tester.pumpAndSettle();
+    final adjustButton = find.byKey(
+      const ValueKey('monthly-goal-adjust-button'),
+    );
+    await tester.ensureVisible(adjustButton);
+    await tester.pumpAndSettle();
+    await tester.tap(adjustButton);
     await tester.pumpAndSettle();
     final monthlyGoalField = find.byType(TextField);
     await tester.ensureVisible(monthlyGoalField);
@@ -161,6 +174,23 @@ class _FakeAdvisorRepository extends AdvisorRepository {
 
   @override
   Future<GoalSnapshot> getGoal() async => initialGoal;
+
+  @override
+  Future<List<AdvisorLead>> getLeads({
+    String deliveryStatus = 'all',
+    String outcomeStatus = 'all',
+    String? search,
+  }) async => [
+    AdvisorLead(
+      id: 1,
+      firstName: 'Test',
+      lastName: 'Closed Lead',
+      stateCode: 'CA',
+      outcomeStatus: outcomeStatus == 'all' ? 'contacted' : outcomeStatus,
+      piiUnlocked: true,
+      isDownloaded: true,
+    ),
+  ];
 
   @override
   Future<GoalSnapshot> saveMonthlyGoal({

@@ -276,7 +276,7 @@ class _SessionLoadingScreen extends StatelessWidget {
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 24,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
               ),
             ),
             SizedBox(height: 20),
@@ -311,7 +311,7 @@ class _SessionRestoreError extends StatelessWidget {
                 style: TextStyle(
                   color: context.appInk,
                   fontSize: 20,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
               const SizedBox(height: 8),

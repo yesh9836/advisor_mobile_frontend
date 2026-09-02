@@ -368,7 +368,7 @@ class _SearchField extends StatelessWidget {
                       color: filterActive
                           ? const Color(0xFF078AA2)
                           : context.appInk,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                       fontSize: 12,
                     ),
                   ),
@@ -424,7 +424,7 @@ class _InboxFilterSheet extends StatelessWidget {
               style: TextStyle(
                 color: context.appInk,
                 fontSize: 21,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
               ),
             ),
             const SizedBox(height: 4),
@@ -461,7 +461,7 @@ class _InboxFilterSheet extends StatelessWidget {
                               option.$2,
                               style: TextStyle(
                                 color: context.appInk,
-                                fontWeight: FontWeight.w800,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
@@ -578,7 +578,7 @@ class _FilterPill extends StatelessWidget {
                 style: TextStyle(
                   color: selected ? Colors.white : context.appMuted,
                   fontSize: 12,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
               if (selected && count != null) ...[
@@ -603,7 +603,7 @@ class _FilterPill extends StatelessWidget {
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 10,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
@@ -655,7 +655,7 @@ class _LeadCard extends StatelessWidget {
                               style: TextStyle(
                                 color: context.appInk,
                                 fontSize: 15,
-                                fontWeight: FontWeight.w900,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                           ),
@@ -700,7 +700,7 @@ class _LeadCard extends StatelessWidget {
                               style: TextStyle(
                                 color: context.appInk,
                                 fontSize: 13,
-                                fontWeight: FontWeight.w900,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                           ),
@@ -748,7 +748,7 @@ class _InitialAvatar extends StatelessWidget {
         style: const TextStyle(
           color: Colors.white,
           fontSize: 14,
-          fontWeight: FontWeight.w900,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );
@@ -795,7 +795,7 @@ class _MiniBadge extends StatelessWidget {
             style: TextStyle(
               color: foreground,
               fontSize: 10,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],

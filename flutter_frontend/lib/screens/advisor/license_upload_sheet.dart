@@ -236,7 +236,7 @@ class _LicenseUploadSheetState extends State<LicenseUploadSheet> {
                     style: TextStyle(
                       color: context.appInk,
                       fontSize: 24,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                   Text(

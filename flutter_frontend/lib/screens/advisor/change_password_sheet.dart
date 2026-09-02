@@ -88,7 +88,7 @@ class _ChangePasswordSheetState extends State<ChangePasswordSheet> {
               style: TextStyle(
                 color: context.appInk,
                 fontSize: 21,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
               ),
             ),
             const SizedBox(height: 6),

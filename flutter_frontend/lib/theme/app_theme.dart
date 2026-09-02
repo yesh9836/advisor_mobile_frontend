@@ -35,15 +35,15 @@ abstract final class AppTheme {
       scaffoldBackgroundColor: AppColors.canvas,
       textTheme: baseText.copyWith(
         headlineLarge: baseText.headlineLarge?.copyWith(
-          fontWeight: FontWeight.w800,
+          fontWeight: FontWeight.w600,
           letterSpacing: -0.8,
         ),
         headlineMedium: baseText.headlineMedium?.copyWith(
-          fontWeight: FontWeight.w800,
+          fontWeight: FontWeight.w600,
           letterSpacing: -0.5,
         ),
         titleLarge: baseText.titleLarge?.copyWith(
-          fontWeight: FontWeight.w800,
+          fontWeight: FontWeight.w600,
           letterSpacing: -0.25,
         ),
         titleMedium: baseText.titleMedium?.copyWith(
@@ -63,7 +63,7 @@ abstract final class AppTheme {
         titleTextStyle: TextStyle(
           color: AppColors.midnight,
           fontSize: 20,
-          fontWeight: FontWeight.w800,
+          fontWeight: FontWeight.w600,
           letterSpacing: -0.3,
         ),
       ),
@@ -111,7 +111,7 @@ abstract final class AppTheme {
                 : const Color(0xFF556273),
             fontSize: 10,
             fontWeight: states.contains(WidgetState.selected)
-                ? FontWeight.w800
+                ? FontWeight.w600
                 : FontWeight.w600,
           ),
         ),
@@ -156,7 +156,7 @@ abstract final class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(15),
           ),
-          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -173,7 +173,7 @@ abstract final class AppTheme {
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: AppColors.cyan,
-          textStyle: const TextStyle(fontWeight: FontWeight.w800),
+          textStyle: const TextStyle(fontWeight: FontWeight.w600),
         ),
       ),
       bottomSheetTheme: const BottomSheetThemeData(
@@ -236,15 +236,15 @@ abstract final class AppTheme {
       shadowColor: Colors.black,
       textTheme: baseText.copyWith(
         headlineLarge: baseText.headlineLarge?.copyWith(
-          fontWeight: FontWeight.w800,
+          fontWeight: FontWeight.w600,
           letterSpacing: -0.8,
         ),
         headlineMedium: baseText.headlineMedium?.copyWith(
-          fontWeight: FontWeight.w800,
+          fontWeight: FontWeight.w600,
           letterSpacing: -0.5,
         ),
         titleLarge: baseText.titleLarge?.copyWith(
-          fontWeight: FontWeight.w800,
+          fontWeight: FontWeight.w600,
           letterSpacing: -0.25,
         ),
         titleMedium: baseText.titleMedium?.copyWith(
@@ -261,7 +261,7 @@ abstract final class AppTheme {
         titleTextStyle: TextStyle(
           color: ink,
           fontSize: 20,
-          fontWeight: FontWeight.w800,
+          fontWeight: FontWeight.w600,
           letterSpacing: -0.3,
         ),
       ),
@@ -309,7 +309,7 @@ abstract final class AppTheme {
                 : const Color(0xFF929292),
             fontSize: 10,
             fontWeight: states.contains(WidgetState.selected)
-                ? FontWeight.w800
+                ? FontWeight.w600
                 : FontWeight.w600,
           ),
         ),
@@ -357,7 +357,7 @@ abstract final class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(15),
           ),
-          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -374,7 +374,7 @@ abstract final class AppTheme {
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: cyan,
-          textStyle: const TextStyle(fontWeight: FontWeight.w800),
+          textStyle: const TextStyle(fontWeight: FontWeight.w600),
         ),
       ),
       bottomSheetTheme: const BottomSheetThemeData(

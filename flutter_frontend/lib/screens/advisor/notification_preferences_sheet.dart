@@ -128,7 +128,7 @@ class _NotificationPreferencesSheetState
             style: TextStyle(
               color: context.appInk,
               fontSize: 21,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w700,
             ),
           ),
           const SizedBox(height: 6),
@@ -210,7 +210,7 @@ class _NotificationPreferencesSheetState
                           ? context.appMuted
                           : const Color(0xFF218A4A),
                       fontSize: 12,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
@@ -260,7 +260,7 @@ class _NotificationPreferenceRow extends StatelessWidget {
                 label,
                 style: TextStyle(
                   color: context.appInk,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
