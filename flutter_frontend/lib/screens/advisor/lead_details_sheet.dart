@@ -197,8 +197,6 @@ class _LeadDetailsSheetState extends State<LeadDetailsSheet> {
             onCall: _callLead,
           ),
           const SizedBox(height: 12),
-          _LeadSnapshot(lead: _lead),
-          const SizedBox(height: 12),
           _DetailsSection(
             title: 'Financial profile',
             icon: Icons.insights_rounded,
@@ -314,7 +312,7 @@ class _LeadHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -353,12 +351,12 @@ class _LeadHero extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           Row(
             children: [
               Container(
-                width: 54,
-                height: 54,
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [statusColor, const Color(0xFF27B7CE)],
@@ -377,7 +375,7 @@ class _LeadHero extends StatelessWidget {
                   _leadInitials(lead),
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 17,
+                    fontSize: 16,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -393,7 +391,7 @@ class _LeadHero extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: context.appInk,
-                        fontSize: 22,
+                        fontSize: 20,
                         fontWeight: FontWeight.w900,
                         letterSpacing: -.4,
                       ),
@@ -408,32 +406,34 @@ class _LeadHero extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              _HeroPill(
-                icon: Icons.circle,
-                label: statusLabel,
-                color: statusColor,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  lead.activity ?? lead.assets ?? 'Lead profile ready',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.end,
-                  style: TextStyle(
-                    color: context.appMuted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
+          if (updatePanel == null) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                _HeroPill(
+                  icon: Icons.circle,
+                  label: statusLabel,
+                  color: statusColor,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    lead.activity ?? lead.assets ?? 'Lead profile ready',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.end,
+                    style: TextStyle(
+                      color: context.appMuted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
+          ],
           if (updatePanel != null) ...[
-            const SizedBox(height: 14),
+            const SizedBox(height: 10),
             Divider(height: 1, color: context.appOutline),
             updatePanel!,
           ],
@@ -710,126 +710,6 @@ class _ContactMeta extends StatelessWidget {
   }
 }
 
-class _LeadSnapshot extends StatelessWidget {
-  const _LeadSnapshot({required this.lead});
-
-  final AdvisorLead lead;
-
-  @override
-  Widget build(BuildContext context) {
-    final items = <({IconData icon, String label, String? value, Color color})>[
-      (
-        icon: Icons.account_balance_wallet_outlined,
-        label: 'Assets',
-        value: lead.assets,
-        color: const Color(0xFF0F9F82),
-      ),
-      (
-        icon: Icons.timelapse_rounded,
-        label: 'Timeline',
-        value: lead.retirementTimeline,
-        color: const Color(0xFFF59E0B),
-      ),
-      (
-        icon: Icons.star_outline_rounded,
-        label: 'Primary interest',
-        value: lead.activity,
-        color: const Color(0xFF7964D9),
-      ),
-    ].where((item) => _text(item.value) != null).toList();
-
-    if (items.isEmpty) return const SizedBox.shrink();
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: context.appSurface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: context.appOutline),
-        boxShadow: context.appCardShadows,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'LEAD SNAPSHOT',
-            style: TextStyle(
-              color: context.appMuted,
-              fontSize: 10,
-              fontWeight: FontWeight.w900,
-              letterSpacing: .9,
-            ),
-          ),
-          const SizedBox(height: 11),
-          for (var index = 0; index < items.length; index++) ...[
-            _SnapshotRow(
-              icon: items[index].icon,
-              label: items[index].label,
-              value: items[index].value!,
-              color: items[index].color,
-            ),
-            if (index != items.length - 1)
-              Divider(height: 17, color: context.appOutline),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _SnapshotRow extends StatelessWidget {
-  const _SnapshotRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.color,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 31,
-          height: 31,
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: .11),
-            borderRadius: BorderRadius.circular(9),
-          ),
-          child: Icon(icon, color: color, size: 17),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            label,
-            style: TextStyle(color: context.appMuted, fontSize: 11),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Flexible(
-          flex: 2,
-          child: Text(
-            value,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.end,
-            style: TextStyle(
-              color: context.appInk,
-              fontSize: 12.5,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class _LeadUpdatePanel extends StatelessWidget {
   const _LeadUpdatePanel({
     this.embedded = false,
@@ -858,7 +738,7 @@ class _LeadUpdatePanel extends StatelessWidget {
     return Container(
       padding: EdgeInsets.fromLTRB(
         embedded ? 0 : 16,
-        16,
+        embedded ? 10 : 16,
         embedded ? 0 : 16,
         embedded ? 0 : 16,
       ),
@@ -871,44 +751,45 @@ class _LeadUpdatePanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF18A0B8).withValues(alpha: .11),
-                  borderRadius: BorderRadius.circular(11),
+          if (!embedded)
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF18A0B8).withValues(alpha: .11),
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                  child: const Icon(
+                    Icons.task_alt_rounded,
+                    color: Color(0xFF18A0B8),
+                    size: 20,
+                  ),
                 ),
-                child: const Icon(
-                  Icons.task_alt_rounded,
-                  color: Color(0xFF18A0B8),
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Update Status',
-                      style: TextStyle(
-                        color: context.appInk,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w900,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Update Status',
+                        style: TextStyle(
+                          color: context.appInk,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
-                    ),
-                    Text(
-                      'Record the next milestone and follow-up notes.',
-                      style: TextStyle(color: context.appMuted, fontSize: 11),
-                    ),
-                  ],
+                      Text(
+                        'Record the next milestone and follow-up notes.',
+                        style: TextStyle(color: context.appMuted, fontSize: 11),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
+              ],
+            ),
+          SizedBox(height: embedded ? 0 : 14),
           DropdownButtonFormField<String>(
             isExpanded: true,
             initialValue: status,
@@ -931,13 +812,14 @@ class _LeadUpdatePanel extends StatelessWidget {
           TextField(
             controller: notesController,
             enabled: !saving,
-            minLines: 3,
-            maxLines: 6,
+            minLines: embedded ? 2 : 3,
+            maxLines: embedded ? 3 : 6,
             maxLength: 2000,
             decoration: const InputDecoration(
               labelText: 'Notes',
               hintText: 'Add call notes, appointment time, or objections.',
               alignLabelWithHint: true,
+              counterText: '',
               prefixIcon: Padding(
                 padding: EdgeInsets.only(bottom: 50),
                 child: Icon(Icons.edit_note_rounded),
@@ -968,10 +850,10 @@ class _LeadUpdatePanel extends StatelessWidget {
               ],
             ),
           ],
-          const SizedBox(height: 11),
+          SizedBox(height: embedded ? 8 : 11),
           SizedBox(
             width: double.infinity,
-            height: 48,
+            height: embedded ? 44 : 48,
             child: FilledButton.icon(
               onPressed: saving ? null : onSave,
               icon: saving

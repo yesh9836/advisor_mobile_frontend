@@ -60,14 +60,16 @@ class _LeadsScreenState extends State<LeadsScreen> {
     return result;
   }
 
-  void _refreshLeads() {
+  Future<void> _refreshLeads() async {
+    final future = _loadFirstPage();
     setState(() {
       _leads.clear();
       _total = 0;
       _nextPage = 2;
       _loadMoreError = null;
-      _future = _loadFirstPage();
+      _future = future;
     });
+    await future;
   }
 
   void _onScroll() {
@@ -112,7 +114,7 @@ class _LeadsScreenState extends State<LeadsScreen> {
       lead: lead,
       repository: _repository,
       onUpdated: (_) {
-        _refreshLeads();
+        unawaited(_refreshLeads());
         widget.onLeadOutcomeUpdated?.call();
       },
     );
@@ -120,7 +122,10 @@ class _LeadsScreenState extends State<LeadsScreen> {
 
   void _onSearchChanged(String _) {
     _searchDebounce?.cancel();
-    _searchDebounce = Timer(const Duration(milliseconds: 350), _refreshLeads);
+    _searchDebounce = Timer(
+      const Duration(milliseconds: 350),
+      () => unawaited(_refreshLeads()),
+    );
   }
 
   Future<void> _openFilters() async {
@@ -156,114 +161,116 @@ class _LeadsScreenState extends State<LeadsScreen> {
       future: _future,
       builder: (context, snapshot) {
         final leads = _leads;
-        return ListView(
-          controller: _scrollController,
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 112),
-          children: [
-            AppScreenHeader(
-              eyebrow: 'Pipeline',
-              title: 'Lead Inbox',
-              subtitle: 'Prioritize conversations and move prospects forward.',
-              icon: Icons.inbox_rounded,
-              trailing: IconButton.filledTonal(
-                tooltip: 'Refresh leads',
-                onPressed: _refreshLeads,
-                icon: const Icon(Icons.refresh_rounded),
+        return RefreshIndicator(
+          onRefresh: _refreshLeads,
+          child: ListView(
+            controller: _scrollController,
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 112),
+            children: [
+              const AppScreenHeader(
+                eyebrow: 'Pipeline',
+                title: 'Lead Inbox',
+                subtitle:
+                    'Prioritize conversations and move prospects forward.',
+                icon: Icons.inbox_rounded,
               ),
-            ),
-            const SizedBox(height: 10),
-            _SearchField(
-              controller: _searchController,
-              onChanged: _onSearchChanged,
-              filterActive: _selectedDelivery != 'all',
-              onFilter: _openFilters,
-            ),
-            const SizedBox(height: 9),
-            _StatusFilters(
-              selected: _selectedOutcome,
-              selectedCount: snapshot.hasData ? _total : null,
-              onSelected: (value) {
-                if (_selectedOutcome == value) return;
-                setState(() {
-                  _selectedOutcome = value;
-                  _leads.clear();
-                  _total = 0;
-                  _nextPage = 2;
-                  _future = _loadFirstPage();
-                });
-              },
-            ),
-            const SizedBox(height: 11),
-            if (snapshot.connectionState == ConnectionState.waiting)
-              const Padding(
-                padding: EdgeInsets.only(top: 40),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (snapshot.hasError)
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(snapshot.error.toString()),
-                      const SizedBox(height: 12),
-                      OutlinedButton.icon(
-                        onPressed: _refreshLeads,
-                        icon: const Icon(Icons.wifi_protected_setup_rounded),
-                        label: Text(
-                          snapshot.error.toString().toLowerCase().contains(
-                                'timed out',
-                              )
-                              ? 'Reconnect'
-                              : 'Reload',
+              const SizedBox(height: 10),
+              _SearchField(
+                controller: _searchController,
+                onChanged: _onSearchChanged,
+                filterActive: _selectedDelivery != 'all',
+                onFilter: _openFilters,
+              ),
+              const SizedBox(height: 9),
+              _StatusFilters(
+                selected: _selectedOutcome,
+                selectedCount: snapshot.hasData ? _total : null,
+                onSelected: (value) {
+                  if (_selectedOutcome == value) return;
+                  setState(() {
+                    _selectedOutcome = value;
+                    _leads.clear();
+                    _total = 0;
+                    _nextPage = 2;
+                    _future = _loadFirstPage();
+                  });
+                },
+              ),
+              const SizedBox(height: 11),
+              if (snapshot.connectionState == ConnectionState.waiting)
+                const Padding(
+                  padding: EdgeInsets.only(top: 40),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (snapshot.hasError)
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(snapshot.error.toString()),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: _refreshLeads,
+                          icon: const Icon(Icons.wifi_protected_setup_rounded),
+                          label: Text(
+                            snapshot.error.toString().toLowerCase().contains(
+                                  'timed out',
+                                )
+                                ? 'Reconnect'
+                                : 'Reload',
+                          ),
                         ),
-                      ),
+                      ],
+                    ),
+                  ),
+                )
+              else if (leads.isEmpty)
+                const _EmptyInbox()
+              else
+                Container(
+                  decoration: BoxDecoration(
+                    color: context.appSurface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: context.appOutline),
+                    boxShadow: context.appCardShadows,
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(
+                    children: [
+                      for (var index = 0; index < leads.length; index++) ...[
+                        _LeadCard(
+                          lead: leads[index],
+                          onTap: () => _openLead(leads[index]),
+                        ),
+                        if (index < leads.length - 1)
+                          Divider(height: 1, color: context.appOutline),
+                      ],
                     ],
                   ),
                 ),
-              )
-            else if (leads.isEmpty)
-              const _EmptyInbox()
-            else
-              Container(
-                decoration: BoxDecoration(
-                  color: context.appSurface,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: context.appOutline),
-                  boxShadow: context.appCardShadows,
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Column(
-                  children: [
-                    for (var index = 0; index < leads.length; index++) ...[
-                      _LeadCard(
-                        lead: leads[index],
-                        onTap: () => _openLead(leads[index]),
-                      ),
-                      if (index < leads.length - 1)
-                        Divider(height: 1, color: context.appOutline),
-                    ],
-                  ],
-                ),
-              ),
-            if (_loadingMore)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 18),
-                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-              )
-            else if (_loadMoreError != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 10),
-                child: Center(
-                  child: TextButton.icon(
-                    onPressed: _loadMore,
-                    icon: const Icon(Icons.refresh_rounded),
-                    label: const Text('Retry loading more leads'),
+              if (_loadingMore)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 18),
+                  child: Center(
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              else if (_loadMoreError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Center(
+                    child: TextButton.icon(
+                      onPressed: _loadMore,
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const Text('Retry loading more leads'),
+                    ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         );
       },
     );

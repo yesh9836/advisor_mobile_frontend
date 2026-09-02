@@ -22,6 +22,7 @@ class AdvisorShell extends StatefulWidget {
 
 class _AdvisorShellState extends State<AdvisorShell> {
   late int _selectedIndex = widget.initialIndex.clamp(0, 4);
+  late double _navigationPosition = _selectedIndex.toDouble();
   late final List<Widget?> _screens;
   late final PageController _pageController = PageController(
     initialPage: _selectedIndex,
@@ -33,6 +34,13 @@ class _AdvisorShellState extends State<AdvisorShell> {
     super.initState();
     _screens = List<Widget?>.filled(5, null);
     _screens[_selectedIndex] = _createScreen(_selectedIndex);
+    _pageController.addListener(_trackPageTransition);
+  }
+
+  void _trackPageTransition() {
+    final page = _pageController.page;
+    if (page == null || (page - _navigationPosition).abs() < .001) return;
+    setState(() => _navigationPosition = page);
   }
 
   Widget _createScreen(int index) => switch (index) {
@@ -79,6 +87,7 @@ class _AdvisorShellState extends State<AdvisorShell> {
 
   @override
   void dispose() {
+    _pageController.removeListener(_trackPageTransition);
     _pageController.dispose();
     _outcomeRevision.dispose();
     super.dispose();
@@ -170,6 +179,7 @@ class _AdvisorShellState extends State<AdvisorShell> {
                 clipBehavior: Clip.antiAlias,
                 child: _AdvisorNavigationBar(
                   selectedIndex: _selectedIndex,
+                  transitionPosition: _navigationPosition,
                   onDestinationSelected: _selectTab,
                 ),
               ),
@@ -184,10 +194,12 @@ class _AdvisorShellState extends State<AdvisorShell> {
 class _AdvisorNavigationBar extends StatelessWidget {
   const _AdvisorNavigationBar({
     required this.selectedIndex,
+    required this.transitionPosition,
     required this.onDestinationSelected,
   });
 
   final int selectedIndex;
+  final double transitionPosition;
   final ValueChanged<int> onDestinationSelected;
 
   static const _items = <_AdvisorNavigationItem>[
@@ -234,6 +246,8 @@ class _AdvisorNavigationBar extends StatelessWidget {
               child: _AdvisorNavigationButton(
                 item: _items[index],
                 selected: selectedIndex == index,
+                selectionProgress: (1 - (transitionPosition - index).abs())
+                    .clamp(0.0, 1.0),
                 onTap: () => onDestinationSelected(index),
               ),
             ),
@@ -261,11 +275,13 @@ class _AdvisorNavigationButton extends StatelessWidget {
   const _AdvisorNavigationButton({
     required this.item,
     required this.selected,
+    required this.selectionProgress,
     required this.onTap,
   });
 
   final _AdvisorNavigationItem item;
   final bool selected;
+  final double selectionProgress;
   final VoidCallback onTap;
 
   @override
@@ -274,6 +290,7 @@ class _AdvisorNavigationButton extends StatelessWidget {
         ? Color.lerp(item.color, Colors.white, 0.16)!
         : item.color;
     final idleColor = context.appMuted;
+    final displayColor = Color.lerp(idleColor, accent, selectionProgress)!;
 
     return Semantics(
       button: true,
@@ -291,9 +308,9 @@ class _AdvisorNavigationButton extends StatelessWidget {
               duration: const Duration(milliseconds: 190),
               curve: Curves.easeOutCubic,
               decoration: BoxDecoration(
-                color: selected
-                    ? accent.withValues(alpha: context.isDarkMode ? 0.19 : 0.1)
-                    : Colors.transparent,
+                color: accent.withValues(
+                  alpha: (context.isDarkMode ? 0.19 : 0.1) * selectionProgress,
+                ),
                 borderRadius: BorderRadius.circular(13),
               ),
               child: Column(
@@ -302,12 +319,12 @@ class _AdvisorNavigationButton extends StatelessWidget {
                   AnimatedScale(
                     duration: const Duration(milliseconds: 230),
                     curve: Curves.easeOutBack,
-                    scale: selected ? 1.09 : 1,
+                    scale: 1 + (.09 * selectionProgress),
                     child: _NavigationGlyph(
                       item: item,
-                      selected: selected,
-                      accent: accent,
-                      idleColor: idleColor,
+                      selectionProgress: selectionProgress,
+                      accent: displayColor,
+                      idleColor: displayColor,
                     ),
                   ),
                   const SizedBox(height: 3),
@@ -315,9 +332,11 @@ class _AdvisorNavigationButton extends StatelessWidget {
                     item.label,
                     maxLines: 1,
                     style: TextStyle(
-                      color: selected ? accent : idleColor,
+                      color: displayColor,
                       fontSize: 9.5,
-                      fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
+                      fontWeight: selectionProgress > .5
+                          ? FontWeight.w900
+                          : FontWeight.w700,
                     ),
                   ),
                 ],
@@ -333,18 +352,19 @@ class _AdvisorNavigationButton extends StatelessWidget {
 class _NavigationGlyph extends StatelessWidget {
   const _NavigationGlyph({
     required this.item,
-    required this.selected,
+    required this.selectionProgress,
     required this.accent,
     required this.idleColor,
   });
 
   final _AdvisorNavigationItem item;
-  final bool selected;
+  final double selectionProgress;
   final Color accent;
   final Color idleColor;
 
   @override
   Widget build(BuildContext context) {
+    final visuallySelected = selectionProgress > .5;
     if (item.label == 'Home') {
       const colors = [
         Color(0xFF16A6B6),
@@ -362,28 +382,28 @@ class _NavigationGlyph extends StatelessWidget {
               top: 1,
               width: 8,
               height: 8,
-              color: selected ? colors[0] : idleColor,
+              color: Color.lerp(idleColor, colors[0], selectionProgress)!,
             ),
             _HomeBlock(
               right: 1,
               top: 1,
               width: 10,
               height: 6,
-              color: selected ? colors[1] : idleColor,
+              color: Color.lerp(idleColor, colors[1], selectionProgress)!,
             ),
             _HomeBlock(
               left: 1,
               bottom: 1,
               width: 6,
               height: 10,
-              color: selected ? colors[2] : idleColor,
+              color: Color.lerp(idleColor, colors[2], selectionProgress)!,
             ),
             _HomeBlock(
               right: 1,
               bottom: 1,
               width: 12,
               height: 12,
-              color: selected ? colors[3] : idleColor,
+              color: Color.lerp(idleColor, colors[3], selectionProgress)!,
             ),
           ],
         ),
@@ -396,19 +416,19 @@ class _NavigationGlyph extends StatelessWidget {
         child: Stack(
           alignment: Alignment.center,
           children: [
-            Icon(
-              Icons.track_changes_rounded,
-              color: selected ? accent : idleColor,
-              size: 23,
-            ),
+            Icon(Icons.track_changes_rounded, color: accent, size: 23),
             AnimatedContainer(
               duration: const Duration(milliseconds: 190),
               width: 6,
               height: 6,
               decoration: BoxDecoration(
-                color: selected ? const Color(0xFFEF4444) : idleColor,
+                color: Color.lerp(
+                  idleColor,
+                  const Color(0xFFEF4444),
+                  selectionProgress,
+                ),
                 shape: BoxShape.circle,
-                boxShadow: selected
+                boxShadow: visuallySelected
                     ? [
                         BoxShadow(
                           color: const Color(0xFFEF4444).withValues(alpha: .35),
@@ -424,9 +444,9 @@ class _NavigationGlyph extends StatelessWidget {
     }
 
     return Icon(
-      selected ? item.selectedIcon : item.icon,
-      color: selected ? accent : idleColor,
-      size: selected ? 22 : 21,
+      visuallySelected ? item.selectedIcon : item.icon,
+      color: accent,
+      size: 21 + selectionProgress,
     );
   }
 }
@@ -509,8 +529,12 @@ class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
     return _DashboardData(user: user, summary: summary, leads: leads);
   }
 
-  void _retryLoad() {
-    setState(() => _future = _load());
+  Future<void> _refreshDashboard() async {
+    final future = _load();
+    setState(() {
+      _future = future;
+    });
+    await future;
   }
 
   Future<void> _updateDeliverySettings({
@@ -589,95 +613,22 @@ class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
       future: _future,
       builder: (context, snapshot) {
         final data = snapshot.data;
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 112),
-          children: [
-            if (snapshot.connectionState == ConnectionState.waiting)
-              const Center(child: CircularProgressIndicator())
-            else if (snapshot.hasError)
-              _EmptyPanel(
-                message: snapshot.error.toString(),
-                onRetry: _retryLoad,
-              )
-            else ...[
-              _HomeHeader(user: data!.user, onRefresh: _retryLoad),
-              const SizedBox(height: 12),
-              Container(
-                decoration: BoxDecoration(
-                  color: context.appSurface,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: context.appOutline),
-                  boxShadow: context.appCardShadows,
-                ),
-                child: IntrinsicHeight(
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _MetricCard(
-                          label: 'Leads Delivered',
-                          value: '${data.summary.leadsDelivered7Days}',
-                          caption: '7 days',
-                          icon: Icons.trending_up,
-                          iconBackground: const Color(0xFFE0F7FA),
-                          iconColor: const Color(0xFF078AA2),
-                        ),
-                      ),
-                      Expanded(
-                        child: _MetricCard(
-                          label: 'Appointments',
-                          value: '${data.summary.appointmentsSet7Days}',
-                          caption: '7 days',
-                          icon: Icons.auto_awesome_rounded,
-                          iconBackground: const Color(0xFFF0E9FF),
-                          iconColor: const Color(0xFF7C4DCC),
-                        ),
-                      ),
-                      Expanded(
-                        child: _MetricCard(
-                          label: 'Cost / Appt',
-                          value: _money(data.summary.costPerAppointment),
-                          caption: 'avg',
-                          icon: Icons.attach_money_rounded,
-                          iconBackground: const Color(0xFFE7F8EF),
-                          iconColor: const Color(0xFF15805D),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              SizedBox(
-                height: 46,
-                child: FilledButton.icon(
-                  onPressed: widget.onBuyLeads,
-                  icon: const Icon(Icons.shopping_bag_outlined),
-                  label: const Text('Buy More Leads'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF18A0B8),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(13),
-                    ),
-                    textStyle: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
-              _SectionHeader(
-                title: 'Recent Leads',
-                actionLabel: 'View all →',
-                onAction: widget.onViewInbox,
-              ),
-              const SizedBox(height: 6),
-              if (data.leads.isEmpty)
-                const _EmptyPanel(
-                  message:
-                      'No matching leads yet. Seed demo data or buy a package.',
+        return RefreshIndicator(
+          onRefresh: _refreshDashboard,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 112),
+            children: [
+              if (snapshot.connectionState == ConnectionState.waiting)
+                const Center(child: CircularProgressIndicator())
+              else if (snapshot.hasError)
+                _EmptyPanel(
+                  message: snapshot.error.toString(),
+                  onRetry: _refreshDashboard,
                 )
-              else
+              else ...[
+                _HomeHeader(user: data!.user),
+                const SizedBox(height: 12),
                 Container(
                   decoration: BoxDecoration(
                     color: context.appSurface,
@@ -685,46 +636,123 @@ class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
                     border: Border.all(color: context.appOutline),
                     boxShadow: context.appCardShadows,
                   ),
-                  clipBehavior: Clip.antiAlias,
-                  child: Column(
-                    children: [
-                      for (
-                        var index = 0;
-                        index < data.leads.length && index < 5;
-                        index++
-                      ) ...[
-                        _LeadTile(
-                          lead: data.leads[index],
-                          onTap: () => _openLead(data.leads[index]),
+                  child: IntrinsicHeight(
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _MetricCard(
+                            label: 'Leads Delivered',
+                            value: '${data.summary.leadsDelivered7Days}',
+                            caption: '7 days',
+                            icon: Icons.trending_up,
+                            iconBackground: const Color(0xFFE0F7FA),
+                            iconColor: const Color(0xFF078AA2),
+                          ),
                         ),
-                        if (index < data.leads.length - 1 && index < 4)
-                          Divider(height: 1, color: context.appOutline),
+                        Expanded(
+                          child: _MetricCard(
+                            label: 'Appointments',
+                            value: '${data.summary.appointmentsSet7Days}',
+                            caption: '7 days',
+                            icon: Icons.auto_awesome_rounded,
+                            iconBackground: const Color(0xFFF0E9FF),
+                            iconColor: const Color(0xFF7C4DCC),
+                          ),
+                        ),
+                        Expanded(
+                          child: _MetricCard(
+                            label: 'Cost / Appt',
+                            value: _money(data.summary.costPerAppointment),
+                            caption: 'avg',
+                            icon: Icons.attach_money_rounded,
+                            iconBackground: const Color(0xFFE7F8EF),
+                            iconColor: const Color(0xFF15805D),
+                          ),
+                        ),
                       ],
-                    ],
+                    ),
                   ),
                 ),
-              const SizedBox(height: 2),
-              _DeliverySettings(
-                emailAlertsEnabled:
-                    _emailAlertsOverride ??
-                    _deliverySettings?.emailAlertsEnabled ??
-                    data.summary.emailAlertsEnabled,
-                smsAlertsEnabled:
-                    _smsAlertsOverride ??
-                    _deliverySettings?.smsAlertsEnabled ??
-                    data.summary.smsAlertsEnabled,
-                saving: _savingDeliverySettings,
-                onEmailChanged: (value) => _updateDeliverySettings(
-                  summary: data.summary,
-                  emailAlertsEnabled: value,
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 46,
+                  child: FilledButton.icon(
+                    onPressed: widget.onBuyLeads,
+                    icon: const Icon(Icons.shopping_bag_outlined),
+                    label: const Text('Buy More Leads'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF18A0B8),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(13),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
                 ),
-                onSmsChanged: (value) => _updateDeliverySettings(
-                  summary: data.summary,
-                  smsAlertsEnabled: value,
+                const SizedBox(height: 14),
+                _SectionHeader(
+                  title: 'Recent Leads',
+                  actionLabel: 'View all →',
+                  onAction: widget.onViewInbox,
                 ),
-              ),
+                const SizedBox(height: 6),
+                if (data.leads.isEmpty)
+                  const _EmptyPanel(
+                    message:
+                        'No matching leads yet. Seed demo data or buy a package.',
+                  )
+                else
+                  Container(
+                    decoration: BoxDecoration(
+                      color: context.appSurface,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: context.appOutline),
+                      boxShadow: context.appCardShadows,
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Column(
+                      children: [
+                        for (
+                          var index = 0;
+                          index < data.leads.length && index < 5;
+                          index++
+                        ) ...[
+                          _LeadTile(
+                            lead: data.leads[index],
+                            onTap: () => _openLead(data.leads[index]),
+                          ),
+                          if (index < data.leads.length - 1 && index < 4)
+                            Divider(height: 1, color: context.appOutline),
+                        ],
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 2),
+                _DeliverySettings(
+                  emailAlertsEnabled:
+                      _emailAlertsOverride ??
+                      _deliverySettings?.emailAlertsEnabled ??
+                      data.summary.emailAlertsEnabled,
+                  smsAlertsEnabled:
+                      _smsAlertsOverride ??
+                      _deliverySettings?.smsAlertsEnabled ??
+                      data.summary.smsAlertsEnabled,
+                  saving: _savingDeliverySettings,
+                  onEmailChanged: (value) => _updateDeliverySettings(
+                    summary: data.summary,
+                    emailAlertsEnabled: value,
+                  ),
+                  onSmsChanged: (value) => _updateDeliverySettings(
+                    summary: data.summary,
+                    smsAlertsEnabled: value,
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         );
       },
     );
@@ -744,10 +772,9 @@ class _DashboardData {
 }
 
 class _HomeHeader extends StatelessWidget {
-  const _HomeHeader({required this.user, required this.onRefresh});
+  const _HomeHeader({required this.user});
 
   final UserProfile user;
-  final VoidCallback onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -783,12 +810,6 @@ class _HomeHeader extends StatelessWidget {
                 ],
               ),
             ),
-            _CircleIconButton(
-              icon: Icons.refresh_rounded,
-              semanticLabel: 'Refresh Home',
-              onPressed: onRefresh,
-            ),
-            const SizedBox(width: 8),
             const AppThemeToggleButton(),
           ],
         ),
@@ -803,50 +824,6 @@ String _greetingFor(DateTime localTime) {
   if (hour >= 12 && hour < 17) return 'Good afternoon';
   if (hour >= 17 && hour < 22) return 'Good evening';
   return 'Good night';
-}
-
-class _CircleIconButton extends StatelessWidget {
-  const _CircleIconButton({
-    required this.icon,
-    required this.semanticLabel,
-    required this.onPressed,
-  });
-
-  final IconData icon;
-  final String semanticLabel;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: semanticLabel,
-      child: Material(
-        color: context.appSurface,
-        shape: const CircleBorder(),
-        child: InkWell(
-          onTap: onPressed,
-          customBorder: const CircleBorder(),
-          child: Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: context.appOutline),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x120C5263),
-                  blurRadius: 10,
-                  offset: Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Icon(icon, color: context.appInk, size: 20),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _MetricCard extends StatelessWidget {

@@ -48,10 +48,16 @@ class _GoalsScreenState extends State<GoalsScreen> {
   }
 
   void _retry() {
+    _refreshGoals();
+  }
+
+  Future<void> _refreshGoals() async {
+    final future = _repository.getGoal();
     setState(() {
       _savedGoal = null;
-      _future = _repository.getGoal();
+      _future = future;
     });
+    await future;
   }
 
   Future<void> _saveMonthlyGoal(
@@ -74,140 +80,139 @@ class _GoalsScreenState extends State<GoalsScreen> {
       future: _future,
       builder: (context, snapshot) {
         final goal = _savedGoal ?? snapshot.data;
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 112),
-          children: [
-            AppScreenHeader(
-              eyebrow: 'Performance plan',
-              title: 'Goals',
-              subtitle: 'Track your annual target and next best actions.',
-              icon: Icons.track_changes_rounded,
-              trailing: IconButton.filledTonal(
-                tooltip: 'Refresh goals',
-                onPressed: _retry,
-                icon: const Icon(Icons.refresh_rounded),
+        return RefreshIndicator(
+          onRefresh: _refreshGoals,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 112),
+            children: [
+              const AppScreenHeader(
+                eyebrow: 'Performance plan',
+                title: 'Goals',
+                subtitle: 'Track your annual target and next best actions.',
+                icon: Icons.track_changes_rounded,
               ),
-            ),
-            const SizedBox(height: 12),
-            if (snapshot.connectionState == ConnectionState.waiting)
-              const Center(child: CircularProgressIndicator())
-            else if (snapshot.hasError)
-              _Panel(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              const SizedBox(height: 12),
+              if (snapshot.connectionState == ConnectionState.waiting)
+                const Center(child: CircularProgressIndicator())
+              else if (snapshot.hasError)
+                _Panel(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(snapshot.error.toString()),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: _retry,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                )
+              else ...[
+                _GoalHero(goal: goal!),
+                const SizedBox(height: 10),
+                GridView.count(
+                  crossAxisCount: 2,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  mainAxisExtent: 100,
                   children: [
-                    Text(snapshot.error.toString()),
-                    const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      onPressed: _retry,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Retry'),
+                    _StatCard(
+                      value: '${goal.dealsRemaining}',
+                      label: 'Deals Remaining',
+                      icon: Icons.emoji_events_outlined,
+                      accent: Color(0xFFD58416),
+                      lightSurface: Color(0xFFFFF8E8),
+                      darkSurface: Color(0xFF2A2113),
+                    ),
+                    _StatCard(
+                      value: '${goal.appointmentsRemaining}',
+                      label: 'Appointments Remaining',
+                      icon: Icons.calendar_today_outlined,
+                      accent: Color(0xFF5967D8),
+                      lightSurface: Color(0xFFF1F3FF),
+                      darkSurface: Color(0xFF1C2341),
+                    ),
+                    _StatCard(
+                      value: '${goal.leadsRemaining}',
+                      label: 'Leads Remaining',
+                      icon: Icons.group_outlined,
+                      accent: Color(0xFF0F9F98),
+                      lightSurface: Color(0xFFEAFBF8),
+                      darkSurface: Color(0xFF102C2B),
+                    ),
+                    _StatCard(
+                      value: '${goal.closedDealsYtd}',
+                      label: 'Closed YTD',
+                      icon: Icons.check_circle_outline_rounded,
+                      accent: Color(0xFF168A5B),
+                      lightSurface: Color(0xFFEBFAF2),
+                      darkSurface: Color(0xFF112B20),
                     ),
                   ],
                 ),
-              )
-            else ...[
-              _GoalHero(goal: goal!),
-              const SizedBox(height: 10),
-              GridView.count(
-                crossAxisCount: 2,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                mainAxisExtent: 100,
-                children: [
-                  _StatCard(
-                    value: '${goal.dealsRemaining}',
-                    label: 'Deals Remaining',
-                    icon: Icons.emoji_events_outlined,
-                    accent: Color(0xFFD58416),
-                    lightSurface: Color(0xFFFFF8E8),
-                    darkSurface: Color(0xFF2A2113),
-                  ),
-                  _StatCard(
-                    value: '${goal.appointmentsRemaining}',
-                    label: 'Appointments Remaining',
-                    icon: Icons.calendar_today_outlined,
-                    accent: Color(0xFF5967D8),
-                    lightSurface: Color(0xFFF1F3FF),
-                    darkSurface: Color(0xFF1C2341),
-                  ),
-                  _StatCard(
-                    value: '${goal.leadsRemaining}',
-                    label: 'Leads Remaining',
-                    icon: Icons.group_outlined,
-                    accent: Color(0xFF0F9F98),
-                    lightSurface: Color(0xFFEAFBF8),
-                    darkSurface: Color(0xFF102C2B),
-                  ),
-                  _StatCard(
-                    value: '${goal.closedDealsYtd}',
-                    label: 'Closed YTD',
-                    icon: Icons.check_circle_outline_rounded,
-                    accent: Color(0xFF168A5B),
-                    lightSurface: Color(0xFFEBFAF2),
-                    darkSurface: Color(0xFF112B20),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              _MonthlyGoalPanel(
-                monthlyGoalCents: (goal.annualGoalCents / 12).round(),
-                onSave: (monthlyGoalCents) =>
-                    _saveMonthlyGoal(goal, monthlyGoalCents),
-              ),
-              const SizedBox(height: 10),
-              _SuccessRateCard(goal: goal),
-              const SizedBox(height: 10),
-              _GoalTrendCard(goal: goal),
-              if (goal.pacingMessage.isNotEmpty) ...[
                 const SizedBox(height: 10),
-                _PacingPanel(goal: goal),
-              ],
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
+                _MonthlyGoalPanel(
+                  monthlyGoalCents: (goal.annualGoalCents / 12).round(),
+                  onSave: (monthlyGoalCents) =>
+                      _saveMonthlyGoal(goal, monthlyGoalCents),
+                ),
+                const SizedBox(height: 10),
+                _SuccessRateCard(goal: goal),
+                const SizedBox(height: 10),
+                _GoalTrendCard(goal: goal),
+                if (goal.pacingMessage.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  _PacingPanel(goal: goal),
+                ],
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Recommended Packages',
+                        style: TextStyle(
+                          color: context.appInk,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => widget.onSeeAllPackages(null),
+                      child: const Text('See all →'),
+                    ),
+                  ],
+                ),
+                if (goal.packages.isEmpty)
+                  _Panel(
                     child: Text(
-                      'Recommended Packages',
-                      style: TextStyle(
-                        color: context.appInk,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
+                      goal.pacingStatus == 'goal_met'
+                          ? 'Annual income goal met. No additional lead packages are needed.'
+                          : 'No current lead packages are available.',
+                    ),
+                  )
+                else
+                  SizedBox(
+                    height: 196,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: goal.packages.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: 12),
+                      itemBuilder: (context, index) => _PackagePreview(
+                        package: goal.packages[index],
+                        onSelect: () =>
+                            widget.onSeeAllPackages(goal.packages[index].id),
                       ),
                     ),
                   ),
-                  TextButton(
-                    onPressed: () => widget.onSeeAllPackages(null),
-                    child: const Text('See all →'),
-                  ),
-                ],
-              ),
-              if (goal.packages.isEmpty)
-                _Panel(
-                  child: Text(
-                    goal.pacingStatus == 'goal_met'
-                        ? 'Annual income goal met. No additional lead packages are needed.'
-                        : 'No current lead packages are available.',
-                  ),
-                )
-              else
-                SizedBox(
-                  height: 196,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: goal.packages.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 12),
-                    itemBuilder: (context, index) => _PackagePreview(
-                      package: goal.packages[index],
-                      onSelect: () =>
-                          widget.onSeeAllPackages(goal.packages[index].id),
-                    ),
-                  ),
-                ),
+              ],
             ],
-          ],
+          ),
         );
       },
     );

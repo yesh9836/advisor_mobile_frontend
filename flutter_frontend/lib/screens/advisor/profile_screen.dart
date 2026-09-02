@@ -61,10 +61,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  void _refreshProfile() {
+  Future<void> _refreshProfile() async {
+    final future = _loadProfile();
     setState(() {
-      _future = _loadProfile();
+      _future = future;
     });
+    await future;
   }
 
   Future<void> _openLicenseUpload() {
@@ -107,60 +109,67 @@ class _ProfileScreenState extends State<ProfileScreen> {
         }
 
         if (snapshot.hasError) {
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              _Panel(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      snapshot.error.toString(),
-                      style: TextStyle(color: context.appMuted),
-                    ),
-                    const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      onPressed: _refreshProfile,
-                      icon: const Icon(Icons.wifi_protected_setup_rounded),
-                      label: Text(
-                        snapshot.error.toString().toLowerCase().contains(
-                              'timed out',
-                            )
-                            ? 'Reconnect'
-                            : 'Reload',
+          return RefreshIndicator(
+            onRefresh: _refreshProfile,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(16),
+              children: [
+                _Panel(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        snapshot.error.toString(),
+                        style: TextStyle(color: context.appMuted),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: _refreshProfile,
+                        icon: const Icon(Icons.wifi_protected_setup_rounded),
+                        label: Text(
+                          snapshot.error.toString().toLowerCase().contains(
+                                'timed out',
+                              )
+                              ? 'Reconnect'
+                              : 'Reload',
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           );
         }
 
         final data = snapshot.data!;
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 112),
-          children: [
-            _ProfileHeader(
-              user: data.user,
-              licenses: data.licenses,
-              onRefresh: _refreshProfile,
-            ),
-            const SizedBox(height: 9),
-            _ContactInfo(user: data.user),
-            const SizedBox(height: 9),
-            const _AppearanceSettings(),
-            const SizedBox(height: 9),
-            _LicensedStates(licenses: data.licenses, onAdd: _openLicenseUpload),
-            const SizedBox(height: 9),
-            _AccountActions(
-              onBillingHistory: _openBillingHistory,
-              onChangePassword: _openChangePassword,
-              onNotificationPreferences: _openNotificationPreferences,
-            ),
-            const SizedBox(height: 9),
-            _SignOutButton(isLoading: _isLoggingOut, onTap: _logout),
-          ],
+        return RefreshIndicator(
+          onRefresh: _refreshProfile,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 112),
+            children: [
+              _ProfileHeader(user: data.user, licenses: data.licenses),
+              const SizedBox(height: 9),
+              _ContactInfo(user: data.user),
+              const SizedBox(height: 9),
+              const _AppearanceSettings(),
+              const SizedBox(height: 9),
+              _LicensedStates(
+                licenses: data.licenses,
+                onAdd: _openLicenseUpload,
+              ),
+              const SizedBox(height: 9),
+              _AccountActions(
+                onBillingHistory: _openBillingHistory,
+                onChangePassword: _openChangePassword,
+                onNotificationPreferences: _openNotificationPreferences,
+              ),
+              const SizedBox(height: 9),
+              _SignOutButton(isLoading: _isLoggingOut, onTap: _logout),
+            ],
+          ),
         );
       },
     );
@@ -175,15 +184,10 @@ class _ProfileData {
 }
 
 class _ProfileHeader extends StatelessWidget {
-  const _ProfileHeader({
-    required this.user,
-    required this.licenses,
-    required this.onRefresh,
-  });
+  const _ProfileHeader({required this.user, required this.licenses});
 
   final UserProfile user;
   final List<AdvisorLicense> licenses;
-  final VoidCallback onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -251,11 +255,6 @@ class _ProfileHeader extends StatelessWidget {
                   ),
                 ],
               ),
-            ),
-            IconButton.filledTonal(
-              tooltip: 'Refresh profile',
-              onPressed: onRefresh,
-              icon: const Icon(Icons.refresh_rounded),
             ),
           ],
         ),

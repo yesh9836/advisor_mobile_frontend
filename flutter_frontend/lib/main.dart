@@ -123,11 +123,13 @@ class _ThemeFlowTransitionState extends State<_ThemeFlowTransition>
                       key: const ValueKey('theme-flow-overlay'),
                       painter: _ThemeFlowPainter(
                         origin: origin,
-                        radius: maxRadius * progress,
-                        color: widget.isDark
-                            ? const Color(0xFF050505)
-                            : const Color(0xFFFFFBF0),
-                        opacity: (1 - progress) * .42,
+                        radius: widget.isDark
+                            ? maxRadius * (1 - progress)
+                            : maxRadius * progress,
+                        color: const Color(0xFFFFFBF0),
+                        opacity: widget.isDark
+                            ? .82 * (1 - (progress * .18))
+                            : .58 * (1 - progress),
                       ),
                     );
                   },

@@ -67,6 +67,35 @@ void main() {
     expect(repository.savedExpectedVersion, 4);
     expect(find.text('Delivery settings updated.'), findsOneWidget);
   });
+
+  testWidgets('refreshes Home by pulling down without a header button', (
+    tester,
+  ) async {
+    final repository = _FakeAdvisorRepository();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AdvisorDashboardScreen(
+            repository: repository,
+            authRepository: _FakeAuthRepository(),
+            onBuyLeads: () {},
+            onViewInbox: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.bySemanticsLabel('Refresh Home'), findsNothing);
+    expect(find.byType(RefreshIndicator), findsOneWidget);
+    expect(repository.dashboardRequests, 1);
+
+    await tester.drag(find.byType(ListView), const Offset(0, 320));
+    await tester.pumpAndSettle();
+
+    expect(repository.dashboardRequests, 2);
+  });
 }
 
 class _FakeAuthRepository extends AuthRepository {
@@ -86,18 +115,21 @@ class _FakeAdvisorRepository extends AdvisorRepository {
   bool? savedEmailEnabled;
   bool? savedSmsEnabled;
   int? savedExpectedVersion;
+  int dashboardRequests = 0;
 
   @override
-  Future<LeadDashboardSummary> getDashboardSummary() async =>
-      LeadDashboardSummary(
-        leadsDelivered7Days: 9,
-        appointmentsSet7Days: 2,
-        costPerAppointment: 100,
-        currency: 'USD',
-        targetStates: const ['CA'],
-        emailAlertsEnabled: true,
-        smsAlertsEnabled: true,
-      );
+  Future<LeadDashboardSummary> getDashboardSummary() async {
+    dashboardRequests++;
+    return LeadDashboardSummary(
+      leadsDelivered7Days: 9,
+      appointmentsSet7Days: 2,
+      costPerAppointment: 100,
+      currency: 'USD',
+      targetStates: const ['CA'],
+      emailAlertsEnabled: true,
+      smsAlertsEnabled: true,
+    );
+  }
 
   @override
   Future<List<AdvisorLead>> getLeads({

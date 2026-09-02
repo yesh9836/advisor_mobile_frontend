@@ -65,11 +65,13 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
     }
   }
 
-  void _refresh() {
+  Future<void> _refresh() async {
+    final future = _load();
     setState(() {
       _error = null;
-      _future = _load();
+      _future = future;
     });
+    await future;
   }
 
   @override
@@ -258,127 +260,129 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
     return FutureBuilder<_BuyData>(
       future: _future,
       builder: (context, snapshot) {
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 112),
-          children: [
-            AppScreenHeader(
-              eyebrow: 'Grow your pipeline',
-              title: 'Buy Leads',
-              subtitle: 'Choose a package and target the states that matter.',
-              icon: Icons.shopping_bag_rounded,
-              trailing: IconButton.filledTonal(
-                tooltip: 'Refresh packages',
-                onPressed: _refresh,
-                icon: const Icon(Icons.refresh_rounded),
+        return RefreshIndicator(
+          onRefresh: _refresh,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 112),
+            children: [
+              const AppScreenHeader(
+                eyebrow: 'Grow your pipeline',
+                title: 'Buy Leads',
+                subtitle: 'Choose a package and target the states that matter.',
+                icon: Icons.shopping_bag_rounded,
               ),
-            ),
-            const SizedBox(height: 11),
-            if (snapshot.connectionState == ConnectionState.waiting)
-              const Center(child: CircularProgressIndicator())
-            else if (snapshot.hasError)
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(snapshot.error.toString()),
-                      const SizedBox(height: 12),
-                      OutlinedButton.icon(
-                        onPressed: _refresh,
-                        icon: const Icon(Icons.wifi_protected_setup_rounded),
-                        label: Text(
-                          snapshot.error.toString().toLowerCase().contains(
-                                'timed out',
-                              )
-                              ? 'Reconnect'
-                              : 'Reload',
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-            else ...[
-              _LicenseReviewBanner(
-                onboarding: snapshot.data!.onboarding,
-                onReview: () => _reviewOnboarding(snapshot.data!.onboarding),
-              ),
-              const SizedBox(height: 10),
-              _TargetStates(
-                states: snapshot.data!.summary.targetStates,
-                selectedStates: _selectedStates,
-                onToggle: (state) {
-                  setState(() {
-                    if (_selectedStates.contains(state)) {
-                      _selectedStates.remove(state);
-                    } else {
-                      _selectedStates.add(state);
-                    }
-                  });
-                },
-              ),
-              const SizedBox(height: 10),
-              for (final package in snapshot.data!.packages)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 9),
-                  child: _PackageCard(
-                    package: package,
-                    selected: _selectedPackageId == package.id,
-                    saving: _saving,
-                    onTap: () {
-                      setState(() {
-                        _selectedPackageId = package.id;
-                        _error = null;
-                      });
-                    },
-                    onCheckout: () => _continueToCheckout(snapshot.data!),
-                  ),
-                ),
-              if (_checkoutNotice != null) ...[
-                Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: context.appSoftFill,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFF9BDCE8)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _checkoutNotice!,
-                        style: TextStyle(color: context.appMuted),
-                      ),
-                      if (_activeCheckout != null) ...[
-                        const SizedBox(height: 8),
-                        TextButton.icon(
-                          onPressed: _checkingPurchase
-                              ? null
-                              : _checkPurchaseStatus,
-                          icon: _checkingPurchase
-                              ? const SizedBox.square(
-                                  dimension: 14,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
+              const SizedBox(height: 11),
+              if (snapshot.connectionState == ConnectionState.waiting)
+                const Center(child: CircularProgressIndicator())
+              else if (snapshot.hasError)
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(snapshot.error.toString()),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: _refresh,
+                          icon: const Icon(Icons.wifi_protected_setup_rounded),
+                          label: Text(
+                            snapshot.error.toString().toLowerCase().contains(
+                                  'timed out',
                                 )
-                              : const Icon(Icons.refresh, size: 18),
-                          label: const Text('Check purchase status'),
+                                ? 'Reconnect'
+                                : 'Reload',
+                          ),
                         ),
                       ],
-                    ],
+                    ),
                   ),
+                )
+              else ...[
+                _LicenseReviewBanner(
+                  onboarding: snapshot.data!.onboarding,
+                  onReview: () => _reviewOnboarding(snapshot.data!.onboarding),
                 ),
-              ],
-              if (_error != null) ...[
-                const SizedBox(height: 2),
-                Text(_error!, style: const TextStyle(color: Color(0xFFB91C1C))),
                 const SizedBox(height: 10),
+                _TargetStates(
+                  states: snapshot.data!.summary.targetStates,
+                  selectedStates: _selectedStates,
+                  onToggle: (state) {
+                    setState(() {
+                      if (_selectedStates.contains(state)) {
+                        _selectedStates.remove(state);
+                      } else {
+                        _selectedStates.add(state);
+                      }
+                    });
+                  },
+                ),
+                const SizedBox(height: 10),
+                for (final package in snapshot.data!.packages)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 9),
+                    child: _PackageCard(
+                      package: package,
+                      selected: _selectedPackageId == package.id,
+                      saving: _saving,
+                      onTap: () {
+                        setState(() {
+                          _selectedPackageId = package.id;
+                          _error = null;
+                        });
+                      },
+                      onCheckout: () => _continueToCheckout(snapshot.data!),
+                    ),
+                  ),
+                if (_checkoutNotice != null) ...[
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: context.appSoftFill,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFF9BDCE8)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _checkoutNotice!,
+                          style: TextStyle(color: context.appMuted),
+                        ),
+                        if (_activeCheckout != null) ...[
+                          const SizedBox(height: 8),
+                          TextButton.icon(
+                            onPressed: _checkingPurchase
+                                ? null
+                                : _checkPurchaseStatus,
+                            icon: _checkingPurchase
+                                ? const SizedBox.square(
+                                    dimension: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.refresh, size: 18),
+                            label: const Text('Check purchase status'),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+                if (_error != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    _error!,
+                    style: const TextStyle(color: Color(0xFFB91C1C)),
+                  ),
+                  const SizedBox(height: 10),
+                ],
               ],
             ],
-          ],
+          ),
         );
       },
     );
