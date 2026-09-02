@@ -788,6 +788,30 @@ class _LeadUpdatePanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final statusColor = _outcomeColor(status);
     final hasNotes = notesController.text.trim().isNotEmpty;
+    final saveButton = SizedBox(
+      width: 132,
+      height: 38,
+      child: FilledButton.icon(
+        onPressed: saving ? null : onSave,
+        style: FilledButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        icon: saving
+            ? const SizedBox.square(
+                dimension: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : const Icon(Icons.save_outlined, size: 16),
+        label: Text(
+          saving ? 'Saving…' : 'Save update',
+          style: const TextStyle(fontSize: 12),
+        ),
+      ),
+    );
     return Container(
       padding: EdgeInsets.fromLTRB(
         embedded ? 0 : 16,
@@ -903,19 +927,32 @@ class _LeadUpdatePanel extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           if (!showNotes)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                key: const Key('lead-add-notes-button'),
-                onPressed: saving ? null : onToggleNotes,
-                icon: Icon(
-                  hasNotes
-                      ? Icons.edit_note_rounded
-                      : Icons.add_comment_outlined,
-                  size: 18,
+            Row(
+              children: [
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      key: const Key('lead-add-notes-button'),
+                      onPressed: saving ? null : onToggleNotes,
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        minimumSize: const Size(0, 36),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      icon: Icon(
+                        hasNotes
+                            ? Icons.edit_note_rounded
+                            : Icons.add_comment_outlined,
+                        size: 18,
+                      ),
+                      label: Text(hasNotes ? 'Edit notes' : 'Add notes'),
+                    ),
+                  ),
                 ),
-                label: Text(hasNotes ? 'Edit notes' : 'Add notes'),
-              ),
+                const SizedBox(width: 6),
+                saveButton,
+              ],
             )
           else ...[
             Row(
@@ -981,34 +1018,10 @@ class _LeadUpdatePanel extends StatelessWidget {
               ],
             ),
           ],
-          SizedBox(height: embedded ? 5 : 8),
-          Align(
-            alignment: Alignment.centerRight,
-            child: SizedBox(
-              width: 148,
-              height: 38,
-              child: FilledButton.icon(
-                onPressed: saving ? null : onSave,
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                icon: saving
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.save_outlined, size: 16),
-                label: Text(
-                  saving ? 'Saving…' : 'Save update',
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ),
-            ),
-          ),
+          if (showNotes) ...[
+            SizedBox(height: embedded ? 5 : 8),
+            Align(alignment: Alignment.centerRight, child: saveButton),
+          ],
         ],
       ),
     );
