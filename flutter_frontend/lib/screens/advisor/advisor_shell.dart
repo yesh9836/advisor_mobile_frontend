@@ -66,13 +66,22 @@ class _AdvisorShellState extends State<AdvisorShell> {
 
   void _selectTab(int index) {
     if (index == _selectedIndex) return;
+    final currentPage = _pageController.hasClients
+        ? (_pageController.page ?? _selectedIndex.toDouble()).round()
+        : _selectedIndex;
+    final isLongJump = (index - currentPage).abs() > 1;
     setState(() {
       _screens[index] ??= _createScreen(index);
       _selectedIndex = index;
     });
+    if (isLongJump) {
+      _navigationPosition.value = index.toDouble();
+      _pageController.jumpToPage(index);
+      return;
+    }
     _pageController.animateToPage(
       index,
-      duration: const Duration(milliseconds: 320),
+      duration: const Duration(milliseconds: 260),
       curve: Curves.easeOutCubic,
     );
   }
@@ -250,19 +259,55 @@ class _AdvisorNavigationBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       height: 54,
-      child: Row(
-        children: [
-          for (var index = 0; index < _items.length; index++)
-            Expanded(
-              child: _AdvisorNavigationButton(
-                item: _items[index],
-                selected: selectedIndex == index,
-                selectionProgress: (1 - (transitionPosition - index).abs())
-                    .clamp(0.0, 1.0),
-                onTap: () => onDestinationSelected(index),
-              ),
-            ),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) => TweenAnimationBuilder<double>(
+          tween: Tween<double>(end: transitionPosition),
+          duration: const Duration(milliseconds: 240),
+          curve: Curves.easeOutCubic,
+          builder: (context, animatedPosition, _) {
+            final slotWidth = constraints.maxWidth / _items.length;
+            final position = animatedPosition.clamp(
+              0.0,
+              (_items.length - 1).toDouble(),
+            );
+            final selectedColor = context.isDarkMode
+                ? Color.lerp(_items[selectedIndex].color, Colors.white, .16)!
+                : _items[selectedIndex].color;
+            return Stack(
+              children: [
+                Positioned(
+                  left: position * slotWidth + 2,
+                  top: 2,
+                  bottom: 2,
+                  width: slotWidth - 4,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    decoration: BoxDecoration(
+                      color: selectedColor.withValues(
+                        alpha: context.isDarkMode ? .19 : .1,
+                      ),
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                  ),
+                ),
+                Row(
+                  children: [
+                    for (var index = 0; index < _items.length; index++)
+                      Expanded(
+                        child: _AdvisorNavigationButton(
+                          item: _items[index],
+                          selected: selectedIndex == index,
+                          selectionProgress: (1 - (position - index).abs())
+                              .clamp(0.0, 1.0),
+                          onTap: () => onDestinationSelected(index),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -319,9 +364,7 @@ class _AdvisorNavigationButton extends StatelessWidget {
               duration: const Duration(milliseconds: 190),
               curve: Curves.easeOutCubic,
               decoration: BoxDecoration(
-                color: accent.withValues(
-                  alpha: (context.isDarkMode ? 0.19 : 0.1) * selectionProgress,
-                ),
+                color: Colors.transparent,
                 borderRadius: BorderRadius.circular(13),
               ),
               child: Column(

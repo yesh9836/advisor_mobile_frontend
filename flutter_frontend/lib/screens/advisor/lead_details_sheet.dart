@@ -923,17 +923,53 @@ class _LeadUpdatePanel extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           if (!showNotes && hasNotes) ...[
-            Text(
-              notesController.text.trim(),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: context.appMuted,
-                fontSize: 10.5,
-                height: 1.25,
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: context.appSurface.withValues(alpha: .62),
+                borderRadius: BorderRadius.circular(11),
+                border: Border.all(color: context.appOutline),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.sticky_note_2_outlined,
+                    color: context.appMuted,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Latest note',
+                          style: TextStyle(
+                            color: context.appMuted,
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          notesController.text.trim(),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: context.appInk,
+                            fontSize: 11,
+                            height: 1.25,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 3),
+            const SizedBox(height: 5),
           ],
           if (!showNotes)
             Row(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_frontend/models/advisor_models.dart';
 import 'package:flutter_frontend/repositories/advisor_repository.dart';
+import 'package:flutter_frontend/screens/advisor/lead_details_sheet.dart';
 import 'package:flutter_frontend/theme/app_components.dart';
 import 'package:flutter_frontend/theme/app_theme.dart';
 
@@ -72,6 +73,15 @@ class _GoalsScreenState extends State<GoalsScreen> {
     setState(() {
       _savedGoal = updated;
     });
+  }
+
+  Future<void> _openLead(AdvisorLead lead) {
+    return showLeadDetailsSheet(
+      context: context,
+      lead: lead,
+      repository: _repository,
+      onUpdated: (_) => _refreshGoals(),
+    );
   }
 
   @override
@@ -145,6 +155,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
                         size: 100,
                         outcomeStatus: 'closed_deal',
                       )).items,
+                      onLeadTap: _openLead,
                     ),
                     _StatCard(
                       value: '${goal.appointmentsRemaining}',
@@ -159,6 +170,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
                         size: 100,
                         outcomeStatus: 'appointment_set',
                       )).items,
+                      onLeadTap: _openLead,
                     ),
                     _StatCard(
                       value: '${goal.leadsRemaining}',
@@ -172,6 +184,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
                       recordsTitle: 'Active leads in your pipeline',
                       loadRecords: () async =>
                           (await _repository.getLeadsPage(size: 100)).items,
+                      onLeadTap: _openLead,
                     ),
                     _StatCard(
                       value: '${goal.closedDealsYtd}',
@@ -186,6 +199,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
                         size: 100,
                         outcomeStatus: 'closed_deal',
                       )).items,
+                      onLeadTap: _openLead,
                     ),
                   ],
                 ),
@@ -1488,7 +1502,7 @@ class _MonthlyGoalPanelState extends State<_MonthlyGoalPanel> {
                 minimumSize: const Size(0, 32),
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
-              child: const Text('Adjust'),
+              child: const Text('Update'),
             ),
           ],
         ),
@@ -1715,6 +1729,7 @@ class _StatCard extends StatelessWidget {
     required this.detail,
     required this.recordsTitle,
     required this.loadRecords,
+    required this.onLeadTap,
   });
 
   final String value;
@@ -1726,6 +1741,7 @@ class _StatCard extends StatelessWidget {
   final String detail;
   final String recordsTitle;
   final Future<List<AdvisorLead>> Function() loadRecords;
+  final ValueChanged<AdvisorLead> onLeadTap;
 
   void _showDetails(BuildContext context) {
     final records = loadRecords();
@@ -1826,6 +1842,12 @@ class _StatCard extends StatelessWidget {
                           _ => 'New lead',
                         };
                         return ListTile(
+                          onTap: () {
+                            Navigator.of(context).pop();
+                            WidgetsBinding.instance.addPostFrameCallback(
+                              (_) => onLeadTap(lead),
+                            );
+                          },
                           dense: true,
                           contentPadding: EdgeInsets.zero,
                           leading: CircleAvatar(
@@ -1854,6 +1876,10 @@ class _StatCard extends StatelessWidget {
                               color: context.appMuted,
                               fontSize: 10.5,
                             ),
+                          ),
+                          trailing: const Icon(
+                            Icons.chevron_right_rounded,
+                            size: 19,
                           ),
                         );
                       },

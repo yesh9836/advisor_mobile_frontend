@@ -28,6 +28,7 @@ void main() {
     expect(find.byKey(const Key('lead-phone-link')), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Call'), findsOneWidget);
     expect(find.widgetWithText(OutlinedButton, 'Message'), findsOneWidget);
+    expect(find.text('Latest note'), findsOneWidget);
     expect(tester.widget<Text>(find.text('555-0100')).maxLines, 1);
     expect(find.text(r'$250k-$500k'), findsWidgets);
   });

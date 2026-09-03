@@ -54,7 +54,10 @@ void main() {
     expect(find.text('Recently closed deals'), findsOneWidget);
     expect(find.text('Calculation'), findsOneWidget);
     expect(find.text('Test Closed Lead'), findsOneWidget);
-    Navigator.of(tester.element(find.text('Calculation'))).pop();
+    await tester.tap(find.text('Test Closed Lead'));
+    await tester.pumpAndSettle();
+    expect(find.text('Lead Details'), findsOneWidget);
+    Navigator.of(tester.element(find.text('Lead Details'))).pop();
     await tester.pumpAndSettle();
     expect(find.text('Conversion success'), findsOneWidget);
     expect(find.text('SET SUCCESS RATE'), findsOneWidget);
