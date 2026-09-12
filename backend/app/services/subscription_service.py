@@ -1,7 +1,7 @@
 import hashlib
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 import stripe
 from fastapi import HTTPException, status
@@ -356,6 +356,7 @@ class SubscriptionService:
         package_id: int,
         target_states: List[str],
         retry_token: Optional[str] = None,
+        checkout_origin: Literal["web", "mobile"] = "web",
     ) -> Dict[str, Any]:
         """
         Create Stripe checkout session for one-time package purchase.
@@ -427,11 +428,19 @@ class SubscriptionService:
             )
 
         frontend_base_url = settings.FRONTEND_URL.rstrip("/")
-        success_url = (
-            f"{frontend_base_url}/subscription"
-            f"?checkout=success&session_id={{CHECKOUT_SESSION_ID}}"
-        )
-        cancel_url = f"{frontend_base_url}/subscription?checkout=cancel"
+        if checkout_origin == "mobile":
+            mobile_return_url = f"{frontend_base_url}/checkout-return.html"
+            success_url = (
+                f"{mobile_return_url}"
+                f"?status=success&session_id={{CHECKOUT_SESSION_ID}}"
+            )
+            cancel_url = f"{mobile_return_url}?status=cancel"
+        else:
+            success_url = (
+                f"{frontend_base_url}/subscription"
+                f"?checkout=success&session_id={{CHECKOUT_SESSION_ID}}"
+            )
+            cancel_url = f"{frontend_base_url}/subscription?checkout=cancel"
         purchase_terms = SubscriptionService._build_purchase_terms_snapshot(package)
         checkout_metadata = SubscriptionService._build_checkout_purchase_metadata(
             user_id=int(user.id),
@@ -489,27 +498,28 @@ class SubscriptionService:
             checkout_expires_at = int(datetime.now(timezone.utc).timestamp()) + (
                 int(settings.STRIPE_CHECKOUT_SESSION_EXPIRES_MINUTES) * 60
             )
-            session = stripe.checkout.Session.create(
-                customer=customer_id,
-                mode="payment",
-                automatic_tax={"enabled": False},
-                line_items=[SubscriptionService._build_checkout_line_item(package)],
-                client_reference_id=str(user.id),
-                metadata=checkout_metadata,
-                payment_intent_data={
-                    "metadata": checkout_metadata
-                },
-                invoice_creation={
+            checkout_session_params: Dict[str, Any] = {
+                "customer": customer_id,
+                "mode": "payment",
+                "automatic_tax": {"enabled": False},
+                "line_items": [SubscriptionService._build_checkout_line_item(package)],
+                "client_reference_id": str(user.id),
+                "metadata": checkout_metadata,
+                "payment_intent_data": {"metadata": checkout_metadata},
+                "invoice_creation": {
                     "enabled": True,
                     "invoice_data": {
                         "metadata": checkout_metadata,
                     },
                 },
-                success_url=success_url,
-                cancel_url=cancel_url,
-                expires_at=checkout_expires_at,
-                idempotency_key=idempotency_key,
-            )
+                "success_url": success_url,
+                "cancel_url": cancel_url,
+                "expires_at": checkout_expires_at,
+                "idempotency_key": idempotency_key,
+            }
+            if checkout_origin == "mobile":
+                checkout_session_params["origin_context"] = "mobile_app"
+            session = stripe.checkout.Session.create(**checkout_session_params)
             session_id = str(session["id"])
             payment_intent_id = SubscriptionService._extract_payment_intent_id(session)
             invoice_id = SubscriptionService._extract_checkout_invoice_id(session)

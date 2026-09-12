@@ -202,6 +202,55 @@ def test_checkout_success_returns_session(
 
 
 @pytest.mark.integration
+def test_mobile_checkout_returns_to_app(
+    client,
+    user_factory,
+    license_factory,
+    plan_factory,
+    auth_headers,
+    monkeypatch,
+):
+    _, headers = _create_advisor_with_verified_license(
+        user_factory,
+        license_factory,
+        auth_headers,
+    )
+    plan = plan_factory(stripe_price_id="price_mobile_checkout")
+    captured_checkout_kwargs = {}
+
+    def _mock_checkout_create(**kwargs):
+        captured_checkout_kwargs.update(kwargs)
+        return {
+            "id": "cs_test_mobile_checkout",
+            "url": "https://checkout.stripe.test/mobile-session",
+        }
+
+    monkeypatch.setattr(
+        "app.services.payment_service.PaymentService.create_or_get_stripe_customer",
+        lambda db, user: "cus_mobile_checkout",
+    )
+    monkeypatch.setattr(
+        "app.services.subscription_service.stripe.checkout.Session.create",
+        _mock_checkout_create,
+    )
+
+    response = client.post(
+        "/api/v1/purchases/checkout",
+        headers=headers,
+        json={"package_id": plan.id, "checkout_origin": "mobile"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert captured_checkout_kwargs["success_url"].endswith(
+        "/checkout-return.html?status=success&session_id={CHECKOUT_SESSION_ID}"
+    )
+    assert captured_checkout_kwargs["cancel_url"].endswith(
+        "/checkout-return.html?status=cancel"
+    )
+    assert captured_checkout_kwargs["origin_context"] == "mobile_app"
+
+
+@pytest.mark.integration
 def test_demo_checkout_completes_and_grants_credits_without_stripe(
     client,
     db,

@@ -171,6 +171,7 @@ class AdvisorRepository {
       body: {
         'package_id': packageId,
         'target_states': targetStates,
+        'checkout_origin': 'mobile',
         if (retryToken != null && retryToken.trim().isNotEmpty)
           'retry_token': retryToken.trim(),
       },

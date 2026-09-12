@@ -31,6 +31,7 @@ class PurchaseCheckoutRequest(BaseModel):
     package_id: int = Field(..., ge=1)
     target_states: List[str] = Field(default_factory=list, max_length=50)
     retry_token: Optional[str] = Field(default=None, min_length=8, max_length=128)
+    checkout_origin: Literal["web", "mobile"] = "web"
 
     @field_validator("target_states")
     @classmethod

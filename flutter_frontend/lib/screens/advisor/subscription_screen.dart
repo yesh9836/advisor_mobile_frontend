@@ -38,7 +38,6 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
   final Set<String> _selectedStates = {};
   bool _saving = false;
   bool _checkingPurchase = false;
-  String? _error;
   String? _checkoutNotice;
   PurchaseCheckoutSession? _activeCheckout;
   Timer? _checkoutPollTimer;
@@ -68,7 +67,6 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
   Future<void> _refresh() async {
     final future = _load();
     setState(() {
-      _error = null;
       _future = future;
     });
     await future;
@@ -123,26 +121,26 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
         .where((item) => item.id == _selectedPackageId)
         .firstOrNull;
     if (selectedPackage == null) {
-      setState(() => _error = 'Select a lead package.');
+      _showCheckoutError('Select a lead package.');
       return;
     }
     if (_selectedStates.isEmpty) {
-      setState(() => _error = 'Select at least one target state.');
+      _showCheckoutError('Select at least one target state.');
       return;
     }
     if (selectedPackage.stateLimit != null &&
         _selectedStates.length > selectedPackage.stateLimit!) {
-      setState(
-        () => _error =
-            '${selectedPackage.name} supports up to '
-            '${selectedPackage.stateLimit} target states.',
+      _showCheckoutError(
+        '${selectedPackage.name} supports up to '
+        '${selectedPackage.stateLimit} target states.',
       );
       return;
     }
 
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     setState(() {
       _saving = true;
-      _error = null;
+      _checkoutNotice = null;
     });
     try {
       _checkoutRetryToken ??=
@@ -167,7 +165,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
       }
       final launcher =
           widget.checkoutUrlLauncher ??
-          (url) => launchUrl(url, mode: LaunchMode.externalApplication);
+          (url) => launchUrl(
+            url,
+            mode: LaunchMode.inAppBrowserView,
+            browserConfiguration: const BrowserConfiguration(showTitle: true),
+          );
       if (!await launcher(checkout.url)) {
         throw StateError('Unable to open secure checkout.');
       }
@@ -181,7 +183,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
       });
       _schedulePurchaseStatusCheck();
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      _showCheckoutError(error.toString());
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -221,14 +223,16 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
       }
       if (purchase.isCompleted) {
         _checkoutPollTimer?.cancel();
+        final message =
+            'Purchase complete. ${purchase.creditsTotal} lead credits '
+            'were added${purchase.packageName == null ? '' : ' for ${purchase.packageName}'}.';
         setState(() {
           _activeCheckout = null;
           _checkoutRetryToken = null;
           _selectedPackageId = null;
-          _checkoutNotice =
-              'Purchase complete. ${purchase.creditsTotal} lead credits '
-              'were added${purchase.packageName == null ? '' : ' for ${purchase.packageName}'}.';
+          _checkoutNotice = null;
         });
+        _showPurchaseCompleteNotification(message);
         return;
       }
       if (purchase.isTerminalFailure) {
@@ -253,6 +257,94 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
     } finally {
       if (mounted) setState(() => _checkingPurchase = false);
     }
+  }
+
+  void _showPurchaseCompleteNotification(String message) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
+          dismissDirection: DismissDirection.horizontal,
+          margin: const EdgeInsets.fromLTRB(14, 0, 14, 92),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          backgroundColor: const Color(0xFF087A70),
+          elevation: 8,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          showCloseIcon: true,
+          closeIconColor: Colors.white,
+          content: Row(
+            children: [
+              const Icon(
+                Icons.check_circle_rounded,
+                color: Colors.white,
+                size: 22,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  message,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+  }
+
+  void _showCheckoutError(String message) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
+          dismissDirection: DismissDirection.horizontal,
+          margin: const EdgeInsets.fromLTRB(14, 0, 14, 92),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          backgroundColor: const Color(0xFFB42332),
+          elevation: 8,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          showCloseIcon: true,
+          closeIconColor: Colors.white,
+          content: Row(
+            children: [
+              const Icon(
+                Icons.error_outline_rounded,
+                color: Colors.white,
+                size: 22,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  message,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
   }
 
   @override
@@ -332,7 +424,6 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                       onTap: () {
                         setState(() {
                           _selectedPackageId = package.id;
-                          _error = null;
                         });
                       },
                       onCheckout: () => _continueToCheckout(snapshot.data!),
@@ -374,14 +465,6 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                       ],
                     ),
                   ),
-                ],
-                if (_error != null) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    _error!,
-                    style: const TextStyle(color: Color(0xFFB91C1C)),
-                  ),
-                  const SizedBox(height: 10),
                 ],
               ],
             ],

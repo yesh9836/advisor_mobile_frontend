@@ -83,7 +83,12 @@ void main() {
       find.textContaining('supports up to 1 target states'),
       findsOneWidget,
     );
+    expect(find.byType(SnackBar), findsOneWidget);
     expect(repository.savedPackageId, isNull);
+
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('supports up to 1 target states'), findsNothing);
   });
 
   testWidgets('demo checkout completes without launching an external URL', (
@@ -116,6 +121,14 @@ void main() {
     expect(
       find.textContaining('Purchase complete. 10 lead credits were added'),
       findsOneWidget,
+    );
+    expect(find.byType(SnackBar), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 6));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('Purchase complete. 10 lead credits were added'),
+      findsNothing,
     );
   });
 
