@@ -56,9 +56,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('lead-notes-field')), findsNothing);
-    await tester.tap(find.byKey(const Key('lead-add-notes-button')));
+    await tester.tap(find.byKey(const Key('lead-note-preview')));
     await tester.pumpAndSettle();
-    expect(find.text('Notes (optional)'), findsOneWidget);
+    expect(find.text('Follow-up note (optional)'), findsOneWidget);
     await tester.enterText(
       find.byKey(const Key('lead-notes-field')),
       'Meeting booked for Tuesday.',

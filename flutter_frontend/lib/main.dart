@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_frontend/models/auth_models.dart';
@@ -44,8 +45,8 @@ class _SpectaculeadsAppState extends State<SpectaculeadsApp> {
           theme: AppTheme.light,
           darkTheme: AppTheme.dark,
           themeMode: _themeController.mode,
-          themeAnimationDuration: const Duration(milliseconds: 400),
-          themeAnimationCurve: Curves.easeInOutCubic,
+          themeAnimationDuration: const Duration(milliseconds: 280),
+          themeAnimationCurve: Curves.easeOutCubic,
           builder: (context, child) => _ThemeFlowTransition(
             isDark: _themeController.isDark,
             origin: _themeController.transitionOrigin,
@@ -77,7 +78,7 @@ class _ThemeFlowTransitionState extends State<_ThemeFlowTransition>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 460),
+    duration: const Duration(milliseconds: 320),
   );
 
   @override
@@ -96,52 +97,37 @@ class _ThemeFlowTransitionState extends State<_ThemeFlowTransition>
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        widget.child,
-        Positioned.fill(
-          child: IgnorePointer(
-            child: AnimatedBuilder(
-              animation: _controller,
-              builder: (context, _) {
-                if (!_controller.isAnimating && _controller.isCompleted) {
-                  return const SizedBox.shrink();
-                }
-                final progress = Curves.easeInOutCubic.transform(
-                  _controller.value,
-                );
-                return LayoutBuilder(
-                  builder: (context, constraints) {
-                    final origin =
-                        widget.origin ?? Offset(constraints.maxWidth - 34, 72);
-                    final maxRadius = _furthestCornerDistance(
-                      origin,
-                      Size(constraints.maxWidth, constraints.maxHeight),
-                    );
-                    return CustomPaint(
-                      key: const ValueKey('theme-flow-overlay'),
-                      painter: _ThemeFlowPainter(
-                        origin: origin,
-                        radius: widget.isDark
-                            ? maxRadius * (1 - progress)
-                            : maxRadius * progress,
-                        color: widget.isDark
-                            ? const Color(0xFF050505)
-                            : AppColors.canvas,
-                        opacity: progress < .8
-                            ? .32
-                            : .32 * ((1 - progress) / .2),
-                        inverse: widget.isDark,
-                      ),
-                    );
-                  },
-                );
-              },
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final size = Size(constraints.maxWidth, constraints.maxHeight);
+        final origin = widget.origin ?? Offset(size.width - 34, 72);
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            RepaintBoundary(child: widget.child),
+            Positioned.fill(
+              child: IgnorePointer(
+                child: RepaintBoundary(
+                  child: CustomPaint(
+                    key: const ValueKey('theme-flow-overlay'),
+                    painter: _ThemeFlowPainter(
+                      animation: _controller,
+                      origin: origin,
+                      maxRadius: _furthestCornerDistance(origin, size),
+                      color: widget.isDark
+                          ? const Color(0xFF050505)
+                          : AppColors.canvas,
+                      inverse: widget.isDark,
+                    ),
+                    isComplex: false,
+                    willChange: true,
+                  ),
+                ),
+              ),
             ),
-          ),
-        ),
-      ],
+          ],
+        );
+      },
     );
   }
 }
@@ -156,22 +142,26 @@ double _furthestCornerDistance(Offset origin, Size size) {
 }
 
 class _ThemeFlowPainter extends CustomPainter {
-  const _ThemeFlowPainter({
+  _ThemeFlowPainter({
+    required this.animation,
     required this.origin,
-    required this.radius,
+    required this.maxRadius,
     required this.color,
-    required this.opacity,
     required this.inverse,
-  });
+  }) : super(repaint: animation);
 
+  final Animation<double> animation;
   final Offset origin;
-  final double radius;
+  final double maxRadius;
   final Color color;
-  final double opacity;
   final bool inverse;
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (!animation.isAnimating) return;
+    final progress = Curves.easeOutCubic.transform(animation.value);
+    final radius = inverse ? maxRadius * (1 - progress) : maxRadius * progress;
+    final opacity = .28 * math.sin(math.pi * progress);
     if (radius <= 0 || opacity <= 0) return;
     final paint = Paint()..color = color.withValues(alpha: opacity);
     if (!inverse) {
@@ -187,10 +177,10 @@ class _ThemeFlowPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _ThemeFlowPainter oldDelegate) =>
-      oldDelegate.radius != radius ||
+      oldDelegate.animation != animation ||
+      oldDelegate.maxRadius != maxRadius ||
       oldDelegate.color != color ||
       oldDelegate.origin != origin ||
-      oldDelegate.opacity != opacity ||
       oldDelegate.inverse != inverse;
 }
 

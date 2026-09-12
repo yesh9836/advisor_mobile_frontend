@@ -1465,46 +1465,58 @@ class _MonthlyGoalPanelState extends State<_MonthlyGoalPanel> {
     final foreground = widget.embedded ? Colors.white : context.appInk;
     final muted = widget.embedded ? Colors.white70 : context.appMuted;
     if (!_editing) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-        decoration: BoxDecoration(
-          color: widget.embedded
-              ? Colors.white.withValues(alpha: .08)
-              : context.appSoftFill,
+      final actionColor = widget.embedded
+          ? const Color(0xFF70E5EA)
+          : const Color(0xFF0F9F98);
+      return Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(13),
+        child: InkWell(
+          key: const ValueKey('monthly-goal-adjust-button'),
+          onTap: () => setState(() => _editing = true),
           borderRadius: BorderRadius.circular(13),
-          border: Border.all(
-            color: widget.embedded ? Colors.white24 : context.appOutline,
+          child: Ink(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: widget.embedded
+                  ? Colors.white.withValues(alpha: .08)
+                  : context.appSoftFill,
+              borderRadius: BorderRadius.circular(13),
+              border: Border.all(
+                color: widget.embedded ? Colors.white24 : context.appOutline,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.tune_rounded, color: muted, size: 17),
+                const SizedBox(width: 8),
+                Text(
+                  'Monthly goal',
+                  style: TextStyle(color: muted, fontSize: 11),
+                ),
+                const Spacer(),
+                Text(
+                  _money(widget.monthlyGoalCents),
+                  style: TextStyle(
+                    color: foreground,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'Update',
+                  style: TextStyle(
+                    color: actionColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(width: 3),
+                Icon(Icons.chevron_right_rounded, color: actionColor, size: 17),
+              ],
+            ),
           ),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.tune_rounded, color: muted, size: 17),
-            const SizedBox(width: 8),
-            Text('Monthly goal', style: TextStyle(color: muted, fontSize: 11)),
-            const Spacer(),
-            Text(
-              _money(widget.monthlyGoalCents),
-              style: TextStyle(
-                color: foreground,
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(width: 8),
-            TextButton(
-              key: const ValueKey('monthly-goal-adjust-button'),
-              onPressed: () => setState(() => _editing = true),
-              style: TextButton.styleFrom(
-                foregroundColor: widget.embedded
-                    ? const Color(0xFF70E5EA)
-                    : const Color(0xFF0F9F98),
-                padding: const EdgeInsets.symmetric(horizontal: 9),
-                minimumSize: const Size(0, 32),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: const Text('Update'),
-            ),
-          ],
         ),
       );
     }
@@ -1537,6 +1549,7 @@ class _MonthlyGoalPanelState extends State<_MonthlyGoalPanel> {
                 child: TextField(
                   controller: _controller,
                   enabled: !_saving,
+                  autofocus: true,
                   style: TextStyle(
                     color: foreground,
                     fontWeight: FontWeight.w600,

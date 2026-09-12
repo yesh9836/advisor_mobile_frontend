@@ -922,119 +922,110 @@ class _LeadUpdatePanel extends StatelessWidget {
             onChanged: saving ? null : onStatusChanged,
           ),
           const SizedBox(height: 8),
-          if (!showNotes && hasNotes) ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: context.appSurface.withValues(alpha: .62),
-                borderRadius: BorderRadius.circular(11),
-                border: Border.all(color: context.appOutline),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    Icons.sticky_note_2_outlined,
-                    color: context.appMuted,
-                    size: 16,
+          if (!showNotes) ...[
+            Material(
+              color: context.appSurface.withValues(alpha: .64),
+              borderRadius: BorderRadius.circular(12),
+              child: InkWell(
+                key: const Key('lead-note-preview'),
+                onTap: saving ? null : onToggleNotes,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 11,
+                    vertical: 9,
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Latest note',
-                          style: TextStyle(
-                            color: context.appMuted,
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          notesController.text.trim(),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: context.appInk,
-                            fontSize: 11,
-                            height: 1.25,
-                          ),
-                        ),
-                      ],
-                    ),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: context.appOutline),
                   ),
-                ],
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF18A0B8).withValues(alpha: .1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.sticky_note_2_outlined,
+                          color: Color(0xFF18A0B8),
+                          size: 16,
+                        ),
+                      ),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              hasNotes ? 'Latest note' : 'Follow-up note',
+                              style: TextStyle(
+                                color: context.appMuted,
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              hasNotes
+                                  ? notesController.text.trim()
+                                  : 'Tap to add context for the next follow-up.',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: hasNotes
+                                    ? context.appInk
+                                    : context.appMuted,
+                                fontSize: 11,
+                                height: 1.25,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Icon(
+                        Icons.edit_outlined,
+                        color: context.appMuted,
+                        size: 17,
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
-            const SizedBox(height: 5),
-          ],
-          if (!showNotes)
-            Row(
-              children: [
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      key: const Key('lead-add-notes-button'),
-                      onPressed: saving ? null : onToggleNotes,
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        minimumSize: const Size(0, 36),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      icon: Icon(
-                        hasNotes
-                            ? Icons.edit_note_rounded
-                            : Icons.add_comment_outlined,
-                        size: 18,
-                      ),
-                      label: Text(hasNotes ? 'Edit notes' : 'Add notes'),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                saveButton,
-              ],
-            )
-          else ...[
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Notes (optional)',
-                    style: TextStyle(
-                      color: context.appMuted,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  key: const Key('lead-hide-notes-button'),
-                  tooltip: 'Hide notes',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: saving ? null : onToggleNotes,
-                  icon: const Icon(Icons.close_rounded, size: 18),
-                ),
-              ],
-            ),
+          ] else ...[
             TextField(
               key: const Key('lead-notes-field'),
               controller: notesController,
               enabled: !saving,
-              minLines: 2,
-              maxLines: embedded ? 3 : 5,
+              minLines: 3,
+              maxLines: embedded ? 4 : 6,
               maxLength: 2000,
-              decoration: const InputDecoration(
-                hintText: 'Add call notes, appointment time, or objections.',
+              textAlignVertical: TextAlignVertical.top,
+              style: TextStyle(
+                color: context.appInk,
+                fontSize: 12,
+                height: 1.35,
+              ),
+              decoration: InputDecoration(
+                labelText: 'Follow-up note (optional)',
+                hintText: 'Add call notes, next steps, or an appointment time…',
                 alignLabelWithHint: true,
                 counterText: '',
-                prefixIcon: Padding(
-                  padding: EdgeInsets.only(bottom: 50),
-                  child: Icon(Icons.edit_note_rounded),
+                floatingLabelBehavior: FloatingLabelBehavior.always,
+                filled: true,
+                fillColor: context.appSurface.withValues(alpha: .82),
+                contentPadding: const EdgeInsets.fromLTRB(13, 18, 44, 12),
+                suffixIcon: IconButton(
+                  key: const Key('lead-hide-notes-button'),
+                  tooltip: 'Close note editor',
+                  onPressed: saving ? null : onToggleNotes,
+                  icon: const Icon(Icons.close_rounded, size: 18),
                 ),
               ),
             ),
@@ -1063,10 +1054,8 @@ class _LeadUpdatePanel extends StatelessWidget {
               ],
             ),
           ],
-          if (showNotes) ...[
-            SizedBox(height: embedded ? 5 : 8),
-            Align(alignment: Alignment.centerRight, child: saveButton),
-          ],
+          SizedBox(height: embedded ? 6 : 9),
+          Align(alignment: Alignment.centerRight, child: saveButton),
         ],
       ),
     );

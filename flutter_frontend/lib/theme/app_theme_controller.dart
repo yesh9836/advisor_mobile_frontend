@@ -72,9 +72,20 @@ class AppThemeToggleButton extends StatelessWidget {
               ],
             ),
             child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 180),
-              transitionBuilder: (child, animation) =>
-                  RotationTransition(turns: animation, child: child),
+              duration: const Duration(milliseconds: 160),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              layoutBuilder: (currentChild, previousChildren) => Stack(
+                alignment: Alignment.center,
+                children: [...previousChildren, ?currentChild],
+              ),
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: ScaleTransition(
+                  scale: Tween<double>(begin: .86, end: 1).animate(animation),
+                  child: child,
+                ),
+              ),
               child: Icon(
                 isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
                 key: ValueKey(isDark),

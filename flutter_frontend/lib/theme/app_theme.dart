@@ -12,7 +12,143 @@ abstract final class AppColors {
 }
 
 abstract final class AppTheme {
-  static ThemeData get light {
+  static const _fontFamily = 'PlusJakartaSans';
+  static const _numericFeatures = <FontFeature>[FontFeature.tabularFigures()];
+
+  static TextTheme _buildTextTheme(
+    TextTheme base, {
+    required Color ink,
+    required Color muted,
+  }) {
+    TextStyle? style(
+      TextStyle? source, {
+      required double size,
+      required FontWeight weight,
+      required double height,
+      double letterSpacing = 0,
+      Color? color,
+    }) => source?.copyWith(
+      fontFamily: _fontFamily,
+      fontSize: size,
+      fontWeight: weight,
+      height: height,
+      letterSpacing: letterSpacing,
+      color: color ?? ink,
+      fontFeatures: _numericFeatures,
+    );
+
+    return base.copyWith(
+      displayLarge: style(
+        base.displayLarge,
+        size: 46,
+        weight: FontWeight.w600,
+        height: 1.08,
+        letterSpacing: -1.35,
+      ),
+      displayMedium: style(
+        base.displayMedium,
+        size: 38,
+        weight: FontWeight.w600,
+        height: 1.1,
+        letterSpacing: -1.05,
+      ),
+      displaySmall: style(
+        base.displaySmall,
+        size: 32,
+        weight: FontWeight.w600,
+        height: 1.12,
+        letterSpacing: -0.8,
+      ),
+      headlineLarge: style(
+        base.headlineLarge,
+        size: 28,
+        weight: FontWeight.w600,
+        height: 1.16,
+        letterSpacing: -0.65,
+      ),
+      headlineMedium: style(
+        base.headlineMedium,
+        size: 24,
+        weight: FontWeight.w600,
+        height: 1.18,
+        letterSpacing: -0.5,
+      ),
+      headlineSmall: style(
+        base.headlineSmall,
+        size: 21,
+        weight: FontWeight.w600,
+        height: 1.22,
+        letterSpacing: -0.35,
+      ),
+      titleLarge: style(
+        base.titleLarge,
+        size: 19,
+        weight: FontWeight.w600,
+        height: 1.25,
+        letterSpacing: -0.25,
+      ),
+      titleMedium: style(
+        base.titleMedium,
+        size: 16,
+        weight: FontWeight.w600,
+        height: 1.3,
+        letterSpacing: -0.12,
+      ),
+      titleSmall: style(
+        base.titleSmall,
+        size: 14,
+        weight: FontWeight.w600,
+        height: 1.32,
+        letterSpacing: -0.05,
+      ),
+      bodyLarge: style(
+        base.bodyLarge,
+        size: 16,
+        weight: FontWeight.w400,
+        height: 1.45,
+        letterSpacing: -0.08,
+      ),
+      bodyMedium: style(
+        base.bodyMedium,
+        size: 14,
+        weight: FontWeight.w400,
+        height: 1.45,
+        letterSpacing: -0.03,
+      ),
+      bodySmall: style(
+        base.bodySmall,
+        size: 12,
+        weight: FontWeight.w400,
+        height: 1.4,
+        color: muted,
+      ),
+      labelLarge: style(
+        base.labelLarge,
+        size: 14,
+        weight: FontWeight.w600,
+        height: 1.25,
+      ),
+      labelMedium: style(
+        base.labelMedium,
+        size: 12,
+        weight: FontWeight.w600,
+        height: 1.25,
+        letterSpacing: 0.05,
+      ),
+      labelSmall: style(
+        base.labelSmall,
+        size: 10.5,
+        weight: FontWeight.w600,
+        height: 1.25,
+        letterSpacing: 0.12,
+        color: muted,
+      ),
+    );
+  }
+
+  static final ThemeData light = _buildLight();
+
+  static ThemeData _buildLight() {
     final scheme = ColorScheme.fromSeed(
       seedColor: AppColors.midnight,
       brightness: Brightness.light,
@@ -22,38 +158,18 @@ abstract final class AppTheme {
       error: const Color(0xFFD92D4C),
     );
 
-    final baseText = ThemeData.light().textTheme.apply(
-      bodyColor: AppColors.ink,
-      displayColor: AppColors.ink,
-      fontFamily: 'Manrope',
+    final textTheme = _buildTextTheme(
+      ThemeData.light().textTheme,
+      ink: AppColors.ink,
+      muted: AppColors.muted,
     );
 
     return ThemeData(
       useMaterial3: true,
-      fontFamily: 'Manrope',
+      fontFamily: _fontFamily,
       colorScheme: scheme,
       scaffoldBackgroundColor: AppColors.canvas,
-      textTheme: baseText.copyWith(
-        headlineLarge: baseText.headlineLarge?.copyWith(
-          fontWeight: FontWeight.w600,
-          letterSpacing: -0.8,
-        ),
-        headlineMedium: baseText.headlineMedium?.copyWith(
-          fontWeight: FontWeight.w600,
-          letterSpacing: -0.5,
-        ),
-        titleLarge: baseText.titleLarge?.copyWith(
-          fontWeight: FontWeight.w600,
-          letterSpacing: -0.25,
-        ),
-        titleMedium: baseText.titleMedium?.copyWith(
-          fontWeight: FontWeight.w700,
-        ),
-        bodyMedium: baseText.bodyMedium?.copyWith(
-          color: AppColors.muted,
-          height: 1.4,
-        ),
-      ),
+      textTheme: textTheme,
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,
         foregroundColor: AppColors.midnight,
@@ -61,6 +177,7 @@ abstract final class AppTheme {
         scrolledUnderElevation: 0,
         centerTitle: false,
         titleTextStyle: TextStyle(
+          fontFamily: _fontFamily,
           color: AppColors.midnight,
           fontSize: 20,
           fontWeight: FontWeight.w600,
@@ -88,9 +205,10 @@ abstract final class AppTheme {
         selectedColor: AppColors.midnight,
         checkmarkColor: Colors.white,
         labelStyle: const TextStyle(
+          fontFamily: _fontFamily,
           color: AppColors.ink,
           fontSize: 12,
-          fontWeight: FontWeight.w700,
+          fontWeight: FontWeight.w600,
         ),
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
         shape: RoundedRectangleBorder(
@@ -106,6 +224,7 @@ abstract final class AppTheme {
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         labelTextStyle: WidgetStateProperty.resolveWith(
           (states) => TextStyle(
+            fontFamily: _fontFamily,
             color: states.contains(WidgetState.selected)
                 ? const Color(0xFF078AA2)
                 : const Color(0xFF556273),
@@ -127,7 +246,10 @@ abstract final class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: Colors.white,
-        hintStyle: const TextStyle(color: Color(0xFF95A4AF)),
+        hintStyle: const TextStyle(
+          fontFamily: _fontFamily,
+          color: Color(0xFF95A4AF),
+        ),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
           vertical: 13,
@@ -156,7 +278,11 @@ abstract final class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(15),
           ),
-          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+          textStyle: const TextStyle(
+            fontFamily: _fontFamily,
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -167,13 +293,19 @@ abstract final class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(15),
           ),
-          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+          textStyle: const TextStyle(
+            fontFamily: _fontFamily,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: AppColors.cyan,
-          textStyle: const TextStyle(fontWeight: FontWeight.w600),
+          textStyle: const TextStyle(
+            fontFamily: _fontFamily,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
       bottomSheetTheme: const BottomSheetThemeData(
@@ -187,7 +319,10 @@ abstract final class AppTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: AppColors.midnight,
-        contentTextStyle: const TextStyle(color: Colors.white),
+        contentTextStyle: const TextStyle(
+          fontFamily: _fontFamily,
+          color: Colors.white,
+        ),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
@@ -197,7 +332,9 @@ abstract final class AppTheme {
     );
   }
 
-  static ThemeData get dark {
+  static final ThemeData dark = _buildDark();
+
+  static ThemeData _buildDark() {
     const canvas = Color(0xFF050505);
     const surface = Color(0xFF111111);
     const surfaceRaised = Color(0xFF1A1A1A);
@@ -220,38 +357,21 @@ abstract final class AppTheme {
       onError: Color(0xFF2A050B),
     );
 
-    final baseText = ThemeData.dark().textTheme.apply(
-      bodyColor: ink,
-      displayColor: ink,
-      fontFamily: 'Manrope',
+    final textTheme = _buildTextTheme(
+      ThemeData.dark().textTheme,
+      ink: ink,
+      muted: muted,
     );
 
     return ThemeData(
       useMaterial3: true,
-      fontFamily: 'Manrope',
+      fontFamily: _fontFamily,
       brightness: Brightness.dark,
       colorScheme: scheme,
       scaffoldBackgroundColor: canvas,
       canvasColor: canvas,
       shadowColor: Colors.black,
-      textTheme: baseText.copyWith(
-        headlineLarge: baseText.headlineLarge?.copyWith(
-          fontWeight: FontWeight.w600,
-          letterSpacing: -0.8,
-        ),
-        headlineMedium: baseText.headlineMedium?.copyWith(
-          fontWeight: FontWeight.w600,
-          letterSpacing: -0.5,
-        ),
-        titleLarge: baseText.titleLarge?.copyWith(
-          fontWeight: FontWeight.w600,
-          letterSpacing: -0.25,
-        ),
-        titleMedium: baseText.titleMedium?.copyWith(
-          fontWeight: FontWeight.w700,
-        ),
-        bodyMedium: baseText.bodyMedium?.copyWith(color: muted, height: 1.4),
-      ),
+      textTheme: textTheme,
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,
         foregroundColor: ink,
@@ -259,6 +379,7 @@ abstract final class AppTheme {
         scrolledUnderElevation: 0,
         centerTitle: false,
         titleTextStyle: TextStyle(
+          fontFamily: _fontFamily,
           color: ink,
           fontSize: 20,
           fontWeight: FontWeight.w600,
@@ -286,9 +407,10 @@ abstract final class AppTheme {
         selectedColor: cyan,
         checkmarkColor: const Color(0xFF001416),
         labelStyle: const TextStyle(
+          fontFamily: _fontFamily,
           color: ink,
           fontSize: 12,
-          fontWeight: FontWeight.w700,
+          fontWeight: FontWeight.w600,
         ),
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
         shape: RoundedRectangleBorder(
@@ -304,6 +426,7 @@ abstract final class AppTheme {
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         labelTextStyle: WidgetStateProperty.resolveWith(
           (states) => TextStyle(
+            fontFamily: _fontFamily,
             color: states.contains(WidgetState.selected)
                 ? cyan
                 : const Color(0xFF929292),
@@ -325,8 +448,11 @@ abstract final class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: surfaceRaised,
-        labelStyle: const TextStyle(color: muted),
-        hintStyle: const TextStyle(color: Color(0xFF777777)),
+        labelStyle: const TextStyle(fontFamily: _fontFamily, color: muted),
+        hintStyle: const TextStyle(
+          fontFamily: _fontFamily,
+          color: Color(0xFF777777),
+        ),
         prefixIconColor: muted,
         suffixIconColor: muted,
         contentPadding: const EdgeInsets.symmetric(
@@ -357,7 +483,11 @@ abstract final class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(15),
           ),
-          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+          textStyle: const TextStyle(
+            fontFamily: _fontFamily,
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -368,13 +498,19 @@ abstract final class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(15),
           ),
-          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+          textStyle: const TextStyle(
+            fontFamily: _fontFamily,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: cyan,
-          textStyle: const TextStyle(fontWeight: FontWeight.w600),
+          textStyle: const TextStyle(
+            fontFamily: _fontFamily,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
       bottomSheetTheme: const BottomSheetThemeData(
@@ -392,7 +528,7 @@ abstract final class AppTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: const Color(0xFF1C1C1C),
-        contentTextStyle: const TextStyle(color: ink),
+        contentTextStyle: const TextStyle(fontFamily: _fontFamily, color: ink),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),

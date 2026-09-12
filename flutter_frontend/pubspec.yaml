@@ -24,6 +24,6 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   fonts:
-    - family: Manrope
+    - family: PlusJakartaSans
       fonts:
-        - asset: assets/fonts/Manrope-Variable.ttf
+        - asset: assets/fonts/PlusJakartaSans-Variable.ttf
