@@ -36,6 +36,11 @@ interface AdvisorOption {
 }
 
 const PROCESSED_LICENSE_DECISION_LIMIT = 10;
+const PENDING_LICENSE_REFRESH_INTERVAL_MS = 15_000;
+
+interface PendingLicenseLoadOptions {
+  background?: boolean;
+}
 
 const formatDateTime = (value: string | null): string => {
   if (!value) {
@@ -124,20 +129,30 @@ const LicenseApproval = () => {
     error: null,
   });
 
-  const loadPendingLicenses = useCallback(async () => {
-    setLoadingPending(true);
-    try {
-      const pending = await getPendingLicenses();
-      setPendingLicenses(pending);
-    } catch (pendingError) {
-      setPendingLicenses([]);
-      setError(
-        getApiErrorMessage(pendingError, "Unable to load pending licenses."),
-      );
-    } finally {
-      setLoadingPending(false);
-    }
-  }, []);
+  const loadPendingLicenses = useCallback(
+    async (options: PendingLicenseLoadOptions = {}) => {
+      const { background = false } = options;
+      if (!background) {
+        setLoadingPending(true);
+      }
+      try {
+        const pending = await getPendingLicenses();
+        setPendingLicenses(pending);
+      } catch (pendingError) {
+        if (!background) {
+          setPendingLicenses([]);
+          setError(
+            getApiErrorMessage(pendingError, "Unable to load pending licenses."),
+          );
+        }
+      } finally {
+        if (!background) {
+          setLoadingPending(false);
+        }
+      }
+    },
+    [],
+  );
 
   const loadProcessedLicenses = useCallback(
     async (advisorId: string, queryText: string) => {
@@ -171,6 +186,30 @@ const LicenseApproval = () => {
   useEffect(() => {
     void refreshAll();
   }, [refreshAll]);
+
+  useEffect(() => {
+    const refreshPendingInBackground = () => {
+      if (document.visibilityState === "visible") {
+        void loadPendingLicenses({ background: true });
+      }
+    };
+
+    const intervalId = window.setInterval(
+      refreshPendingInBackground,
+      PENDING_LICENSE_REFRESH_INTERVAL_MS,
+    );
+    window.addEventListener("focus", refreshPendingInBackground);
+    document.addEventListener("visibilitychange", refreshPendingInBackground);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refreshPendingInBackground);
+      document.removeEventListener(
+        "visibilitychange",
+        refreshPendingInBackground,
+      );
+    };
+  }, [loadPendingLicenses]);
 
   useEffect(() => {
     return () => {
@@ -727,7 +766,7 @@ const LicenseApproval = () => {
 
       <Card
         title="Pending License Reviews"
-        subtitle="Approve verified documents or reject with a required reason."
+        subtitle="New submissions appear automatically. Approve verified documents or reject with a required reason."
         action={
           <Button
             variant="secondary"

@@ -81,6 +81,65 @@ def test_license_submission_and_approval_flow(client, user_factory, auth_headers
 
 
 @pytest.mark.integration
+def test_newly_registered_advisor_license_appears_in_admin_review_queue(
+    client,
+    user_factory,
+    auth_headers,
+):
+    registration = {
+        "email": "new.registration.license@example.com",
+        "password": "NewRegistrationLicense123!",
+        "name": "New Registration Advisor",
+        "phone": "+13055550123",
+    }
+    register_response = client.post("/api/v1/auth/register", json=registration)
+    assert register_response.status_code == 201, register_response.text
+    registered_user_id = register_response.json()["id"]
+
+    advisor_headers = auth_headers(
+        registration["email"],
+        registration["password"],
+    )
+    submit_response = client.post(
+        "/api/v1/licenses/",
+        headers=advisor_headers,
+        data={
+            "state": "TX",
+            "license_number": "TX-NEW-REG-1001",
+            "license_type": "Series 65",
+        },
+        files={
+            "document": (
+                "new-license.pdf",
+                b"%PDF-1.4 new registration",
+                "application/pdf",
+            )
+        },
+    )
+    assert submit_response.status_code == 201, submit_response.text
+    submitted_license_id = submit_response.json()["id"]
+
+    admin = user_factory(
+        role="admin",
+        password="NewRegistrationAdmin123!",
+        email="admin.new.registration@example.com",
+        name="Registration Review Admin",
+    )
+    admin_headers = auth_headers(admin.email, "NewRegistrationAdmin123!")
+    pending_response = client.get("/api/v1/licenses/pending", headers=admin_headers)
+
+    assert pending_response.status_code == 200, pending_response.text
+    pending_by_id = {item["id"]: item for item in pending_response.json()}
+    assert submitted_license_id in pending_by_id
+    pending_license = pending_by_id[submitted_license_id]
+    assert pending_license["user_id"] == registered_user_id
+    assert pending_license["user_email"] == registration["email"]
+    assert pending_license["user_name"] == registration["name"]
+    assert pending_license["verification_status"] == "pending"
+    assert_public_license_payload(pending_license)
+
+
+@pytest.mark.integration
 def test_license_rejection_requires_admin_and_reason(client, user_factory, auth_headers):
     advisor = user_factory(
         role="advisor",

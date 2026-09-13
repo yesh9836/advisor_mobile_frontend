@@ -119,6 +119,31 @@ describe("LicenseApproval", () => {
     expect(screen.getByText("Existing Advisor")).toBeInTheDocument();
   });
 
+  it("refreshes pending licenses when the admin returns to the page", async () => {
+    const newRegistrationLicense: LicenseWithUser = {
+      ...pendingLicense,
+      id: 102,
+      user_id: 46,
+      user_name: "Newly Registered Advisor",
+      user_email: "new.advisor@example.com",
+      state: "TX",
+      license_number: "TX-LIC-9002",
+    };
+    vi.mocked(getPendingLicenses)
+      .mockResolvedValueOnce([pendingLicense])
+      .mockResolvedValueOnce([pendingLicense, newRegistrationLicense]);
+
+    render(<LicenseApproval />);
+
+    expect(await screen.findByText("Jane Advisor")).toBeInTheDocument();
+    window.dispatchEvent(new Event("focus"));
+
+    expect(
+      await screen.findByText("Newly Registered Advisor"),
+    ).toBeInTheDocument();
+    expect(getPendingLicenses).toHaveBeenCalledTimes(2);
+  });
+
   it("approves a pending license and removes pending actions", async () => {
     vi.mocked(getProcessedLicenses)
       .mockResolvedValueOnce([processedLicense])
