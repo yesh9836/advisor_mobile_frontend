@@ -441,6 +441,69 @@ class LeadPurchaseStatus {
   }
 }
 
+class FirstPurchaseAddonOffer {
+  FirstPurchaseAddonOffer({
+    required this.triggerPackageId,
+    required this.offerPackageId,
+    required this.offerPackageName,
+    required this.offerPriceCents,
+    required this.offerCreditsTotal,
+    required this.headline,
+    required this.message,
+    required this.ctaLabel,
+  });
+
+  final int triggerPackageId;
+  final int offerPackageId;
+  final String offerPackageName;
+  final int offerPriceCents;
+  final int offerCreditsTotal;
+  final String headline;
+  final String message;
+  final String ctaLabel;
+
+  factory FirstPurchaseAddonOffer.fromJson(Map<String, dynamic> json) {
+    return FirstPurchaseAddonOffer(
+      triggerPackageId: json['trigger_package_id'] as int,
+      offerPackageId: json['offer_package_id'] as int,
+      offerPackageName:
+          json['offer_package_name'] as String? ?? 'First purchase add-on',
+      offerPriceCents: json['offer_price_cents'] as int? ?? 0,
+      offerCreditsTotal: json['offer_credits_total'] as int? ?? 0,
+      headline: json['headline'] as String? ?? 'First purchase bonus',
+      message: json['message'] as String? ?? '',
+      ctaLabel: json['cta_label'] as String? ?? 'Add to my purchase',
+    );
+  }
+}
+
+class FirstPurchaseAddonEligibility {
+  FirstPurchaseAddonEligibility({
+    required this.eligible,
+    this.offer,
+    this.rejectionCode,
+  });
+
+  final bool eligible;
+  final FirstPurchaseAddonOffer? offer;
+  final String? rejectionCode;
+
+  factory FirstPurchaseAddonEligibility.fromJson(Map<String, dynamic> json) {
+    final offerJson = json['offer'];
+    return FirstPurchaseAddonEligibility(
+      eligible: json['eligible'] as bool? ?? false,
+      offer: offerJson is Map<String, dynamic>
+          ? FirstPurchaseAddonOffer.fromJson(offerJson)
+          : offerJson is Map
+          ? FirstPurchaseAddonOffer.fromJson(
+              offerJson.map((key, value) => MapEntry(key.toString(), value)),
+            )
+          : null,
+      rejectionCode: json['rejection_code'] as String?,
+    );
+  }
+}
+
 class GoalSnapshot {
   GoalSnapshot({
     required this.targetYear,

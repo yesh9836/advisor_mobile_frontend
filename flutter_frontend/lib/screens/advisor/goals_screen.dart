@@ -331,11 +331,13 @@ class _ActivityPeriodSelector extends StatelessWidget {
   const _ActivityPeriodSelector({
     required this.selected,
     required this.registeredAt,
+    required this.targetYear,
     required this.onSelected,
   });
 
   final _GoalViewPeriod selected;
   final DateTime? registeredAt;
+  final int targetYear;
   final ValueChanged<_GoalViewPeriod> onSelected;
 
   @override
@@ -354,15 +356,16 @@ class _ActivityPeriodSelector extends StatelessWidget {
       child: Row(
         children: [
           _PeriodOption(
-            label: '${DateTime.now().year}',
+            label: '$targetYear',
             selected: selected == _GoalViewPeriod.calendarYear,
             onTap: () => onSelected(_GoalViewPeriod.calendarYear),
           ),
-          _PeriodOption(
-            label: '${DateTime.now().year - 1}',
-            selected: selected == _GoalViewPeriod.previousYear,
-            onTap: () => onSelected(_GoalViewPeriod.previousYear),
-          ),
+          if (joined == null || joined.year <= targetYear - 1)
+            _PeriodOption(
+              label: '${targetYear - 1}',
+              selected: selected == _GoalViewPeriod.previousYear,
+              onTap: () => onSelected(_GoalViewPeriod.previousYear),
+            ),
           _PeriodOption(
             label: joined == null ? joinedLabel : 'Since joining',
             selected: selected == _GoalViewPeriod.sinceRegistration,
@@ -651,7 +654,7 @@ class _GoalHero extends StatelessWidget {
         ],
       ),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
           gradient: const LinearGradient(
@@ -663,17 +666,18 @@ class _GoalHero extends StatelessWidget {
         child: Column(
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 SizedBox(
-                  width: 88,
-                  height: 88,
+                  width: 108,
+                  height: 108,
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
                       SizedBox.expand(
                         child: CircularProgressIndicator(
                           value: progress,
-                          strokeWidth: 8,
+                          strokeWidth: 10,
                           backgroundColor: Colors.white24,
                           color: const Color(0xFF19B9D0),
                           strokeCap: StrokeCap.round,
@@ -691,65 +695,76 @@ class _GoalHero extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 13),
                 Expanded(
-                  child: Row(
+                  child: Column(
                     children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Earned',
-                              style: TextStyle(color: Colors.white70),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _GoalHeroMetric(
+                              label: 'Earned',
+                              value: _money(goal.earnedYtdCents),
+                              color: Colors.white,
                             ),
-                            Text(
-                              _money(goal.earnedYtdCents),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 19,
-                                fontWeight: FontWeight.w700,
-                                fontFeatures: [FontFeature.tabularFigures()],
-                              ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _GoalHeroMetric(
+                              label: 'Target',
+                              value: _money(goal.annualGoalCents),
+                              color: const Color(0xFF7DD3FC),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Target',
-                              style: TextStyle(color: Colors.white70),
-                            ),
-                            Text(
-                              _money(goal.annualGoalCents),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFF7DD3FC),
-                                fontSize: 19,
-                                fontWeight: FontWeight.w700,
-                                fontFeatures: [FontFeature.tabularFigures()],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      const SizedBox(height: 9),
+                      monthlyGoalEditor,
                     ],
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 10),
-            monthlyGoalEditor,
           ],
         ),
       ),
+    );
+  }
+}
+
+class _GoalHeroMetric extends StatelessWidget {
+  const _GoalHeroMetric({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(color: Colors.white70, fontSize: 11),
+        ),
+        const SizedBox(height: 1),
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: color,
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -786,19 +801,30 @@ class _ActualGoalTrendCardState extends State<_ActualGoalTrendCard> {
   @override
   Widget build(BuildContext context) {
     final goal = widget.goal;
-    final monthly = switch (period) {
+    final rawMonthly = switch (period) {
       _GoalViewPeriod.calendarYear => goal.calendarMonthlyActivity,
       _GoalViewPeriod.previousYear => goal.previousYearMonthlyActivity,
       _GoalViewPeriod.sinceRegistration =>
         goal.sinceRegistrationMonthlyActivity,
     };
-    final points = monthly.isEmpty
+    final now = DateTime.now();
+    final monthly = rawMonthly.where((point) {
+      final pointMonth = DateTime(point.year, point.month);
+      final currentMonth = DateTime(now.year, now.month);
+      if (pointMonth.isAfter(currentMonth)) return false;
+      final registeredAt = goal.registeredAt;
+      if (registeredAt == null) return true;
+      return !pointMonth.isBefore(
+        DateTime(registeredAt.year, registeredAt.month),
+      );
+    }).toList();
+    final points =
+        monthly.isEmpty && period != _GoalViewPeriod.sinceRegistration
         ? <GoalMonthlyActivityPoint>[
             GoalMonthlyActivityPoint(
-              year: DateTime.now().year,
-              month: DateTime.now().month,
-              label:
-                  '${_shortMonth(DateTime.now().month)} ${DateTime.now().year}',
+              year: now.year,
+              month: now.month,
+              label: '${_shortMonth(now.month)} ${now.year}',
             ),
           ]
         : monthly;
@@ -808,6 +834,7 @@ class _ActualGoalTrendCardState extends State<_ActualGoalTrendCard> {
       runningActual += point.estimatedEarningsCents;
       actualValues.add(runningActual.toDouble());
     }
+    final hasActualHistory = actualValues.any((value) => value > 0);
     final showGoalPace = period == _GoalViewPeriod.calendarYear;
     final joinedThisYear = goal.registeredAt?.year == goal.targetYear;
     final goalStartMonth = joinedThisYear ? goal.registeredAt!.month : 1;
@@ -822,6 +849,26 @@ class _ActualGoalTrendCardState extends State<_ActualGoalTrendCard> {
                         goalMonths,
           ]
         : <double>[];
+    final chartActualValues = actualValues.length == 1
+        ? <double>[0, actualValues.single]
+        : actualValues;
+    final chartTargetValues = targetValues.length == 1
+        ? <double>[0, targetValues.single]
+        : targetValues;
+    final chartLabels = points.length == 1
+        ? <String>[
+            period == _GoalViewPeriod.sinceRegistration ? 'Joined' : 'Start',
+            period == _GoalViewPeriod.sinceRegistration
+                ? '${_shortMonth(points.single.month)} ${points.single.year.toString().substring(2)}'
+                : _shortMonth(points.single.month),
+          ]
+        : points
+              .map(
+                (point) => period == _GoalViewPeriod.sinceRegistration
+                    ? '${_shortMonth(point.month)} ${point.year.toString().substring(2)}'
+                    : _shortMonth(point.month),
+              )
+              .toList();
     final activity = _activityFor(goal, period);
     final periodTitle = switch (period) {
       _GoalViewPeriod.calendarYear => 'Current-year performance',
@@ -851,6 +898,7 @@ class _ActualGoalTrendCardState extends State<_ActualGoalTrendCard> {
           _ActivityPeriodSelector(
             selected: period,
             registeredAt: goal.registeredAt,
+            targetYear: goal.targetYear,
             onSelected: (selected) => setState(() => period = selected),
           ),
           if (showGoalPace && joinedThisYear) ...[
@@ -864,20 +912,21 @@ class _ActualGoalTrendCardState extends State<_ActualGoalTrendCard> {
           SizedBox(
             height: 178,
             width: double.infinity,
-            child: CustomPaint(
-              key: const ValueKey('goal-activity-trend'),
-              painter: _ActualTrendPainter(
-                actualValues: actualValues,
-                targetValues: targetValues,
-                labels: points
-                    .map((point) => _shortMonth(point.month))
-                    .toList(),
-                actualColor: const Color(0xFF0F9F98),
-                targetColor: const Color(0xFF5967D8),
-                gridColor: context.appOutline,
-                labelColor: context.appMuted,
-              ),
-            ),
+            child:
+                period == _GoalViewPeriod.sinceRegistration && !hasActualHistory
+                ? const _EmptyActualHistory()
+                : CustomPaint(
+                    key: const ValueKey('goal-activity-trend'),
+                    painter: _ActualTrendPainter(
+                      actualValues: chartActualValues,
+                      targetValues: chartTargetValues,
+                      labels: chartLabels,
+                      actualColor: const Color(0xFF0F9F98),
+                      targetColor: const Color(0xFF5967D8),
+                      gridColor: context.appOutline,
+                      labelColor: context.appMuted,
+                    ),
+                  ),
           ),
           const SizedBox(height: 10),
           Row(
@@ -1026,6 +1075,47 @@ class _ActualTrendPainter extends CustomPainter {
       oldDelegate.actualValues != actualValues ||
       oldDelegate.targetValues != targetValues ||
       oldDelegate.labelColor != labelColor;
+}
+
+class _EmptyActualHistory extends StatelessWidget {
+  const _EmptyActualHistory();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: context.appSoftFill.withValues(alpha: .55),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: context.appOutline),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.show_chart_rounded,
+              color: Color(0xFF0F9F98),
+              size: 27,
+            ),
+            const SizedBox(height: 7),
+            Text(
+              'No closed-deal history yet',
+              style: TextStyle(
+                color: context.appInk,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Completed deals will build this trend over time.',
+              style: TextStyle(color: context.appMuted, fontSize: 10.5),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 extension on _TrendRange {
@@ -1917,6 +2007,64 @@ class _MonthlyGoalPanelState extends State<_MonthlyGoalPanel> {
       final actionColor = widget.embedded
           ? const Color(0xFF70E5EA)
           : const Color(0xFF0F9F98);
+      if (widget.embedded) {
+        return Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(11),
+          child: InkWell(
+            key: const ValueKey('monthly-goal-adjust-button'),
+            onTap: () => setState(() => _editing = true),
+            borderRadius: BorderRadius.circular(11),
+            child: Ink(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: .08),
+                borderRadius: BorderRadius.circular(11),
+                border: Border.all(color: Colors.white24),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Monthly goal',
+                    style: TextStyle(color: muted, fontSize: 9.5),
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _money(widget.monthlyGoalCents),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: foreground,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ),
+                      Text(
+                        'Update',
+                        style: TextStyle(
+                          color: actionColor,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        color: actionColor,
+                        size: 15,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
       return Material(
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(13),
@@ -2382,83 +2530,98 @@ class _StatCard extends StatelessWidget {
     return Semantics(
       button: true,
       label: '$label, $value. Tap for details.',
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => _showDetails(context),
-          borderRadius: BorderRadius.circular(17),
-          child: Ink(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  surface,
-                  Color.lerp(surface, context.appSurface, 0.42)!,
-                ],
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(
+                alpha: context.isDarkMode ? .18 : .07,
               ),
-              borderRadius: BorderRadius.circular(17),
-              border: Border.all(color: displayAccent.withValues(alpha: 0.2)),
-              boxShadow: context.appCardShadows,
+              blurRadius: 14,
+              spreadRadius: -3,
+              offset: const Offset(0, 6),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 28,
-                      height: 28,
-                      decoration: BoxDecoration(
-                        color: displayAccent.withValues(
-                          alpha: context.isDarkMode ? 0.18 : 0.12,
-                        ),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(icon, color: displayAccent, size: 17),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      value,
-                      maxLines: 1,
-                      style: TextStyle(
-                        color: displayAccent,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                    ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(17),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () => _showDetails(context),
+            child: Ink(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    surface,
+                    Color.lerp(surface, context.appSurface, 0.42)!,
                   ],
                 ),
-                const SizedBox(height: 5),
-                SizedBox(
-                  height: 27,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                borderRadius: BorderRadius.circular(17),
+                border: Border.all(color: displayAccent.withValues(alpha: 0.2)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     children: [
-                      Expanded(
-                        child: Text(
-                          label,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: context.appMuted,
-                            fontSize: 11,
-                            height: 1.15,
-                            fontWeight: FontWeight.w600,
+                      Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: displayAccent.withValues(
+                            alpha: context.isDarkMode ? 0.18 : 0.12,
                           ),
+                          borderRadius: BorderRadius.circular(10),
                         ),
+                        child: Icon(icon, color: displayAccent, size: 17),
                       ),
-                      Icon(
-                        Icons.info_outline_rounded,
-                        size: 13,
-                        color: displayAccent,
+                      const SizedBox(width: 8),
+                      Text(
+                        value,
+                        maxLines: 1,
+                        style: TextStyle(
+                          color: displayAccent,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
                       ),
                     ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 5),
+                  SizedBox(
+                    height: 27,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            label,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: context.appMuted,
+                              fontSize: 11,
+                              height: 1.15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        Icon(
+                          Icons.info_outline_rounded,
+                          size: 13,
+                          color: displayAccent,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

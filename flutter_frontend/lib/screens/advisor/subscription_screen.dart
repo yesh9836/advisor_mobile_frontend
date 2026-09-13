@@ -137,6 +137,18 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
       return;
     }
 
+    await _startCheckout(
+      packageId: selectedPackage.id,
+      targetStates: _selectedStates.toList()..sort(),
+    );
+  }
+
+  Future<void> _startCheckout({
+    required int packageId,
+    required List<String> targetStates,
+  }) async {
+    if (_saving) return;
+
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     setState(() {
       _saving = true;
@@ -144,11 +156,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
     });
     try {
       _checkoutRetryToken ??=
-          'mobile:${selectedPackage.id}:'
+          'mobile:$packageId:'
           '${DateTime.now().microsecondsSinceEpoch}';
       final checkout = await _repository.createPurchaseCheckout(
-        packageId: selectedPackage.id,
-        targetStates: _selectedStates.toList()..sort(),
+        packageId: packageId,
+        targetStates: targetStates,
         retryToken: _checkoutRetryToken,
       );
       if (checkout.demoMode) {
@@ -223,6 +235,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
       }
       if (purchase.isCompleted) {
         _checkoutPollTimer?.cancel();
+        final completedCheckoutSessionId = checkout.sessionId;
         final message =
             'Purchase complete. ${purchase.creditsTotal} lead credits '
             'were added${purchase.packageName == null ? '' : ' for ${purchase.packageName}'}.';
@@ -233,6 +246,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
           _checkoutNotice = null;
         });
         _showPurchaseCompleteNotification(message);
+        unawaited(_presentFirstPurchaseOffer(completedCheckoutSessionId));
         return;
       }
       if (purchase.isTerminalFailure) {
@@ -256,6 +270,35 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
       _schedulePurchaseStatusCheck();
     } finally {
       if (mounted) setState(() => _checkingPurchase = false);
+    }
+  }
+
+  Future<void> _presentFirstPurchaseOffer(String checkoutSessionId) async {
+    try {
+      final eligibility = await _repository.getFirstPurchaseAddonOffer(
+        checkoutSessionId,
+      );
+      final offer = eligibility.offer;
+      if (!mounted || !eligibility.eligible || offer == null) return;
+      final accepted = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        builder: (context) => _FirstPurchaseOfferSheet(offer: offer),
+      );
+      if (!mounted || accepted != true) return;
+      if (_selectedStates.isEmpty) {
+        _showCheckoutError('Select at least one target state for the add-on.');
+        return;
+      }
+      _checkoutRetryToken = null;
+      await _startCheckout(
+        packageId: offer.offerPackageId,
+        targetStates: _selectedStates.toList()..sort(),
+      );
+    } catch (_) {
+      // The completed purchase remains successful even if the optional offer
+      // cannot be loaded. It can safely be omitted without alarming the user.
     }
   }
 
@@ -469,6 +512,125 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
           ),
         );
       },
+    );
+  }
+}
+
+class _FirstPurchaseOfferSheet extends StatelessWidget {
+  const _FirstPurchaseOfferSheet({required this.offer});
+
+  final FirstPurchaseAddonOffer offer;
+
+  String get _price =>
+      '\$${(offer.offerPriceCents / 100).toStringAsFixed(offer.offerPriceCents % 100 == 0 ? 0 : 2)}';
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          20,
+          4,
+          20,
+          20 + MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF29347E), Color(0xFF16A8B9)],
+                ),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(
+                Icons.auto_awesome_rounded,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 13),
+            Text(
+              offer.headline,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: context.appInk,
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              offer.message,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: context.appMuted,
+                fontSize: 13,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: context.appSoftFill,
+                borderRadius: BorderRadius.circular(15),
+                border: Border.all(color: context.appOutline),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          offer.offerPackageName,
+                          style: TextStyle(
+                            color: context.appInk,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${offer.offerCreditsTotal} additional leads',
+                          style: TextStyle(
+                            color: context.appMuted,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    _price,
+                    style: const TextStyle(
+                      color: Color(0xFF078AA2),
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () => Navigator.of(context).pop(true),
+                icon: const Icon(Icons.add_shopping_cart_rounded, size: 19),
+                label: Text(offer.ctaLabel),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Not now'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -161,6 +161,46 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('shows an eligible add-on after the first purchase completes', (
+    tester,
+  ) async {
+    final repository = _FakeAdvisorRepository()
+      ..addonOffer = FirstPurchaseAddonOffer(
+        triggerPackageId: 7,
+        offerPackageId: 77,
+        offerPackageName: 'First Purchase Add-on',
+        offerPriceCents: 4900,
+        offerCreditsTotal: 5,
+        headline: 'A first-purchase offer',
+        message: 'Add five more leads while this offer is available.',
+        ctaLabel: 'Add 5 leads',
+      );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SubscriptionScreen(
+            repository: repository,
+            checkoutUrlLauncher: (_) async => true,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Starter'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('CA'));
+    await tester.tap(find.text('Continue to checkout'));
+    await tester.pump();
+    await tester.tap(find.text('Check purchase status'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('A first-purchase offer'), findsOneWidget);
+    expect(find.text('5 additional leads'), findsOneWidget);
+    expect(find.text('\$49'), findsOneWidget);
+    expect(find.text('Add 5 leads'), findsOneWidget);
+  });
 }
 
 class _FakeAdvisorRepository extends AdvisorRepository {
@@ -168,6 +208,7 @@ class _FakeAdvisorRepository extends AdvisorRepository {
   List<String>? savedTargetStates;
   String? savedRetryToken;
   bool demoMode = false;
+  FirstPurchaseAddonOffer? addonOffer;
 
   @override
   Future<AdvisorOnboarding> getOnboarding() async => const AdvisorOnboarding(
@@ -238,4 +279,12 @@ class _FakeAdvisorRepository extends AdvisorRepository {
       packageName: 'Starter',
     );
   }
+
+  @override
+  Future<FirstPurchaseAddonEligibility> getFirstPurchaseAddonOffer(
+    String checkoutSessionId,
+  ) async => FirstPurchaseAddonEligibility(
+    eligible: addonOffer != null,
+    offer: addonOffer,
+  );
 }

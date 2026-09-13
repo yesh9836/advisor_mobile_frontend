@@ -234,12 +234,12 @@ def test_goal_activity_aligns_calendar_and_registration_periods(
     assert activity["calendar_year"]["closed_deals"] == 1
     assert activity["calendar_year"]["estimated_earnings_cents"] == 500_000
     assert activity["previous_year"]["closed_deals"] == 1
-    assert len(activity["previous_year_monthly"]) == 12
+    assert len(activity["previous_year_monthly"]) == 2
     assert activity["previous_year_monthly"][-1]["closed_deals"] == 1
     assert activity["since_registration"]["closed_deals"] == 2
     assert activity["since_registration"]["appointments_set"] == 1
     assert activity["since_registration"]["estimated_earnings_cents"] == 1_000_000
-    assert len(activity["calendar_year_monthly"]) == 12
+    assert len(activity["calendar_year_monthly"]) == 9
     assert len(activity["since_registration_monthly"]) == 11
     assert activity["since_registration_monthly"][0]["label"] == "Nov 2025"
     assert activity["since_registration_monthly"][-1]["label"] == "Sep 2026"

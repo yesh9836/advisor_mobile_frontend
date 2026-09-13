@@ -638,7 +638,9 @@ class _QuestionPageState extends State<_QuestionPage> {
       textDirection: TextDirection.ltr,
       maxLines: 1,
     )..layout();
-    return (painter.width + 12).clamp(58, 205);
+    // Leave room for the caret and TextField's internal paint bounds. The
+    // previous cap clipped the final digit for values such as $10,000,000.
+    return (painter.width + 20).clamp(58, 230);
   }
 
   @override
@@ -738,7 +740,7 @@ class _QuestionPageState extends State<_QuestionPage> {
                       ),
                     ),
                     if (widget.inputSuffix != null) ...[
-                      const SizedBox(width: 5),
+                      const SizedBox(width: 1),
                       Text(
                         widget.inputSuffix!,
                         style: const TextStyle(

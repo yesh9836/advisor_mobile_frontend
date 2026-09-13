@@ -198,15 +198,9 @@ class GoalService:
         def month_points(
             start: datetime,
             end: datetime,
-            *,
-            include_full_year: bool = False,
         ) -> List[Dict[str, Any]]:
             cursor = datetime(start.year, start.month, 1, tzinfo=timezone.utc)
-            final_month = (
-                datetime(end.year, 12, 1, tzinfo=timezone.utc)
-                if include_full_year
-                else datetime(end.year, end.month, 1, tzinfo=timezone.utc)
-            )
+            final_month = datetime(end.year, end.month, 1, tzinfo=timezone.utc)
             points: List[Dict[str, Any]] = []
             while cursor <= final_month:
                 next_month = (
@@ -228,22 +222,35 @@ class GoalService:
                 cursor = next_month
             return points
 
+        calendar_monthly = (
+            []
+            if int(goal.target_year) > current.year
+            else month_points(
+                max(calendar_start, registered_at),
+                current
+                if int(goal.target_year) == current.year
+                else datetime(int(goal.target_year), 12, 1, tzinfo=timezone.utc),
+            )
+        )
+        previous_last_month = min(
+            current,
+            datetime(int(goal.target_year) - 1, 12, 1, tzinfo=timezone.utc),
+        )
+        previous_monthly_start = max(previous_start, registered_at)
+        previous_monthly = (
+            []
+            if previous_monthly_start > previous_last_month
+            else month_points(previous_monthly_start, previous_last_month)
+        )
+
         return {
             "registered_at": registered_at,
             "as_of": current,
             "calendar_year": summarize(calendar_rows),
             "previous_year": summarize(previous_rows),
             "since_registration": summarize(registration_rows),
-            "calendar_year_monthly": month_points(
-                calendar_start,
-                calendar_start,
-                include_full_year=True,
-            ),
-            "previous_year_monthly": month_points(
-                previous_start,
-                previous_start,
-                include_full_year=True,
-            ),
+            "calendar_year_monthly": calendar_monthly,
+            "previous_year_monthly": previous_monthly,
             "since_registration_monthly": month_points(registered_at, current),
         }
 

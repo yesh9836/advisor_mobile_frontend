@@ -213,6 +213,27 @@ class AdvisorRepository {
     return null;
   }
 
+  Future<FirstPurchaseAddonEligibility> getFirstPurchaseAddonOffer(
+    String checkoutSessionId,
+  ) async {
+    final encodedSession = Uri.encodeQueryComponent(checkoutSessionId);
+    final response = await _apiService.get(
+      '/purchases/first-purchase-offer?checkout_session_id=$encodedSession',
+    );
+    if (response.statusCode != 200) {
+      throw AuthException.fromResponse(
+        response.body,
+        'Unable to load the first-purchase offer.',
+      );
+    }
+    return FirstPurchaseAddonEligibility.fromJson(
+      decodeResponseObject(
+        response.body,
+        'Unable to load the first-purchase offer.',
+      ),
+    );
+  }
+
   Future<BillingHistoryData> getBillingHistory() async {
     final summaryResponse = await _apiService.get('/purchases/billing/summary');
     if (summaryResponse.statusCode == 200) {
