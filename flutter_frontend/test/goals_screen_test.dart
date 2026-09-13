@@ -47,11 +47,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Deals Remaining'), findsOneWidget);
-    expect(find.text('Closed YTD'), findsOneWidget);
-    await tester.tap(find.text('Deals Remaining'));
+    expect(find.text('Deals closed'), findsOneWidget);
+    expect(find.text('Appointments set'), findsOneWidget);
+    expect(find.text('Leads contacted'), findsOneWidget);
+    expect(find.text('Est. commission'), findsOneWidget);
+    await tester.tap(find.text('Deals closed'));
     await tester.pumpAndSettle();
-    expect(find.text('Recently closed deals'), findsOneWidget);
+    expect(find.text('Closed deals in this period'), findsOneWidget);
     expect(find.text('Calculation'), findsOneWidget);
     expect(find.text('Test Closed Lead'), findsOneWidget);
     await tester.tap(find.text('Test Closed Lead'));
@@ -71,27 +73,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Income trend'), findsOneWidget);
-    expect(find.text('Behind pace'), findsOneWidget);
-    expect(find.text('7 Days'), findsOneWidget);
-    expect(find.text('Month'), findsOneWidget);
-    expect(find.text('Year'), findsOneWidget);
-    expect(find.text('Demo trend data for visualization'), findsOneWidget);
-    final sevenDayToggle = find.byKey(const ValueKey('trend-range-sevenDays'));
-    await tester.ensureVisible(sevenDayToggle);
-    await tester.pumpAndSettle();
-    await tester.tap(sevenDayToggle);
-    await tester.pumpAndSettle();
-    expect(find.text('Required in 7 days'), findsOneWidget);
-    expect(find.text('Demo earnings'), findsOneWidget);
-    final trendInteraction = find.byKey(
-      const ValueKey('goal-trend-interaction'),
-    );
-    await tester.tapAt(tester.getCenter(trendInteraction));
-    await tester.pump();
     expect(
-      find.bySemanticsLabel(RegExp(r'Selected .* earnings')),
+      find.text(
+        'Calendar-year performance • based on actual closed-deal updates',
+      ),
       findsOneWidget,
     );
+    expect(find.text('Actual activity'), findsOneWidget);
+    expect(find.text('Goal pace'), findsOneWidget);
+    expect(find.byKey(const ValueKey('goal-activity-trend')), findsOneWidget);
     expect(find.text('12 leads recommended per month'), findsOneWidget);
 
     await tester.drag(find.byType(ListView).first, const Offset(0, 1400));
@@ -166,6 +156,35 @@ void main() {
     );
     expect(repository.savedMonthlyGoalCents, isNull);
   });
+
+  testWidgets('switches stats and graph to the registration period', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GoalsScreen(
+            repository: _FakeAdvisorRepository(),
+            onSeeAllPackages: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Since Mar 2026'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('12.5%'), findsOneWidget);
+    await tester.drag(find.byType(ListView).first, const Offset(0, -600));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        'Performance since registration • based on actual closed-deal updates',
+      ),
+      findsOneWidget,
+    );
+  });
 }
 
 class _FakeAdvisorRepository extends AdvisorRepository {
@@ -190,6 +209,7 @@ class _FakeAdvisorRepository extends AdvisorRepository {
       lastName: 'Closed Lead',
       stateCode: 'CA',
       outcomeStatus: outcomeStatus == 'all' ? 'contacted' : outcomeStatus,
+      outcomeUpdatedAt: DateTime(2026, 6, 1),
       piiUnlocked: true,
       isDownloaded: true,
     ),
@@ -266,6 +286,42 @@ GoalSnapshot _goal({
     recommendedMonthlyLeads: 12,
     pacingStatus: 'behind',
     pacingMessage: 'Increase your monthly lead pace.',
+    registeredAt: DateTime(2026, 3, 12),
+    calendarActivity: GoalActivitySummary(
+      contacted: 10,
+      appointmentsSet: 2,
+      closedDeals: 4,
+      reachedLeads: 16,
+      successRateBps: currentSuccessRateBps,
+      estimatedEarningsCents: 2000000,
+    ),
+    sinceRegistrationActivity: GoalActivitySummary(
+      contacted: 6,
+      appointmentsSet: 1,
+      closedDeals: 1,
+      reachedLeads: 8,
+      successRateBps: 1250,
+      estimatedEarningsCents: 500000,
+    ),
+    calendarMonthlyActivity: const [
+      GoalMonthlyActivityPoint(year: 2026, month: 1, label: 'Jan 2026'),
+      GoalMonthlyActivityPoint(
+        year: 2026,
+        month: 2,
+        label: 'Feb 2026',
+        closedDeals: 4,
+        estimatedEarningsCents: 2000000,
+      ),
+    ],
+    sinceRegistrationMonthlyActivity: const [
+      GoalMonthlyActivityPoint(
+        year: 2026,
+        month: 3,
+        label: 'Mar 2026',
+        closedDeals: 4,
+        estimatedEarningsCents: 2000000,
+      ),
+    ],
     packages: const [],
   );
 }

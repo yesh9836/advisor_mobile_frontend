@@ -67,7 +67,32 @@ class GoalPackageRecommendation(BaseModel):
     recommended: bool
 
 
+class GoalActivitySummary(BaseModel):
+    contacted: int
+    appointments_set: int
+    closed_deals: int
+    reached_leads: int
+    success_rate_bps: int
+    estimated_earnings_cents: int
+
+
+class GoalMonthlyActivityPoint(GoalActivitySummary):
+    year: int
+    month: int
+    label: str
+
+
+class GoalActivitySnapshot(BaseModel):
+    registered_at: datetime
+    as_of: datetime
+    calendar_year: GoalActivitySummary
+    since_registration: GoalActivitySummary
+    calendar_year_monthly: List[GoalMonthlyActivityPoint]
+    since_registration_monthly: List[GoalMonthlyActivityPoint]
+
+
 class AdvisorGoalResponse(BaseModel):
     goal: AdvisorGoalSnapshot
     derived: GoalDerivedSnapshot
+    activity: GoalActivitySnapshot
     packages: List[GoalPackageRecommendation]

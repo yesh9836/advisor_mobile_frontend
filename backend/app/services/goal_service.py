@@ -128,10 +128,112 @@ class GoalService:
         return {
             "goal": goal,
             "derived": derived,
+            "activity": GoalService.build_activity_snapshot(
+                db=db,
+                user=user,
+                goal=goal,
+            ),
             "packages": GoalService.build_package_recommendations(
                 db=db,
                 leads_remaining=int(derived["leads_remaining"]),
             ),
+        }
+
+    @staticmethod
+    def build_activity_snapshot(
+        *,
+        db: Session,
+        user: User,
+        goal: AdvisorGoal,
+        now: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
+        current = now or datetime.now(timezone.utc)
+        registered_at = user.created_at
+        if registered_at.tzinfo is None:
+            registered_at = registered_at.replace(tzinfo=timezone.utc)
+        calendar_start = datetime(int(goal.target_year), 1, 1, tzinfo=timezone.utc)
+        calendar_end = datetime(int(goal.target_year) + 1, 1, 1, tzinfo=timezone.utc)
+
+        outcomes = (
+            db.query(LeadOutcome.status, LeadOutcome.updated_at)
+            .filter(
+                LeadOutcome.user_id == user.id,
+                LeadOutcome.updated_at >= min(calendar_start, registered_at),
+                LeadOutcome.updated_at <= current,
+            )
+            .all()
+        )
+
+        def summarize(rows: List[Any]) -> Dict[str, int]:
+            counts: Dict[str, int] = {}
+            for status_value, _ in rows:
+                status_key = str(status_value)
+                counts[status_key] = counts.get(status_key, 0) + 1
+            contacted = counts.get("contacted", 0)
+            appointments = counts.get("appointment_set", 0)
+            closed = counts.get("closed_deal", 0)
+            reached = contacted + appointments + closed
+            return {
+                "contacted": contacted,
+                "appointments_set": appointments,
+                "closed_deals": closed,
+                "reached_leads": reached,
+                "success_rate_bps": (
+                    min(10_000, round((closed / reached) * 10_000)) if reached else 0
+                ),
+                "estimated_earnings_cents": closed
+                * max(int(goal.average_commission_cents), 0),
+            }
+
+        calendar_rows = [
+            row for row in outcomes if calendar_start <= row[1] < calendar_end
+        ]
+        registration_rows = [row for row in outcomes if row[1] >= registered_at]
+
+        def month_points(
+            start: datetime,
+            end: datetime,
+            *,
+            include_full_year: bool = False,
+        ) -> List[Dict[str, Any]]:
+            cursor = datetime(start.year, start.month, 1, tzinfo=timezone.utc)
+            final_month = (
+                datetime(end.year, 12, 1, tzinfo=timezone.utc)
+                if include_full_year
+                else datetime(end.year, end.month, 1, tzinfo=timezone.utc)
+            )
+            points: List[Dict[str, Any]] = []
+            while cursor <= final_month:
+                next_month = (
+                    datetime(cursor.year + 1, 1, 1, tzinfo=timezone.utc)
+                    if cursor.month == 12
+                    else datetime(cursor.year, cursor.month + 1, 1, tzinfo=timezone.utc)
+                )
+                month_rows = [
+                    row for row in outcomes if cursor <= row[1] < next_month
+                ]
+                points.append(
+                    {
+                        "year": cursor.year,
+                        "month": cursor.month,
+                        "label": cursor.strftime("%b %Y"),
+                        **summarize(month_rows),
+                    }
+                )
+                cursor = next_month
+            return points
+
+        return {
+            "registered_at": registered_at,
+            "as_of": current,
+            "calendar_year": summarize(calendar_rows),
+            "since_registration": summarize(registration_rows),
+            "calendar_year_monthly": month_points(
+                calendar_start,
+                calendar_start,
+                include_full_year=True,
+            ),
+            "since_registration_monthly": month_points(registered_at, current),
         }
 
     @staticmethod
@@ -223,12 +325,27 @@ class GoalService:
     ) -> Dict[str, int]:
         year_start = datetime(target_year, 1, 1, tzinfo=timezone.utc)
         next_year_start = datetime(target_year + 1, 1, 1, tzinfo=timezone.utc)
+        return GoalService.count_outcomes_between(
+            db=db,
+            user=user,
+            start=year_start,
+            end=next_year_start,
+        )
+
+    @staticmethod
+    def count_outcomes_between(
+        *,
+        db: Session,
+        user: User,
+        start: datetime,
+        end: datetime,
+    ) -> Dict[str, int]:
         rows = (
             db.query(LeadOutcome.status, func.count(LeadOutcome.id))
             .filter(
                 LeadOutcome.user_id == user.id,
-                LeadOutcome.updated_at >= year_start,
-                LeadOutcome.updated_at < next_year_start,
+                LeadOutcome.updated_at >= start,
+                LeadOutcome.updated_at < end,
             )
             .group_by(LeadOutcome.status)
             .all()

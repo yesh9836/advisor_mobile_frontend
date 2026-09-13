@@ -465,6 +465,11 @@ class GoalSnapshot {
     required this.pacingStatus,
     required this.pacingMessage,
     required this.packages,
+    this.registeredAt,
+    this.calendarActivity = const GoalActivitySummary(),
+    this.sinceRegistrationActivity = const GoalActivitySummary(),
+    this.calendarMonthlyActivity = const [],
+    this.sinceRegistrationMonthlyActivity = const [],
   });
 
   final int targetYear;
@@ -489,11 +494,17 @@ class GoalSnapshot {
   final String pacingStatus;
   final String pacingMessage;
   final List<LeadPackage> packages;
+  final DateTime? registeredAt;
+  final GoalActivitySummary calendarActivity;
+  final GoalActivitySummary sinceRegistrationActivity;
+  final List<GoalMonthlyActivityPoint> calendarMonthlyActivity;
+  final List<GoalMonthlyActivityPoint> sinceRegistrationMonthlyActivity;
 
   factory GoalSnapshot.fromJson(Map<String, dynamic> json) {
     final goal = json['goal'] as Map<String, dynamic>? ?? {};
     final derived = json['derived'] as Map<String, dynamic>? ?? {};
     final pacing = derived['pacing'] as Map<String, dynamic>? ?? {};
+    final activity = json['activity'] as Map<String, dynamic>? ?? {};
     final packageRows = json['packages'] as List? ?? [];
     return GoalSnapshot(
       targetYear: goal['target_year'] as int? ?? DateTime.now().year,
@@ -520,6 +531,29 @@ class GoalSnapshot {
           derived['recommended_monthly_leads'] as int? ?? 0,
       pacingStatus: pacing['status'] as String? ?? '',
       pacingMessage: pacing['message'] as String? ?? '',
+      registeredAt: _parseDateTime(activity['registered_at'] as String?),
+      calendarActivity: GoalActivitySummary.fromJson(
+        activity['calendar_year'] as Map<String, dynamic>? ?? const {},
+      ),
+      sinceRegistrationActivity: GoalActivitySummary.fromJson(
+        activity['since_registration'] as Map<String, dynamic>? ?? const {},
+      ),
+      calendarMonthlyActivity:
+          (activity['calendar_year_monthly'] as List? ?? const [])
+              .map(
+                (item) => GoalMonthlyActivityPoint.fromJson(
+                  item as Map<String, dynamic>,
+                ),
+              )
+              .toList(),
+      sinceRegistrationMonthlyActivity:
+          (activity['since_registration_monthly'] as List? ?? const [])
+              .map(
+                (item) => GoalMonthlyActivityPoint.fromJson(
+                  item as Map<String, dynamic>,
+                ),
+              )
+              .toList(),
       packages: packageRows.map((item) {
         final row = item as Map<String, dynamic>;
         return LeadPackage(
@@ -530,6 +564,67 @@ class GoalSnapshot {
           stateLimit: row['state_limit'] as int?,
         );
       }).toList(),
+    );
+  }
+}
+
+class GoalActivitySummary {
+  const GoalActivitySummary({
+    this.contacted = 0,
+    this.appointmentsSet = 0,
+    this.closedDeals = 0,
+    this.reachedLeads = 0,
+    this.successRateBps = 0,
+    this.estimatedEarningsCents = 0,
+  });
+
+  final int contacted;
+  final int appointmentsSet;
+  final int closedDeals;
+  final int reachedLeads;
+  final int successRateBps;
+  final int estimatedEarningsCents;
+
+  factory GoalActivitySummary.fromJson(Map<String, dynamic> json) {
+    return GoalActivitySummary(
+      contacted: json['contacted'] as int? ?? 0,
+      appointmentsSet: json['appointments_set'] as int? ?? 0,
+      closedDeals: json['closed_deals'] as int? ?? 0,
+      reachedLeads: json['reached_leads'] as int? ?? 0,
+      successRateBps: json['success_rate_bps'] as int? ?? 0,
+      estimatedEarningsCents: json['estimated_earnings_cents'] as int? ?? 0,
+    );
+  }
+}
+
+class GoalMonthlyActivityPoint extends GoalActivitySummary {
+  const GoalMonthlyActivityPoint({
+    required this.year,
+    required this.month,
+    required this.label,
+    super.contacted,
+    super.appointmentsSet,
+    super.closedDeals,
+    super.reachedLeads,
+    super.successRateBps,
+    super.estimatedEarningsCents,
+  });
+
+  final int year;
+  final int month;
+  final String label;
+
+  factory GoalMonthlyActivityPoint.fromJson(Map<String, dynamic> json) {
+    return GoalMonthlyActivityPoint(
+      year: json['year'] as int? ?? 0,
+      month: json['month'] as int? ?? 0,
+      label: json['label'] as String? ?? '',
+      contacted: json['contacted'] as int? ?? 0,
+      appointmentsSet: json['appointments_set'] as int? ?? 0,
+      closedDeals: json['closed_deals'] as int? ?? 0,
+      reachedLeads: json['reached_leads'] as int? ?? 0,
+      successRateBps: json['success_rate_bps'] as int? ?? 0,
+      estimatedEarningsCents: json['estimated_earnings_cents'] as int? ?? 0,
     );
   }
 }

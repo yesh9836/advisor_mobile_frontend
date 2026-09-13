@@ -188,6 +188,60 @@ def test_goal_service_counts_only_explicit_closed_deals_for_advisor_year(
     assert derived["current_success_rate_bps"] == 5000
 
 
+def test_goal_activity_aligns_calendar_and_registration_periods(
+    db: Session,
+    user_factory,
+    lead_factory,
+) -> None:
+    advisor = user_factory(role="advisor")
+    advisor.created_at = datetime(2025, 11, 15, tzinfo=timezone.utc)
+    prior_year_activity = lead_factory()
+    closed_after_joining = lead_factory()
+    appointment_after_joining = lead_factory()
+    db.add_all(
+        [
+            LeadOutcome(
+                user_id=advisor.id,
+                lead_id=prior_year_activity.id,
+                status="closed_deal",
+                updated_at=datetime(2025, 12, 20, tzinfo=timezone.utc),
+            ),
+            LeadOutcome(
+                user_id=advisor.id,
+                lead_id=closed_after_joining.id,
+                status="closed_deal",
+                updated_at=datetime(2026, 4, 10, tzinfo=timezone.utc),
+            ),
+            LeadOutcome(
+                user_id=advisor.id,
+                lead_id=appointment_after_joining.id,
+                status="appointment_set",
+                updated_at=datetime(2026, 5, 5, tzinfo=timezone.utc),
+            ),
+        ]
+    )
+    db.commit()
+    goal = GoalService.get_or_create_goal(db=db, user=advisor, target_year=2026)
+    goal.average_commission_cents = 500_000
+
+    activity = GoalService.build_activity_snapshot(
+        db=db,
+        user=advisor,
+        goal=goal,
+        now=datetime(2026, 9, 13, tzinfo=timezone.utc),
+    )
+
+    assert activity["calendar_year"]["closed_deals"] == 1
+    assert activity["calendar_year"]["estimated_earnings_cents"] == 500_000
+    assert activity["since_registration"]["closed_deals"] == 2
+    assert activity["since_registration"]["appointments_set"] == 1
+    assert activity["since_registration"]["estimated_earnings_cents"] == 1_000_000
+    assert len(activity["calendar_year_monthly"]) == 12
+    assert len(activity["since_registration_monthly"]) == 11
+    assert activity["since_registration_monthly"][0]["label"] == "Nov 2025"
+    assert activity["since_registration_monthly"][-1]["label"] == "Sep 2026"
+
+
 def test_goal_service_package_recommendations_use_live_catalog(
     db: Session,
     user_factory,

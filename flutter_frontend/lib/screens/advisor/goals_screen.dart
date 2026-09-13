@@ -6,6 +6,8 @@ import 'package:flutter_frontend/screens/advisor/lead_details_sheet.dart';
 import 'package:flutter_frontend/theme/app_components.dart';
 import 'package:flutter_frontend/theme/app_theme.dart';
 
+enum _GoalViewPeriod { calendarYear, sinceRegistration }
+
 class GoalsScreen extends StatefulWidget {
   const GoalsScreen({
     super.key,
@@ -27,6 +29,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
       widget.repository ?? AdvisorRepository();
   late Future<GoalSnapshot> _future = _repository.getGoal();
   GoalSnapshot? _savedGoal;
+  _GoalViewPeriod _viewPeriod = _GoalViewPeriod.calendarYear;
 
   @override
   void initState() {
@@ -134,6 +137,12 @@ class _GoalsScreenState extends State<GoalsScreen> {
                   ),
                 ),
                 const SizedBox(height: 10),
+                _ActivityPeriodSelector(
+                  selected: _viewPeriod,
+                  registeredAt: goal.registeredAt,
+                  onSelected: (period) => setState(() => _viewPeriod = period),
+                ),
+                const SizedBox(height: 10),
                 GridView.count(
                   crossAxisCount: 2,
                   shrinkWrap: true,
@@ -143,70 +152,102 @@ class _GoalsScreenState extends State<GoalsScreen> {
                   mainAxisExtent: 92,
                   children: [
                     _StatCard(
-                      value: '${goal.dealsRemaining}',
-                      label: 'Deals Remaining',
+                      value: '${_activityFor(goal, _viewPeriod).closedDeals}',
+                      label: 'Deals closed',
                       icon: Icons.emoji_events_outlined,
                       accent: Color(0xFFD58416),
                       lightSurface: Color(0xFFFFF8E8),
                       darkSurface: Color(0xFF2A2113),
-                      detail: 'Income gap divided by your average commission.',
-                      recordsTitle: 'Recently closed deals',
-                      loadRecords: () async => (await _repository.getLeadsPage(
-                        size: 100,
-                        outcomeStatus: 'closed_deal',
-                      )).items,
+                      detail: 'Actual leads marked Closed Deal in this period.',
+                      recordsTitle: 'Closed deals in this period',
+                      loadRecords: () async =>
+                          (await _repository.getLeadsPage(
+                                size: 100,
+                                outcomeStatus: 'closed_deal',
+                              )).items
+                              .where(
+                                (lead) =>
+                                    _leadMatchesPeriod(lead, goal, _viewPeriod),
+                              )
+                              .toList(),
                       onLeadTap: _openLead,
                     ),
                     _StatCard(
-                      value: '${goal.appointmentsRemaining}',
-                      label: 'Appointments Remaining',
+                      value:
+                          '${_activityFor(goal, _viewPeriod).appointmentsSet}',
+                      label: 'Appointments set',
                       icon: Icons.calendar_today_outlined,
                       accent: Color(0xFF5967D8),
                       lightSurface: Color(0xFFF1F3FF),
                       darkSurface: Color(0xFF1C2341),
-                      detail: 'Deals remaining adjusted by your closing rate.',
-                      recordsTitle: 'Appointments awaiting follow-up',
-                      loadRecords: () async => (await _repository.getLeadsPage(
-                        size: 100,
-                        outcomeStatus: 'appointment_set',
-                      )).items,
+                      detail: 'Actual appointment outcomes in this period.',
+                      recordsTitle: 'Appointments in this period',
+                      loadRecords: () async =>
+                          (await _repository.getLeadsPage(
+                                size: 100,
+                                outcomeStatus: 'appointment_set',
+                              )).items
+                              .where(
+                                (lead) =>
+                                    _leadMatchesPeriod(lead, goal, _viewPeriod),
+                              )
+                              .toList(),
                       onLeadTap: _openLead,
                     ),
                     _StatCard(
-                      value: '${goal.leadsRemaining}',
-                      label: 'Leads Remaining',
+                      value: '${_activityFor(goal, _viewPeriod).contacted}',
+                      label: 'Leads contacted',
                       icon: Icons.group_outlined,
                       accent: Color(0xFF0F9F98),
                       lightSurface: Color(0xFFEAFBF8),
                       darkSurface: Color(0xFF102C2B),
-                      detail:
-                          'Appointments needed adjusted by lead conversion.',
-                      recordsTitle: 'Active leads in your pipeline',
+                      detail: 'Actual leads currently marked Contacted.',
+                      recordsTitle: 'Contacted leads in this period',
                       loadRecords: () async =>
-                          (await _repository.getLeadsPage(size: 100)).items,
+                          (await _repository.getLeadsPage(
+                                size: 100,
+                                outcomeStatus: 'contacted',
+                              )).items
+                              .where(
+                                (lead) =>
+                                    _leadMatchesPeriod(lead, goal, _viewPeriod),
+                              )
+                              .toList(),
                       onLeadTap: _openLead,
                     ),
                     _StatCard(
-                      value: '${goal.closedDealsYtd}',
-                      label: 'Closed YTD',
+                      value: _money(
+                        _activityFor(goal, _viewPeriod).estimatedEarningsCents,
+                      ),
+                      label: 'Est. commission',
                       icon: Icons.check_circle_outline_rounded,
                       accent: Color(0xFF168A5B),
                       lightSurface: Color(0xFFEBFAF2),
                       darkSurface: Color(0xFF112B20),
-                      detail: 'Leads marked Closed Deal this target year.',
-                      recordsTitle: 'Deals closed this year',
-                      loadRecords: () async => (await _repository.getLeadsPage(
-                        size: 100,
-                        outcomeStatus: 'closed_deal',
-                      )).items,
+                      detail:
+                          'Closed deals multiplied by your average commission.',
+                      recordsTitle: 'Deals included in this estimate',
+                      loadRecords: () async =>
+                          (await _repository.getLeadsPage(
+                                size: 100,
+                                outcomeStatus: 'closed_deal',
+                              )).items
+                              .where(
+                                (lead) =>
+                                    _leadMatchesPeriod(lead, goal, _viewPeriod),
+                              )
+                              .toList(),
                       onLeadTap: _openLead,
                     ),
                   ],
                 ),
                 const SizedBox(height: 10),
-                _SuccessRateCard(goal: goal),
+                _SuccessRateCard(
+                  goal: goal,
+                  activity: _activityFor(goal, _viewPeriod),
+                ),
                 const SizedBox(height: 10),
-                _GoalTrendCard(goal: goal),
+                _ActualGoalTrendCard(goal: goal, period: _viewPeriod),
                 if (goal.pacingMessage.isNotEmpty) ...[
                   const SizedBox(height: 10),
                   _PacingPanel(goal: goal),
@@ -261,21 +302,130 @@ class _GoalsScreenState extends State<GoalsScreen> {
   }
 }
 
-class _SuccessRateCard extends StatelessWidget {
-  const _SuccessRateCard({required this.goal});
+GoalActivitySummary _activityFor(GoalSnapshot goal, _GoalViewPeriod period) =>
+    switch (period) {
+      _GoalViewPeriod.calendarYear => goal.calendarActivity,
+      _GoalViewPeriod.sinceRegistration => goal.sinceRegistrationActivity,
+    };
 
-  final GoalSnapshot goal;
+bool _leadMatchesPeriod(
+  AdvisorLead lead,
+  GoalSnapshot goal,
+  _GoalViewPeriod period,
+) {
+  final updatedAt = lead.outcomeUpdatedAt;
+  if (updatedAt == null) return false;
+  return switch (period) {
+    _GoalViewPeriod.calendarYear => updatedAt.year == goal.targetYear,
+    _GoalViewPeriod.sinceRegistration =>
+      goal.registeredAt == null || !updatedAt.isBefore(goal.registeredAt!),
+  };
+}
+
+class _ActivityPeriodSelector extends StatelessWidget {
+  const _ActivityPeriodSelector({
+    required this.selected,
+    required this.registeredAt,
+    required this.onSelected,
+  });
+
+  final _GoalViewPeriod selected;
+  final DateTime? registeredAt;
+  final ValueChanged<_GoalViewPeriod> onSelected;
 
   @override
   Widget build(BuildContext context) {
-    final hasActivity = goal.reachedLeadsYtd > 0;
+    final joined = registeredAt;
+    final joinedLabel = joined == null
+        ? 'Since registration'
+        : 'Since ${_shortMonth(joined.month)} ${joined.year}';
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: context.appSoftFill,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: context.appOutline),
+      ),
+      child: Row(
+        children: [
+          _PeriodOption(
+            label: 'Jan–Dec ${DateTime.now().year}',
+            selected: selected == _GoalViewPeriod.calendarYear,
+            onTap: () => onSelected(_GoalViewPeriod.calendarYear),
+          ),
+          _PeriodOption(
+            label: joinedLabel,
+            selected: selected == _GoalViewPeriod.sinceRegistration,
+            onTap: () => onSelected(_GoalViewPeriod.sinceRegistration),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PeriodOption extends StatelessWidget {
+  const _PeriodOption({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Material(
+        color: selected ? context.appSurface : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: selected
+                  ? Border.all(color: const Color(0xFF27B7CE))
+                  : null,
+            ),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: selected ? const Color(0xFF078AA2) : context.appMuted,
+                fontSize: 11,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SuccessRateCard extends StatelessWidget {
+  const _SuccessRateCard({required this.goal, required this.activity});
+
+  final GoalSnapshot goal;
+  final GoalActivitySummary activity;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasActivity = activity.reachedLeads > 0;
     final onTarget =
-        hasActivity &&
-        goal.currentSuccessRateBps >= goal.appointmentToDealRateBps;
+        hasActivity && activity.successRateBps >= goal.appointmentToDealRateBps;
     final accent = onTarget ? const Color(0xFF0F9F82) : const Color(0xFFD58416);
     final targetProgress = goal.appointmentToDealRateBps <= 0
         ? 0.0
-        : (goal.currentSuccessRateBps / goal.appointmentToDealRateBps).clamp(
+        : (activity.successRateBps / goal.appointmentToDealRateBps).clamp(
             0.0,
             1.0,
           );
@@ -364,9 +514,9 @@ class _SuccessRateCard extends StatelessWidget {
               Expanded(
                 child: _RateMetric(
                   label: 'CURRENT SUCCESS RATE',
-                  value: _formatRate(goal.currentSuccessRateBps),
+                  value: _formatRate(activity.successRateBps),
                   caption:
-                      '${goal.closedDealsYtd} of ${goal.reachedLeadsYtd} reached',
+                      '${activity.closedDeals} of ${activity.reachedLeads} reached',
                   color: accent,
                 ),
               ),
@@ -393,9 +543,9 @@ class _SuccessRateCard extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  '${goal.contactedLeadsYtd} contacted • '
-                  '${goal.appointmentsSetYtd} appointment set • '
-                  '${goal.closedDealsYtd} closed',
+                  '${activity.contacted} contacted • '
+                  '${activity.appointmentsSet} appointment set • '
+                  '${activity.closedDeals} closed',
                   style: TextStyle(
                     color: context.appMuted,
                     fontSize: 10.5,
@@ -578,6 +728,235 @@ class _GoalHero extends StatelessWidget {
 }
 
 enum _TrendRange { sevenDays, month, year }
+
+String _shortMonth(int month) => const [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+][month.clamp(1, 12) - 1];
+
+class _ActualGoalTrendCard extends StatelessWidget {
+  const _ActualGoalTrendCard({required this.goal, required this.period});
+
+  final GoalSnapshot goal;
+  final _GoalViewPeriod period;
+
+  @override
+  Widget build(BuildContext context) {
+    final monthly = period == _GoalViewPeriod.calendarYear
+        ? goal.calendarMonthlyActivity
+        : goal.sinceRegistrationMonthlyActivity;
+    final points = monthly.isEmpty
+        ? <GoalMonthlyActivityPoint>[
+            GoalMonthlyActivityPoint(
+              year: DateTime.now().year,
+              month: DateTime.now().month,
+              label:
+                  '${_shortMonth(DateTime.now().month)} ${DateTime.now().year}',
+            ),
+          ]
+        : monthly;
+    var runningActual = 0;
+    final actualValues = <double>[];
+    for (final point in points) {
+      runningActual += point.estimatedEarningsCents;
+      actualValues.add(runningActual.toDouble());
+    }
+    final monthlyTarget = goal.annualGoalCents / 12;
+    final targetValues = <double>[
+      for (var index = 0; index < points.length; index++)
+        monthlyTarget * (index + 1),
+    ];
+    final activity = _activityFor(goal, period);
+    final periodTitle = period == _GoalViewPeriod.calendarYear
+        ? 'Calendar-year performance'
+        : 'Performance since registration';
+
+    return _Panel(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Income trend',
+            style: TextStyle(
+              color: context.appInk,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '$periodTitle • based on actual closed-deal updates',
+            style: TextStyle(color: context.appMuted, fontSize: 11.5),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 178,
+            width: double.infinity,
+            child: CustomPaint(
+              key: const ValueKey('goal-activity-trend'),
+              painter: _ActualTrendPainter(
+                actualValues: actualValues,
+                targetValues: targetValues,
+                labels: points
+                    .map((point) => _shortMonth(point.month))
+                    .toList(),
+                actualColor: const Color(0xFF0F9F98),
+                targetColor: const Color(0xFF5967D8),
+                gridColor: context.appOutline,
+                labelColor: context.appMuted,
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _TrendMetric(
+                  label: 'Estimated commission',
+                  value: _money(activity.estimatedEarningsCents),
+                ),
+              ),
+              Container(width: 1, height: 34, color: context.appOutline),
+              const SizedBox(width: 14),
+              Expanded(
+                child: _TrendMetric(
+                  label: 'Goal pace for period',
+                  value: _money(targetValues.last.round()),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 14,
+            runSpacing: 6,
+            children: const [
+              _TrendLegend(color: Color(0xFF0F9F98), label: 'Actual activity'),
+              _TrendLegend(color: Color(0xFF5967D8), label: 'Goal pace'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActualTrendPainter extends CustomPainter {
+  const _ActualTrendPainter({
+    required this.actualValues,
+    required this.targetValues,
+    required this.labels,
+    required this.actualColor,
+    required this.targetColor,
+    required this.gridColor,
+    required this.labelColor,
+  });
+
+  final List<double> actualValues;
+  final List<double> targetValues;
+  final List<String> labels;
+  final Color actualColor;
+  final Color targetColor;
+  final Color gridColor;
+  final Color labelColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const left = 5.0;
+    const top = 8.0;
+    const bottom = 25.0;
+    final chartWidth = size.width - left - 5;
+    final chartHeight = size.height - top - bottom;
+    final maxValue = [
+      ...actualValues,
+      ...targetValues,
+      1.0,
+    ].reduce((a, b) => a > b ? a : b);
+    double x(int index) => actualValues.length <= 1
+        ? left + chartWidth / 2
+        : left + chartWidth * index / (actualValues.length - 1);
+    double y(double value) =>
+        top + chartHeight * (1 - value / (maxValue * 1.08));
+
+    final gridPaint = Paint()
+      ..color = gridColor.withValues(alpha: .7)
+      ..strokeWidth = 1;
+    for (var row = 0; row <= 3; row++) {
+      final gridY = top + chartHeight * row / 3;
+      canvas.drawLine(
+        Offset(left, gridY),
+        Offset(size.width, gridY),
+        gridPaint,
+      );
+    }
+
+    void drawSeries(List<double> values, Color color, double width) {
+      final paint = Paint()
+        ..color = color
+        ..strokeWidth = width
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round;
+      final path = Path();
+      for (var index = 0; index < values.length; index++) {
+        final point = Offset(x(index), y(values[index]));
+        index == 0
+            ? path.moveTo(point.dx, point.dy)
+            : path.lineTo(point.dx, point.dy);
+      }
+      canvas.drawPath(path, paint);
+      for (var index = 0; index < values.length; index++) {
+        canvas.drawCircle(
+          Offset(x(index), y(values[index])),
+          2.5,
+          Paint()..color = color,
+        );
+      }
+    }
+
+    drawSeries(targetValues, targetColor, 2);
+    drawSeries(actualValues, actualColor, 3);
+
+    final labelIndexes = <int>{
+      0,
+      if (labels.length > 2) labels.length ~/ 2,
+      labels.length - 1,
+    };
+    for (final index in labelIndexes) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: labels[index],
+          style: TextStyle(color: labelColor, fontSize: 9.5),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      painter.paint(
+        canvas,
+        Offset(
+          (x(index) - painter.width / 2).clamp(0, size.width - painter.width),
+          size.height - painter.height,
+        ),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ActualTrendPainter oldDelegate) =>
+      oldDelegate.actualValues != actualValues ||
+      oldDelegate.targetValues != targetValues ||
+      oldDelegate.labelColor != labelColor;
+}
 
 extension on _TrendRange {
   String get label => switch (this) {
