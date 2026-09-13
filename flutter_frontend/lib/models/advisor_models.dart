@@ -467,8 +467,10 @@ class GoalSnapshot {
     required this.packages,
     this.registeredAt,
     this.calendarActivity = const GoalActivitySummary(),
+    this.previousYearActivity = const GoalActivitySummary(),
     this.sinceRegistrationActivity = const GoalActivitySummary(),
     this.calendarMonthlyActivity = const [],
+    this.previousYearMonthlyActivity = const [],
     this.sinceRegistrationMonthlyActivity = const [],
   });
 
@@ -496,8 +498,10 @@ class GoalSnapshot {
   final List<LeadPackage> packages;
   final DateTime? registeredAt;
   final GoalActivitySummary calendarActivity;
+  final GoalActivitySummary previousYearActivity;
   final GoalActivitySummary sinceRegistrationActivity;
   final List<GoalMonthlyActivityPoint> calendarMonthlyActivity;
+  final List<GoalMonthlyActivityPoint> previousYearMonthlyActivity;
   final List<GoalMonthlyActivityPoint> sinceRegistrationMonthlyActivity;
 
   factory GoalSnapshot.fromJson(Map<String, dynamic> json) {
@@ -535,11 +539,22 @@ class GoalSnapshot {
       calendarActivity: GoalActivitySummary.fromJson(
         activity['calendar_year'] as Map<String, dynamic>? ?? const {},
       ),
+      previousYearActivity: GoalActivitySummary.fromJson(
+        activity['previous_year'] as Map<String, dynamic>? ?? const {},
+      ),
       sinceRegistrationActivity: GoalActivitySummary.fromJson(
         activity['since_registration'] as Map<String, dynamic>? ?? const {},
       ),
       calendarMonthlyActivity:
           (activity['calendar_year_monthly'] as List? ?? const [])
+              .map(
+                (item) => GoalMonthlyActivityPoint.fromJson(
+                  item as Map<String, dynamic>,
+                ),
+              )
+              .toList(),
+      previousYearMonthlyActivity:
+          (activity['previous_year_monthly'] as List? ?? const [])
               .map(
                 (item) => GoalMonthlyActivityPoint.fromJson(
                   item as Map<String, dynamic>,

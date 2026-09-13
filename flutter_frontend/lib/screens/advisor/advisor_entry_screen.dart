@@ -5,6 +5,7 @@ import 'package:flutter_frontend/repositories/auth_repository.dart';
 import 'package:flutter_frontend/screens/advisor/advisor_shell.dart';
 import 'package:flutter_frontend/screens/advisor/onboarding_screen.dart';
 import 'package:flutter_frontend/screens/auth/login_screen.dart';
+import 'package:flutter_frontend/theme/app_components.dart';
 import 'package:flutter_frontend/theme/app_theme.dart';
 
 class AdvisorEntryScreen extends StatefulWidget {
@@ -55,7 +56,7 @@ class _AdvisorEntryScreenState extends State<AdvisorEntryScreen> {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+            body: AppPageLoading(label: 'Loading your account'),
           );
         }
         if (snapshot.hasError) {

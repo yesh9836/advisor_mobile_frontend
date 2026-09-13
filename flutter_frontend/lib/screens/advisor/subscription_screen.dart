@@ -367,9 +367,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
               const SizedBox(height: 11),
               if (snapshot.connectionState == ConnectionState.waiting &&
                   snapshot.data == null)
-                const Center(
-                  child: AppLoadingIndicator(label: 'Loading packages'),
-                )
+                const AppPageLoading(label: 'Loading packages')
               else if (snapshot.hasError)
                 Card(
                   child: Padding(

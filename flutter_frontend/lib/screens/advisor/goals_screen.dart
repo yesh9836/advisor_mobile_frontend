@@ -6,7 +6,7 @@ import 'package:flutter_frontend/screens/advisor/lead_details_sheet.dart';
 import 'package:flutter_frontend/theme/app_components.dart';
 import 'package:flutter_frontend/theme/app_theme.dart';
 
-enum _GoalViewPeriod { calendarYear, sinceRegistration }
+enum _GoalViewPeriod { calendarYear, previousYear, sinceRegistration }
 
 class GoalsScreen extends StatefulWidget {
   const GoalsScreen({
@@ -29,7 +29,6 @@ class _GoalsScreenState extends State<GoalsScreen> {
       widget.repository ?? AdvisorRepository();
   late Future<GoalSnapshot> _future = _repository.getGoal();
   GoalSnapshot? _savedGoal;
-  _GoalViewPeriod _viewPeriod = _GoalViewPeriod.calendarYear;
 
   @override
   void initState() {
@@ -108,9 +107,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
               const SizedBox(height: 12),
               if (snapshot.connectionState == ConnectionState.waiting &&
                   goal == null)
-                const Center(
-                  child: AppLoadingIndicator(label: 'Loading goal plan'),
-                )
+                const AppPageLoading(label: 'Loading goal plan')
               else if (snapshot.hasError)
                 _Panel(
                   child: Column(
@@ -137,12 +134,6 @@ class _GoalsScreenState extends State<GoalsScreen> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                _ActivityPeriodSelector(
-                  selected: _viewPeriod,
-                  registeredAt: goal.registeredAt,
-                  onSelected: (period) => setState(() => _viewPeriod = period),
-                ),
-                const SizedBox(height: 10),
                 GridView.count(
                   crossAxisCount: 2,
                   shrinkWrap: true,
@@ -152,72 +143,81 @@ class _GoalsScreenState extends State<GoalsScreen> {
                   mainAxisExtent: 92,
                   children: [
                     _StatCard(
-                      value: '${_activityFor(goal, _viewPeriod).closedDeals}',
+                      value: '${goal.sinceRegistrationActivity.closedDeals}',
                       label: 'Deals closed',
                       icon: Icons.emoji_events_outlined,
                       accent: Color(0xFFD58416),
                       lightSurface: Color(0xFFFFF8E8),
                       darkSurface: Color(0xFF2A2113),
-                      detail: 'Actual leads marked Closed Deal in this period.',
-                      recordsTitle: 'Closed deals in this period',
+                      detail: 'All leads marked Closed Deal since you joined.',
+                      recordsTitle: 'Closed deals since joining',
                       loadRecords: () async =>
                           (await _repository.getLeadsPage(
                                 size: 100,
                                 outcomeStatus: 'closed_deal',
                               )).items
                               .where(
-                                (lead) =>
-                                    _leadMatchesPeriod(lead, goal, _viewPeriod),
+                                (lead) => _leadMatchesPeriod(
+                                  lead,
+                                  goal,
+                                  _GoalViewPeriod.sinceRegistration,
+                                ),
                               )
                               .toList(),
                       onLeadTap: _openLead,
                     ),
                     _StatCard(
                       value:
-                          '${_activityFor(goal, _viewPeriod).appointmentsSet}',
+                          '${goal.sinceRegistrationActivity.appointmentsSet}',
                       label: 'Appointments set',
                       icon: Icons.calendar_today_outlined,
                       accent: Color(0xFF5967D8),
                       lightSurface: Color(0xFFF1F3FF),
                       darkSurface: Color(0xFF1C2341),
-                      detail: 'Actual appointment outcomes in this period.',
-                      recordsTitle: 'Appointments in this period',
+                      detail: 'All appointment outcomes since you joined.',
+                      recordsTitle: 'Appointments since joining',
                       loadRecords: () async =>
                           (await _repository.getLeadsPage(
                                 size: 100,
                                 outcomeStatus: 'appointment_set',
                               )).items
                               .where(
-                                (lead) =>
-                                    _leadMatchesPeriod(lead, goal, _viewPeriod),
+                                (lead) => _leadMatchesPeriod(
+                                  lead,
+                                  goal,
+                                  _GoalViewPeriod.sinceRegistration,
+                                ),
                               )
                               .toList(),
                       onLeadTap: _openLead,
                     ),
                     _StatCard(
-                      value: '${_activityFor(goal, _viewPeriod).contacted}',
+                      value: '${goal.sinceRegistrationActivity.contacted}',
                       label: 'Leads contacted',
                       icon: Icons.group_outlined,
                       accent: Color(0xFF0F9F98),
                       lightSurface: Color(0xFFEAFBF8),
                       darkSurface: Color(0xFF102C2B),
                       detail: 'Actual leads currently marked Contacted.',
-                      recordsTitle: 'Contacted leads in this period',
+                      recordsTitle: 'Contacted leads since joining',
                       loadRecords: () async =>
                           (await _repository.getLeadsPage(
                                 size: 100,
                                 outcomeStatus: 'contacted',
                               )).items
                               .where(
-                                (lead) =>
-                                    _leadMatchesPeriod(lead, goal, _viewPeriod),
+                                (lead) => _leadMatchesPeriod(
+                                  lead,
+                                  goal,
+                                  _GoalViewPeriod.sinceRegistration,
+                                ),
                               )
                               .toList(),
                       onLeadTap: _openLead,
                     ),
                     _StatCard(
                       value: _money(
-                        _activityFor(goal, _viewPeriod).estimatedEarningsCents,
+                        goal.sinceRegistrationActivity.estimatedEarningsCents,
                       ),
                       label: 'Est. commission',
                       icon: Icons.check_circle_outline_rounded,
@@ -233,8 +233,11 @@ class _GoalsScreenState extends State<GoalsScreen> {
                                 outcomeStatus: 'closed_deal',
                               )).items
                               .where(
-                                (lead) =>
-                                    _leadMatchesPeriod(lead, goal, _viewPeriod),
+                                (lead) => _leadMatchesPeriod(
+                                  lead,
+                                  goal,
+                                  _GoalViewPeriod.sinceRegistration,
+                                ),
                               )
                               .toList(),
                       onLeadTap: _openLead,
@@ -244,10 +247,10 @@ class _GoalsScreenState extends State<GoalsScreen> {
                 const SizedBox(height: 10),
                 _SuccessRateCard(
                   goal: goal,
-                  activity: _activityFor(goal, _viewPeriod),
+                  activity: goal.sinceRegistrationActivity,
                 ),
                 const SizedBox(height: 10),
-                _ActualGoalTrendCard(goal: goal, period: _viewPeriod),
+                _ActualGoalTrendCard(goal: goal),
                 if (goal.pacingMessage.isNotEmpty) ...[
                   const SizedBox(height: 10),
                   _PacingPanel(goal: goal),
@@ -305,6 +308,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
 GoalActivitySummary _activityFor(GoalSnapshot goal, _GoalViewPeriod period) =>
     switch (period) {
       _GoalViewPeriod.calendarYear => goal.calendarActivity,
+      _GoalViewPeriod.previousYear => goal.previousYearActivity,
       _GoalViewPeriod.sinceRegistration => goal.sinceRegistrationActivity,
     };
 
@@ -317,6 +321,7 @@ bool _leadMatchesPeriod(
   if (updatedAt == null) return false;
   return switch (period) {
     _GoalViewPeriod.calendarYear => updatedAt.year == goal.targetYear,
+    _GoalViewPeriod.previousYear => updatedAt.year == goal.targetYear - 1,
     _GoalViewPeriod.sinceRegistration =>
       goal.registeredAt == null || !updatedAt.isBefore(goal.registeredAt!),
   };
@@ -349,12 +354,17 @@ class _ActivityPeriodSelector extends StatelessWidget {
       child: Row(
         children: [
           _PeriodOption(
-            label: 'Jan–Dec ${DateTime.now().year}',
+            label: '${DateTime.now().year}',
             selected: selected == _GoalViewPeriod.calendarYear,
             onTap: () => onSelected(_GoalViewPeriod.calendarYear),
           ),
           _PeriodOption(
-            label: joinedLabel,
+            label: '${DateTime.now().year - 1}',
+            selected: selected == _GoalViewPeriod.previousYear,
+            onTap: () => onSelected(_GoalViewPeriod.previousYear),
+          ),
+          _PeriodOption(
+            label: joined == null ? joinedLabel : 'Since joining',
             selected: selected == _GoalViewPeriod.sinceRegistration,
             onTap: () => onSelected(_GoalViewPeriod.sinceRegistration),
           ),
@@ -683,34 +693,51 @@ class _GoalHero extends StatelessWidget {
                 ),
                 const SizedBox(width: 16),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
                     children: [
-                      const Text(
-                        'Earned',
-                        style: TextStyle(color: Colors.white70),
-                      ),
-                      Text(
-                        _money(goal.earnedYtdCents),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 23,
-                          fontWeight: FontWeight.w700,
-                          fontFeatures: [FontFeature.tabularFigures()],
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Earned',
+                              style: TextStyle(color: Colors.white70),
+                            ),
+                            Text(
+                              _money(goal.earnedYtdCents),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 19,
+                                fontWeight: FontWeight.w700,
+                                fontFeatures: [FontFeature.tabularFigures()],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Target',
-                        style: TextStyle(color: Colors.white70),
-                      ),
-                      Text(
-                        _money(goal.annualGoalCents),
-                        style: const TextStyle(
-                          color: Color(0xFF7DD3FC),
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          fontFeatures: [FontFeature.tabularFigures()],
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Target',
+                              style: TextStyle(color: Colors.white70),
+                            ),
+                            Text(
+                              _money(goal.annualGoalCents),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF7DD3FC),
+                                fontSize: 19,
+                                fontWeight: FontWeight.w700,
+                                fontFeatures: [FontFeature.tabularFigures()],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -744,17 +771,27 @@ String _shortMonth(int month) => const [
   'Dec',
 ][month.clamp(1, 12) - 1];
 
-class _ActualGoalTrendCard extends StatelessWidget {
-  const _ActualGoalTrendCard({required this.goal, required this.period});
+class _ActualGoalTrendCard extends StatefulWidget {
+  const _ActualGoalTrendCard({required this.goal});
 
   final GoalSnapshot goal;
-  final _GoalViewPeriod period;
+
+  @override
+  State<_ActualGoalTrendCard> createState() => _ActualGoalTrendCardState();
+}
+
+class _ActualGoalTrendCardState extends State<_ActualGoalTrendCard> {
+  _GoalViewPeriod period = _GoalViewPeriod.calendarYear;
 
   @override
   Widget build(BuildContext context) {
-    final monthly = period == _GoalViewPeriod.calendarYear
-        ? goal.calendarMonthlyActivity
-        : goal.sinceRegistrationMonthlyActivity;
+    final goal = widget.goal;
+    final monthly = switch (period) {
+      _GoalViewPeriod.calendarYear => goal.calendarMonthlyActivity,
+      _GoalViewPeriod.previousYear => goal.previousYearMonthlyActivity,
+      _GoalViewPeriod.sinceRegistration =>
+        goal.sinceRegistrationMonthlyActivity,
+    };
     final points = monthly.isEmpty
         ? <GoalMonthlyActivityPoint>[
             GoalMonthlyActivityPoint(
@@ -771,15 +808,26 @@ class _ActualGoalTrendCard extends StatelessWidget {
       runningActual += point.estimatedEarningsCents;
       actualValues.add(runningActual.toDouble());
     }
-    final monthlyTarget = goal.annualGoalCents / 12;
-    final targetValues = <double>[
-      for (var index = 0; index < points.length; index++)
-        monthlyTarget * (index + 1),
-    ];
+    final showGoalPace = period == _GoalViewPeriod.calendarYear;
+    final joinedThisYear = goal.registeredAt?.year == goal.targetYear;
+    final goalStartMonth = joinedThisYear ? goal.registeredAt!.month : 1;
+    final goalMonths = 13 - goalStartMonth;
+    final targetValues = showGoalPace
+        ? <double>[
+            for (final point in points)
+              point.month < goalStartMonth
+                  ? 0
+                  : goal.annualGoalCents *
+                        (point.month - goalStartMonth + 1) /
+                        goalMonths,
+          ]
+        : <double>[];
     final activity = _activityFor(goal, period);
-    final periodTitle = period == _GoalViewPeriod.calendarYear
-        ? 'Calendar-year performance'
-        : 'Performance since registration';
+    final periodTitle = switch (period) {
+      _GoalViewPeriod.calendarYear => 'Current-year performance',
+      _GoalViewPeriod.previousYear => 'Previous-year history',
+      _GoalViewPeriod.sinceRegistration => 'Complete history since joining',
+    };
 
     return _Panel(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
@@ -799,6 +847,19 @@ class _ActualGoalTrendCard extends StatelessWidget {
             '$periodTitle • based on actual closed-deal updates',
             style: TextStyle(color: context.appMuted, fontSize: 11.5),
           ),
+          const SizedBox(height: 10),
+          _ActivityPeriodSelector(
+            selected: period,
+            registeredAt: goal.registeredAt,
+            onSelected: (selected) => setState(() => period = selected),
+          ),
+          if (showGoalPace && joinedThisYear) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Goal pace starts from ${_shortMonth(goalStartMonth)} ${goal.targetYear} and runs to year end.',
+              style: TextStyle(color: context.appMuted, fontSize: 10.5),
+            ),
+          ],
           const SizedBox(height: 14),
           SizedBox(
             height: 178,
@@ -831,8 +892,10 @@ class _ActualGoalTrendCard extends StatelessWidget {
               const SizedBox(width: 14),
               Expanded(
                 child: _TrendMetric(
-                  label: 'Goal pace for period',
-                  value: _money(targetValues.last.round()),
+                  label: showGoalPace ? 'Goal by year end' : 'Closed deals',
+                  value: showGoalPace
+                      ? _money(goal.annualGoalCents)
+                      : '${activity.closedDeals}',
                 ),
               ),
             ],
@@ -841,9 +904,16 @@ class _ActualGoalTrendCard extends StatelessWidget {
           Wrap(
             spacing: 14,
             runSpacing: 6,
-            children: const [
-              _TrendLegend(color: Color(0xFF0F9F98), label: 'Actual activity'),
-              _TrendLegend(color: Color(0xFF5967D8), label: 'Goal pace'),
+            children: [
+              const _TrendLegend(
+                color: Color(0xFF0F9F98),
+                label: 'Actual history',
+              ),
+              if (showGoalPace)
+                const _TrendLegend(
+                  color: Color(0xFF5967D8),
+                  label: 'Goal pace',
+                ),
             ],
           ),
         ],

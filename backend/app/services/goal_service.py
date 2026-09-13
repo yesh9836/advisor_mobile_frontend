@@ -153,12 +153,14 @@ class GoalService:
             registered_at = registered_at.replace(tzinfo=timezone.utc)
         calendar_start = datetime(int(goal.target_year), 1, 1, tzinfo=timezone.utc)
         calendar_end = datetime(int(goal.target_year) + 1, 1, 1, tzinfo=timezone.utc)
+        previous_start = datetime(int(goal.target_year) - 1, 1, 1, tzinfo=timezone.utc)
+        previous_end = calendar_start
 
         outcomes = (
             db.query(LeadOutcome.status, LeadOutcome.updated_at)
             .filter(
                 LeadOutcome.user_id == user.id,
-                LeadOutcome.updated_at >= min(calendar_start, registered_at),
+                LeadOutcome.updated_at >= min(previous_start, registered_at),
                 LeadOutcome.updated_at <= current,
             )
             .all()
@@ -187,6 +189,9 @@ class GoalService:
 
         calendar_rows = [
             row for row in outcomes if calendar_start <= row[1] < calendar_end
+        ]
+        previous_rows = [
+            row for row in outcomes if previous_start <= row[1] < previous_end
         ]
         registration_rows = [row for row in outcomes if row[1] >= registered_at]
 
@@ -227,10 +232,16 @@ class GoalService:
             "registered_at": registered_at,
             "as_of": current,
             "calendar_year": summarize(calendar_rows),
+            "previous_year": summarize(previous_rows),
             "since_registration": summarize(registration_rows),
             "calendar_year_monthly": month_points(
                 calendar_start,
                 calendar_start,
+                include_full_year=True,
+            ),
+            "previous_year_monthly": month_points(
+                previous_start,
+                previous_start,
                 include_full_year=True,
             ),
             "since_registration_monthly": month_points(registered_at, current),

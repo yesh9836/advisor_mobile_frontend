@@ -11,6 +11,25 @@ class AppLoadingIndicator extends StatefulWidget {
   State<AppLoadingIndicator> createState() => _AppLoadingIndicatorState();
 }
 
+class AppPageLoading extends StatelessWidget {
+  const AppPageLoading({super.key, required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final availableHeight = (media.size.height - media.padding.vertical - 126)
+        .clamp(280.0, double.infinity)
+        .toDouble();
+    return SizedBox(
+      width: double.infinity,
+      height: availableHeight,
+      child: Center(child: AppLoadingIndicator(label: label)),
+    );
+  }
+}
+
 class _AppLoadingIndicatorState extends State<AppLoadingIndicator>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(

@@ -86,8 +86,10 @@ class GoalActivitySnapshot(BaseModel):
     registered_at: datetime
     as_of: datetime
     calendar_year: GoalActivitySummary
+    previous_year: GoalActivitySummary
     since_registration: GoalActivitySummary
     calendar_year_monthly: List[GoalMonthlyActivityPoint]
+    previous_year_monthly: List[GoalMonthlyActivityPoint]
     since_registration_monthly: List[GoalMonthlyActivityPoint]
 
 

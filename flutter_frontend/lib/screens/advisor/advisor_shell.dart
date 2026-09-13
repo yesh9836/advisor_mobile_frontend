@@ -675,9 +675,7 @@ class _AdvisorDashboardScreenState extends State<AdvisorDashboardScreen> {
             children: [
               if (snapshot.connectionState == ConnectionState.waiting &&
                   data == null)
-                const Center(
-                  child: AppLoadingIndicator(label: 'Loading dashboard'),
-                )
+                const AppPageLoading(label: 'Loading dashboard')
               else if (snapshot.hasError)
                 _EmptyPanel(
                   message: snapshot.error.toString(),

@@ -209,12 +209,7 @@ class _LeadsScreenState extends State<LeadsScreen> {
               const SizedBox(height: 11),
               if (snapshot.connectionState == ConnectionState.waiting &&
                   leads.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.only(top: 40),
-                  child: Center(
-                    child: AppLoadingIndicator(label: 'Loading leads'),
-                  ),
-                )
+                const AppPageLoading(label: 'Loading leads')
               else if (snapshot.hasError)
                 Card(
                   child: Padding(

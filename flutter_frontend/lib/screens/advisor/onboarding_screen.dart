@@ -6,6 +6,7 @@ import 'package:flutter_frontend/models/onboarding_models.dart';
 import 'package:flutter_frontend/repositories/advisor_repository.dart';
 import 'package:flutter_frontend/repositories/auth_repository.dart';
 import 'package:flutter_frontend/screens/advisor/license_upload_sheet.dart';
+import 'package:flutter_frontend/theme/app_components.dart';
 import 'package:flutter_frontend/theme/app_theme.dart';
 
 class AdvisorOnboardingScreen extends StatefulWidget {
@@ -191,7 +192,9 @@ class _AdvisorOnboardingScreenState extends State<AdvisorOnboardingScreen> {
               ),
               if (_loading)
                 const Expanded(
-                  child: Center(child: CircularProgressIndicator()),
+                  child: Center(
+                    child: AppLoadingIndicator(label: 'Loading your plan'),
+                  ),
                 )
               else if (_data == null && _error != null)
                 Expanded(

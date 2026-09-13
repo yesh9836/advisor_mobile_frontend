@@ -107,9 +107,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting &&
             snapshot.data == null) {
-          return const Center(
-            child: AppLoadingIndicator(label: 'Loading profile'),
-          );
+          return const AppPageLoading(label: 'Loading profile');
         }
 
         if (snapshot.hasError) {

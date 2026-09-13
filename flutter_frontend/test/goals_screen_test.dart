@@ -53,7 +53,7 @@ void main() {
     expect(find.text('Est. commission'), findsOneWidget);
     await tester.tap(find.text('Deals closed'));
     await tester.pumpAndSettle();
-    expect(find.text('Closed deals in this period'), findsOneWidget);
+    expect(find.text('Closed deals since joining'), findsOneWidget);
     expect(find.text('Calculation'), findsOneWidget);
     expect(find.text('Test Closed Lead'), findsOneWidget);
     await tester.tap(find.text('Test Closed Lead'));
@@ -75,11 +75,11 @@ void main() {
     expect(find.text('Income trend'), findsOneWidget);
     expect(
       find.text(
-        'Calendar-year performance • based on actual closed-deal updates',
+        'Current-year performance • based on actual closed-deal updates',
       ),
       findsOneWidget,
     );
-    expect(find.text('Actual activity'), findsOneWidget);
+    expect(find.text('Actual history'), findsOneWidget);
     expect(find.text('Goal pace'), findsOneWidget);
     expect(find.byKey(const ValueKey('goal-activity-trend')), findsOneWidget);
     expect(find.text('12 leads recommended per month'), findsOneWidget);
@@ -132,8 +132,6 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.drag(find.byType(ListView).first, const Offset(0, -260));
-    await tester.pumpAndSettle();
     final adjustButton = find.byKey(
       const ValueKey('monthly-goal-adjust-button'),
     );
@@ -172,15 +170,15 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Since Mar 2026'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('12.5%'), findsOneWidget);
     await tester.drag(find.byType(ListView).first, const Offset(0, -600));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Since joining'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('25%'), findsNWidgets(2));
     expect(
       find.text(
-        'Performance since registration • based on actual closed-deal updates',
+        'Complete history since joining • based on actual closed-deal updates',
       ),
       findsOneWidget,
     );
@@ -296,12 +294,12 @@ GoalSnapshot _goal({
       estimatedEarningsCents: 2000000,
     ),
     sinceRegistrationActivity: GoalActivitySummary(
-      contacted: 6,
-      appointmentsSet: 1,
-      closedDeals: 1,
-      reachedLeads: 8,
-      successRateBps: 1250,
-      estimatedEarningsCents: 500000,
+      contacted: 10,
+      appointmentsSet: 2,
+      closedDeals: 4,
+      reachedLeads: 16,
+      successRateBps: currentSuccessRateBps,
+      estimatedEarningsCents: 2000000,
     ),
     calendarMonthlyActivity: const [
       GoalMonthlyActivityPoint(year: 2026, month: 1, label: 'Jan 2026'),
