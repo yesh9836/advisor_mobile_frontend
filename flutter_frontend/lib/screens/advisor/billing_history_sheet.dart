@@ -2,10 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_frontend/models/advisor_models.dart';
 import 'package:flutter_frontend/repositories/advisor_repository.dart';
 import 'package:flutter_frontend/theme/app_theme.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+typedef BillingUrlLauncher = Future<bool> Function(Uri uri, bool inApp);
+
+Future<bool> _launchBillingUrl(Uri uri, bool inApp) => launchUrl(
+  uri,
+  mode: inApp ? LaunchMode.inAppBrowserView : LaunchMode.externalApplication,
+);
 
 Future<void> showBillingHistorySheet({
   required BuildContext context,
   required AdvisorRepository repository,
+  BillingUrlLauncher launcher = _launchBillingUrl,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -14,15 +23,20 @@ Future<void> showBillingHistorySheet({
     showDragHandle: true,
     builder: (_) => FractionallySizedBox(
       heightFactor: 0.88,
-      child: BillingHistorySheet(repository: repository),
+      child: BillingHistorySheet(repository: repository, launcher: launcher),
     ),
   );
 }
 
 class BillingHistorySheet extends StatefulWidget {
-  const BillingHistorySheet({super.key, required this.repository});
+  const BillingHistorySheet({
+    super.key,
+    required this.repository,
+    this.launcher = _launchBillingUrl,
+  });
 
   final AdvisorRepository repository;
+  final BillingUrlLauncher launcher;
 
   @override
   State<BillingHistorySheet> createState() => _BillingHistorySheetState();
@@ -118,7 +132,10 @@ class _BillingHistorySheetState extends State<BillingHistorySheet> {
                 for (final invoice in snapshot.data!.invoices)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 10),
-                    child: _InvoiceCard(invoice: invoice),
+                    child: _InvoiceCard(
+                      invoice: invoice,
+                      launcher: widget.launcher,
+                    ),
                   ),
             ],
           ],
@@ -158,7 +175,13 @@ class _PaymentMethodCard extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  'Expires ${paymentMethod.expMonth.toString().padLeft(2, '0')}/${paymentMethod.expYear}',
+                  [
+                    'Expires ${paymentMethod.expMonth.toString().padLeft(2, '0')}/${paymentMethod.expYear}',
+                    if (paymentMethod.funding?.trim().isNotEmpty ?? false)
+                      _titleCase(paymentMethod.funding!),
+                    if (paymentMethod.country?.trim().isNotEmpty ?? false)
+                      paymentMethod.country!.toUpperCase(),
+                  ].join('  •  '),
                   style: const TextStyle(color: Color(0xFFD6E6EF)),
                 ),
               ],
@@ -171,9 +194,24 @@ class _PaymentMethodCard extends StatelessWidget {
 }
 
 class _InvoiceCard extends StatelessWidget {
-  const _InvoiceCard({required this.invoice});
+  const _InvoiceCard({required this.invoice, required this.launcher});
 
   final BillingInvoice invoice;
+  final BillingUrlLauncher launcher;
+
+  Future<void> _open(
+    BuildContext context,
+    String rawUrl, {
+    required bool inApp,
+  }) async {
+    final uri = Uri.tryParse(rawUrl);
+    final opened = uri != null && await launcher(uri, inApp);
+    if (!opened && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to open this invoice.')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -188,48 +226,89 @@ class _InvoiceCard extends StatelessWidget {
         border: Border.all(color: context.appOutline),
         boxShadow: context.appCardShadows,
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CircleAvatar(
-            backgroundColor: completed
-                ? const Color(0xFFD8FBE5)
-                : const Color(0xFFFFF1C7),
-            child: Icon(
-              Icons.receipt_long_outlined,
-              color: completed
-                  ? const Color(0xFF059669)
-                  : const Color(0xFFD97706),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  invoice.packageName?.trim().isNotEmpty ?? false
-                      ? invoice.packageName!.trim()
-                      : 'Lead purchase',
-                  style: TextStyle(
-                    color: context.appInk,
-                    fontWeight: FontWeight.w700,
-                  ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CircleAvatar(
+                backgroundColor: completed
+                    ? const Color(0xFFD8FBE5)
+                    : const Color(0xFFFFF1C7),
+                child: Icon(
+                  Icons.receipt_long_outlined,
+                  color: completed
+                      ? const Color(0xFF059669)
+                      : const Color(0xFFD97706),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  '${_formatDate(invoice.createdAt)} · ${_titleCase(invoice.status)}',
-                  style: TextStyle(color: context.appMuted, fontSize: 12),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      invoice.packageName?.trim().isNotEmpty ?? false
+                          ? invoice.packageName!.trim()
+                          : 'Lead purchase',
+                      style: TextStyle(
+                        color: context.appInk,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${_formatDate(invoice.createdAt)} · ${_titleCase(invoice.status)}',
+                      style: TextStyle(color: context.appMuted, fontSize: 12),
+                    ),
+                    if (invoice.description?.trim().isNotEmpty ?? false) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        invoice.description!.trim(),
+                        style: TextStyle(color: context.appMuted, fontSize: 12),
+                      ),
+                    ],
+                  ],
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                _formatAmount(invoice.amountPaidCents, invoice.currency),
+                style: TextStyle(
+                  color: context.appInk,
+                  fontWeight: FontWeight.w700,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          Text(
-            _formatAmount(invoice.amountPaidCents, invoice.currency),
-            style: TextStyle(
-              color: context.appInk,
-              fontWeight: FontWeight.w700,
-            ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Invoice ${_shortInvoiceId(invoice.id)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: context.appMuted, fontSize: 11),
+                ),
+              ),
+              if (invoice.hostedInvoiceUrl?.trim().isNotEmpty ?? false)
+                TextButton.icon(
+                  onPressed: () =>
+                      _open(context, invoice.hostedInvoiceUrl!, inApp: true),
+                  icon: const Icon(Icons.visibility_outlined, size: 17),
+                  label: const Text('View'),
+                ),
+              if (invoice.invoicePdfUrl?.trim().isNotEmpty ?? false)
+                TextButton.icon(
+                  onPressed: () =>
+                      _open(context, invoice.invoicePdfUrl!, inApp: false),
+                  icon: const Icon(Icons.download_outlined, size: 17),
+                  label: const Text('PDF'),
+                ),
+            ],
           ),
         ],
       ),
@@ -290,7 +369,17 @@ String _formatDate(DateTime value) {
     'Nov',
     'Dec',
   ];
-  return '${months[value.month - 1]} ${value.day}, ${value.year}';
+  final hour = value.hour % 12 == 0 ? 12 : value.hour % 12;
+  final minute = value.minute.toString().padLeft(2, '0');
+  final period = value.hour < 12 ? 'AM' : 'PM';
+  return '${months[value.month - 1]} ${value.day}, ${value.year} at $hour:$minute $period';
+}
+
+String _shortInvoiceId(String value) {
+  if (value.trim().isEmpty) return 'unavailable';
+  return value.length <= 18
+      ? value
+      : '${value.substring(0, 10)}…${value.substring(value.length - 5)}';
 }
 
 String _formatAmount(int cents, String currency) {

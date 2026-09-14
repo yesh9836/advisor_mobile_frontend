@@ -124,10 +124,19 @@ void main() {
 
   testWidgets('renders payment method and billing history', (tester) async {
     final repository = _FakeAdvisorRepository();
+    final opened = <(Uri, bool)>[];
 
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(body: BillingHistorySheet(repository: repository)),
+        home: Scaffold(
+          body: BillingHistorySheet(
+            repository: repository,
+            launcher: (uri, inApp) async {
+              opened.add((uri, inApp));
+              return true;
+            },
+          ),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -136,6 +145,18 @@ void main() {
     expect(find.text('Starter Leads'), findsOneWidget);
     expect(find.text(r'$125'), findsOneWidget);
     expect(find.textContaining('Aug 9, 2026'), findsOneWidget);
+    expect(find.textContaining('Invoice in_123'), findsOneWidget);
+    expect(find.text('View'), findsOneWidget);
+    expect(find.text('PDF'), findsOneWidget);
+
+    await tester.tap(find.text('View'));
+    await tester.pump();
+    await tester.tap(find.text('PDF'));
+    await tester.pump();
+    expect(opened, [
+      (Uri.parse('https://stripe.test/invoices/in_123'), true),
+      (Uri.parse('https://stripe.test/invoices/in_123.pdf'), false),
+    ]);
   });
 
   testWidgets('opens license upload from Profile', (tester) async {
@@ -331,6 +352,9 @@ class _FakeAdvisorRepository extends AdvisorRepository {
         status: 'paid',
         createdAt: DateTime(2026, 8, 9),
         packageName: 'Starter Leads',
+        hostedInvoiceUrl: 'https://stripe.test/invoices/in_123',
+        invoicePdfUrl: 'https://stripe.test/invoices/in_123.pdf',
+        description: 'One-time package purchase',
       ),
     ],
   );

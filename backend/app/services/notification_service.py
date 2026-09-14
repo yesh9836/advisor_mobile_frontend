@@ -34,7 +34,7 @@ class NotificationService:
 
     @staticmethod
     def _build_inbox_url() -> str:
-        return f"{settings.FRONTEND_URL.rstrip('/')}/leads"
+        return f"{settings.FRONTEND_URL.rstrip('/')}/open-inbox.html"
 
     @staticmethod
     def _normalize_lead_ids(lead_ids: List[int]) -> List[int]:

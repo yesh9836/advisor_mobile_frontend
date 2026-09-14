@@ -287,6 +287,8 @@ class BillingPaymentMethod {
     required this.expMonth,
     required this.expYear,
     required this.isPlaceholder,
+    this.funding,
+    this.country,
   });
 
   final String brand;
@@ -294,6 +296,8 @@ class BillingPaymentMethod {
   final int expMonth;
   final int expYear;
   final bool isPlaceholder;
+  final String? funding;
+  final String? country;
 
   factory BillingPaymentMethod.fromJson(Map<String, dynamic> json) {
     return BillingPaymentMethod(
@@ -302,6 +306,8 @@ class BillingPaymentMethod {
       expMonth: json['exp_month'] as int? ?? 0,
       expYear: json['exp_year'] as int? ?? 0,
       isPlaceholder: json['is_placeholder'] as bool? ?? false,
+      funding: json['funding'] as String?,
+      country: json['country'] as String?,
     );
   }
 }
@@ -314,7 +320,9 @@ class BillingInvoice {
     required this.status,
     required this.createdAt,
     this.packageName,
-    this.invoiceUrl,
+    this.hostedInvoiceUrl,
+    this.invoicePdfUrl,
+    this.description,
   });
 
   final String id;
@@ -323,7 +331,11 @@ class BillingInvoice {
   final String status;
   final DateTime createdAt;
   final String? packageName;
-  final String? invoiceUrl;
+  final String? hostedInvoiceUrl;
+  final String? invoicePdfUrl;
+  final String? description;
+
+  String? get invoiceUrl => hostedInvoiceUrl ?? invoicePdfUrl;
 
   factory BillingInvoice.fromJson(Map<String, dynamic> json) {
     return BillingInvoice(
@@ -335,9 +347,9 @@ class BillingInvoice {
           DateTime.tryParse(json['created_at'] as String? ?? '')?.toLocal() ??
           DateTime.fromMillisecondsSinceEpoch(0),
       packageName: json['package_name'] as String?,
-      invoiceUrl:
-          json['invoice_pdf'] as String? ??
-          json['hosted_invoice_url'] as String?,
+      hostedInvoiceUrl: json['hosted_invoice_url'] as String?,
+      invoicePdfUrl: json['invoice_pdf'] as String?,
+      description: json['description'] as String?,
     );
   }
 

@@ -77,6 +77,35 @@ class _GoalsScreenState extends State<GoalsScreen> {
     });
   }
 
+  Future<void> _editFunnel(GoalSnapshot goal) async {
+    final values = await showModalBottomSheet<_FunnelInputs>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (_) => _FunnelEditor(goal: goal),
+    );
+    if (values == null || !mounted) return;
+    try {
+      final updated = await _repository.saveGoalFunnel(
+        currentGoal: goal,
+        averageCommissionCents: values.averageCommissionCents,
+        appointmentToDealRateBps: values.appointmentToDealRateBps,
+        leadToAppointmentRateBps: values.leadToAppointmentRateBps,
+      );
+      if (!mounted) return;
+      setState(() => _savedGoal = updated);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Funnel assumptions updated.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
+  }
+
   Future<void> _openLead(AdvisorLead lead) {
     return showLeadDetailsSheet(
       context: context,
@@ -250,6 +279,8 @@ class _GoalsScreenState extends State<GoalsScreen> {
                   activity: goal.sinceRegistrationActivity,
                 ),
                 const SizedBox(height: 10),
+                _FunnelPlannerCard(goal: goal, onEdit: () => _editFunnel(goal)),
+                const SizedBox(height: 10),
                 _ActualGoalTrendCard(goal: goal),
                 if (goal.pacingMessage.isNotEmpty) ...[
                   const SizedBox(height: 10),
@@ -418,6 +449,349 @@ class _PeriodOption extends StatelessWidget {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FunnelPlannerCard extends StatelessWidget {
+  const _FunnelPlannerCard({required this.goal, required this.onEdit});
+
+  final GoalSnapshot goal;
+  final VoidCallback onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    final steps = [
+      (
+        icon: Icons.groups_outlined,
+        value: '${goal.leadsNeeded}',
+        label: 'Leads',
+        color: const Color(0xFF0F9F98),
+      ),
+      (
+        icon: Icons.calendar_month_outlined,
+        value: '${goal.appointmentsNeeded}',
+        label: 'Appointments',
+        color: const Color(0xFF5967D8),
+      ),
+      (
+        icon: Icons.handshake_outlined,
+        value: '${goal.dealsNeeded}',
+        label: 'Deals',
+        color: const Color(0xFFD58416),
+      ),
+      (
+        icon: Icons.trending_up_rounded,
+        value: _compactMoney(goal.annualGoalCents),
+        label: 'Income goal',
+        color: const Color(0xFF168A5B),
+      ),
+    ];
+    return _Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Your funnel',
+                      style: TextStyle(
+                        color: context.appInk,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'The activity required to reach your ${goal.targetYear} income goal.',
+                      style: TextStyle(color: context.appMuted, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              TextButton.icon(
+                key: const ValueKey('edit-funnel-button'),
+                onPressed: onEdit,
+                icon: const Icon(Icons.tune_rounded, size: 17),
+                label: const Text('Edit'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var index = 0; index < steps.length; index++) ...[
+                Expanded(
+                  child: _FunnelStep(
+                    icon: steps[index].icon,
+                    value: steps[index].value,
+                    label: steps[index].label,
+                    color: steps[index].color,
+                  ),
+                ),
+                if (index < steps.length - 1)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 18),
+                    child: Icon(
+                      Icons.chevron_right_rounded,
+                      color: context.appMuted,
+                      size: 15,
+                    ),
+                  ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+            decoration: BoxDecoration(
+              color: context.appSoftFill,
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Text(
+              '${_formatRate(goal.leadToAppointmentRateBps)} lead → appointment  •  '
+              '${_formatRate(goal.appointmentToDealRateBps)} appointment → deal  •  '
+              '${_money(goal.averageCommissionCents)} average commission',
+              style: TextStyle(
+                color: context.appMuted,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FunnelStep extends StatelessWidget {
+  const _FunnelStep({
+    required this.icon,
+    required this.value,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String value;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: .12),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: color, size: 18),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: context.appInk,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: context.appMuted, fontSize: 8.5),
+        ),
+      ],
+    );
+  }
+}
+
+class _FunnelInputs {
+  const _FunnelInputs({
+    required this.averageCommissionCents,
+    required this.appointmentToDealRateBps,
+    required this.leadToAppointmentRateBps,
+  });
+
+  final int averageCommissionCents;
+  final int appointmentToDealRateBps;
+  final int leadToAppointmentRateBps;
+}
+
+class _FunnelEditor extends StatefulWidget {
+  const _FunnelEditor({required this.goal});
+
+  final GoalSnapshot goal;
+
+  @override
+  State<_FunnelEditor> createState() => _FunnelEditorState();
+}
+
+class _FunnelEditorState extends State<_FunnelEditor> {
+  late final TextEditingController _commissionController;
+  late final TextEditingController _appointmentRateController;
+  late final TextEditingController _leadRateController;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _commissionController = TextEditingController(
+      text: (widget.goal.averageCommissionCents / 100).toStringAsFixed(0),
+    );
+    _appointmentRateController = TextEditingController(
+      text: (widget.goal.appointmentToDealRateBps / 100).toStringAsFixed(0),
+    );
+    _leadRateController = TextEditingController(
+      text: (widget.goal.leadToAppointmentRateBps / 100).toStringAsFixed(0),
+    );
+  }
+
+  @override
+  void dispose() {
+    _commissionController.dispose();
+    _appointmentRateController.dispose();
+    _leadRateController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final commission = double.tryParse(
+      _commissionController.text.replaceAll(',', '').trim(),
+    );
+    final appointmentRate = double.tryParse(
+      _appointmentRateController.text.trim(),
+    );
+    final leadRate = double.tryParse(_leadRateController.text.trim());
+    if (commission == null || commission <= 0) {
+      setState(() => _error = 'Enter an average commission greater than zero.');
+      return;
+    }
+    if (appointmentRate == null ||
+        appointmentRate <= 0 ||
+        appointmentRate > 100 ||
+        leadRate == null ||
+        leadRate <= 0 ||
+        leadRate > 100) {
+      setState(() => _error = 'Conversion rates must be between 0 and 100%.');
+      return;
+    }
+    Navigator.of(context).pop(
+      _FunnelInputs(
+        averageCommissionCents: (commission * 100).round(),
+        appointmentToDealRateBps: (appointmentRate * 100).round(),
+        leadToAppointmentRateBps: (leadRate * 100).round(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        2,
+        20,
+        20 + MediaQuery.viewInsetsOf(context).bottom,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Funnel assumptions',
+              style: TextStyle(
+                color: context.appInk,
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Tune the planning assumptions used to calculate required leads, appointments and deals.',
+              style: TextStyle(color: context.appMuted),
+            ),
+            const SizedBox(height: 18),
+            TextField(
+              key: const ValueKey('funnel-commission-field'),
+              controller: _commissionController,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+              ],
+              decoration: const InputDecoration(
+                labelText: 'Average commission per deal',
+                prefixText: r'$ ',
+                helperText: 'Your typical take-home commission for one sale.',
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              key: const ValueKey('funnel-appointment-rate-field'),
+              controller: _appointmentRateController,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+              ],
+              decoration: const InputDecoration(
+                labelText: 'Appointment to deal rate',
+                suffixText: '%',
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              key: const ValueKey('funnel-lead-rate-field'),
+              controller: _leadRateController,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+              ],
+              decoration: const InputDecoration(
+                labelText: 'Lead to appointment rate',
+                suffixText: '%',
+              ),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+              ),
+            ],
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                key: const ValueKey('save-funnel-button'),
+                onPressed: _submit,
+                icon: const Icon(Icons.save_outlined),
+                label: const Text('Update funnel'),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -2794,6 +3168,19 @@ IconData _packageIcon(String name) {
 }
 
 String _money(int cents) => '\$${_groupDigits((cents / 100).round())}';
+
+String _compactMoney(int cents) {
+  final dollars = cents / 100;
+  if (dollars >= 1000000) {
+    final millions = dollars / 1000000;
+    return '\$${millions.toStringAsFixed(millions == millions.roundToDouble() ? 0 : 1)}M';
+  }
+  if (dollars >= 1000) {
+    final thousands = dollars / 1000;
+    return '\$${thousands.toStringAsFixed(thousands == thousands.roundToDouble() ? 0 : 1)}K';
+  }
+  return _money(cents);
+}
 
 String _groupDigits(int value) {
   final digits = value.abs().toString();

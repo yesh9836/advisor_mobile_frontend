@@ -82,6 +82,8 @@ void main() {
     expect(find.text('Actual history'), findsOneWidget);
     expect(find.text('Goal pace'), findsOneWidget);
     expect(find.byKey(const ValueKey('goal-activity-trend')), findsOneWidget);
+    await tester.drag(find.byType(ListView).first, const Offset(0, -280));
+    await tester.pumpAndSettle();
     expect(find.text('12 leads recommended per month'), findsOneWidget);
 
     await tester.drag(find.byType(ListView).first, const Offset(0, 1400));
@@ -155,6 +157,49 @@ void main() {
     expect(repository.savedMonthlyGoalCents, isNull);
   });
 
+  testWidgets('shows and updates the goal funnel assumptions', (tester) async {
+    final repository = _FakeAdvisorRepository();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GoalsScreen(repository: repository, onSeeAllPackages: (_) {}),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byType(ListView).first, const Offset(0, -500));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Your funnel'));
+    await tester.pumpAndSettle();
+    expect(find.text('Your funnel'), findsOneWidget);
+    expect(find.text('400'), findsOneWidget);
+    expect(find.text('40'), findsOneWidget);
+    expect(find.text('10'), findsWidgets);
+
+    await tester.tap(find.byKey(const ValueKey('edit-funnel-button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('funnel-commission-field')),
+      '7500',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('funnel-appointment-rate-field')),
+      '30',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('funnel-lead-rate-field')),
+      '15',
+    );
+    await tester.tap(find.byKey(const ValueKey('save-funnel-button')));
+    await tester.pumpAndSettle();
+
+    expect(repository.savedAverageCommissionCents, 750000);
+    expect(repository.savedAppointmentRateBps, 3000);
+    expect(repository.savedLeadRateBps, 1500);
+    expect(find.text('Funnel assumptions updated.'), findsOneWidget);
+  });
+
   testWidgets('switches stats and graph to the registration period', (
     tester,
   ) async {
@@ -191,6 +236,9 @@ class _FakeAdvisorRepository extends AdvisorRepository {
   final GoalSnapshot initialGoal;
   GoalSnapshot? savedCurrentGoal;
   int? savedMonthlyGoalCents;
+  int? savedAverageCommissionCents;
+  int? savedAppointmentRateBps;
+  int? savedLeadRateBps;
 
   @override
   Future<GoalSnapshot> getGoal() async => initialGoal;
@@ -243,6 +291,24 @@ class _FakeAdvisorRepository extends AdvisorRepository {
     savedMonthlyGoalCents = monthlyGoalCents;
     return _goal(annualGoalCents: monthlyGoalCents * 12);
   }
+
+  @override
+  Future<GoalSnapshot> saveGoalFunnel({
+    required GoalSnapshot currentGoal,
+    required int averageCommissionCents,
+    required int appointmentToDealRateBps,
+    required int leadToAppointmentRateBps,
+  }) async {
+    savedAverageCommissionCents = averageCommissionCents;
+    savedAppointmentRateBps = appointmentToDealRateBps;
+    savedLeadRateBps = leadToAppointmentRateBps;
+    return _goal(
+      annualGoalCents: currentGoal.annualGoalCents,
+      averageCommissionCents: averageCommissionCents,
+      appointmentToDealRateBps: appointmentToDealRateBps,
+      leadToAppointmentRateBps: leadToAppointmentRateBps,
+    );
+  }
 }
 
 class _RefreshingGoalRepository extends AdvisorRepository {
@@ -261,14 +327,17 @@ class _RefreshingGoalRepository extends AdvisorRepository {
 GoalSnapshot _goal({
   required int annualGoalCents,
   int currentSuccessRateBps = 2500,
+  int averageCommissionCents = 500000,
+  int appointmentToDealRateBps = 2500,
+  int leadToAppointmentRateBps = 1000,
 }) {
   return GoalSnapshot(
     targetYear: 2026,
     earnedYtdCents: 300000,
     annualGoalCents: annualGoalCents,
-    averageCommissionCents: 500000,
-    appointmentToDealRateBps: 2500,
-    leadToAppointmentRateBps: 1000,
+    averageCommissionCents: averageCommissionCents,
+    appointmentToDealRateBps: appointmentToDealRateBps,
+    leadToAppointmentRateBps: leadToAppointmentRateBps,
     incomeProgressPercent: 25,
     appointmentsNeeded: 40,
     dealsNeeded: 10,

@@ -8,6 +8,7 @@ import 'package:flutter_frontend/screens/advisor/lead_details_sheet.dart';
 import 'package:flutter_frontend/screens/advisor/leads_screen.dart';
 import 'package:flutter_frontend/screens/advisor/profile_screen.dart';
 import 'package:flutter_frontend/screens/advisor/subscription_screen.dart';
+import 'package:flutter_frontend/services/app_deep_link_controller.dart';
 import 'package:flutter_frontend/theme/app_components.dart';
 import 'package:flutter_frontend/theme/app_theme.dart';
 import 'package:flutter_frontend/theme/app_theme_controller.dart';
@@ -22,7 +23,9 @@ class AdvisorShell extends StatefulWidget {
 }
 
 class _AdvisorShellState extends State<AdvisorShell> {
-  late int _selectedIndex = widget.initialIndex.clamp(0, 4);
+  late int _selectedIndex = AppDeepLinkController.instance.consumeAdvisorTab(
+    widget.initialIndex.clamp(0, 4),
+  );
   late final ValueNotifier<double> _navigationPosition = ValueNotifier(
     _selectedIndex.toDouble(),
   );
@@ -38,6 +41,18 @@ class _AdvisorShellState extends State<AdvisorShell> {
     _screens = List<Widget?>.filled(5, null);
     _screens[_selectedIndex] = _createScreen(_selectedIndex);
     _pageController.addListener(_trackPageTransition);
+    AppDeepLinkController.instance.requestedAdvisorTab.addListener(
+      _handleDeepLink,
+    );
+  }
+
+  void _handleDeepLink() {
+    final index = AppDeepLinkController.instance.requestedAdvisorTab.value;
+    if (index == null || !mounted) return;
+    AppDeepLinkController.instance.clearRequest();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _selectTab(index);
+    });
   }
 
   void _trackPageTransition() {
@@ -74,6 +89,10 @@ class _AdvisorShellState extends State<AdvisorShell> {
       _screens[index] ??= _createScreen(index);
       _selectedIndex = index;
     });
+    if (!_pageController.hasClients) {
+      _navigationPosition.value = index.toDouble();
+      return;
+    }
     if (isLongJump) {
       _navigationPosition.value = index.toDouble();
       _pageController.jumpToPage(index);
@@ -101,6 +120,9 @@ class _AdvisorShellState extends State<AdvisorShell> {
 
   @override
   void dispose() {
+    AppDeepLinkController.instance.requestedAdvisorTab.removeListener(
+      _handleDeepLink,
+    );
     _pageController.removeListener(_trackPageTransition);
     _pageController.dispose();
     _navigationPosition.dispose();

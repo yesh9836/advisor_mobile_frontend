@@ -334,4 +334,32 @@ class AdvisorRepository {
       decodeResponseObject(response.body, 'Unable to save goal.'),
     );
   }
+
+  Future<GoalSnapshot> saveGoalFunnel({
+    required GoalSnapshot currentGoal,
+    required int averageCommissionCents,
+    required int appointmentToDealRateBps,
+    required int leadToAppointmentRateBps,
+  }) async {
+    final response = await _apiService.put(
+      '/goals/me',
+      body: {
+        'target_year': currentGoal.targetYear,
+        'annual_income_goal_cents': currentGoal.annualGoalCents,
+        'average_commission_cents': averageCommissionCents,
+        'earned_ytd_cents': currentGoal.earnedYtdCents,
+        'appointment_to_deal_rate_bps': appointmentToDealRateBps,
+        'lead_to_appointment_rate_bps': leadToAppointmentRateBps,
+      },
+    );
+    if (response.statusCode != 200) {
+      throw AuthException.fromResponse(
+        response.body,
+        'Unable to save funnel assumptions.',
+      );
+    }
+    return GoalSnapshot.fromJson(
+      decodeResponseObject(response.body, 'Unable to save funnel assumptions.'),
+    );
+  }
 }

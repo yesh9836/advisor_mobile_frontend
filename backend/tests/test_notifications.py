@@ -71,7 +71,11 @@ def test_enqueue_lead_delivery_notifications_is_idempotent_and_channel_scoped(
     assert [row.channel for row in rows] == ["email", "sms"]
     assert all(row.status == "pending" for row in rows)
     sms_row = next((row for row in rows if row.channel == "sms"), None)
+    email_row = next((row for row in rows if row.channel == "email"), None)
     assert sms_row is not None
+    assert email_row is not None
+    assert "http://localhost:5173/open-inbox.html" in email_row.message_body
+    assert "href=\"http://localhost:5173/open-inbox.html\"" in email_row.message_html
     expected_name = (advisor.name or "").strip() or "Advisor"
     assert sms_row.message_body == (
         f"{expected_name}, 2 leads purchased (2/2) delivered. Check your account for details"

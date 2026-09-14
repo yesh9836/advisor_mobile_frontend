@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>Open Spectaculeads</title>
+    <style>
+      :root { font-family: Inter, system-ui, sans-serif; color: #17223b; background: #f4f8fb; }
+      body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px; box-sizing: border-box; }
+      main { width: min(420px, 100%); padding: 32px; border: 1px solid #d7e3ea; border-radius: 22px; background: white; box-shadow: 0 18px 50px rgba(32, 40, 96, .12); text-align: center; }
+      h1 { margin: 0 0 10px; font-size: 24px; }
+      p { margin: 0 0 24px; color: #58707d; line-height: 1.5; }
+      a { display: block; padding: 13px 18px; border-radius: 12px; text-decoration: none; font-weight: 700; }
+      .app { color: white; background: #18a0b8; }
+      .web { margin-top: 10px; color: #202860; background: #eef3f7; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Your lead inbox is ready</h1>
+      <p>Open it in the Spectaculeads mobile app, or continue securely on the web.</p>
+      <a class="app" href="spectaculeads://inbox">Open Spectaculeads app</a>
+      <a class="web" href="/leads">Continue on the web</a>
+    </main>
+    <script>
+      window.setTimeout(() => { window.location.href = 'spectaculeads://inbox'; }, 80);
+    </script>
+  </body>
+</html>

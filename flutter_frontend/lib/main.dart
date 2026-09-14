@@ -7,6 +7,7 @@ import 'package:flutter_frontend/repositories/auth_repository.dart';
 import 'package:flutter_frontend/screens/advisor/advisor_entry_screen.dart';
 import 'package:flutter_frontend/screens/auth/login_screen.dart';
 import 'package:flutter_frontend/services/api_service.dart';
+import 'package:flutter_frontend/services/app_deep_link_controller.dart';
 import 'package:flutter_frontend/theme/app_theme.dart';
 import 'package:flutter_frontend/theme/app_theme_controller.dart';
 
@@ -28,7 +29,14 @@ class _SpectaculeadsAppState extends State<SpectaculeadsApp> {
   final _themeController = AppThemeController();
 
   @override
+  void initState() {
+    super.initState();
+    AppDeepLinkController.instance.start();
+  }
+
+  @override
   void dispose() {
+    AppDeepLinkController.instance.stop();
     _themeController.dispose();
     super.dispose();
   }
