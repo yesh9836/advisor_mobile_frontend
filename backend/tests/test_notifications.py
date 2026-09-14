@@ -75,7 +75,10 @@ def test_enqueue_lead_delivery_notifications_is_idempotent_and_channel_scoped(
     assert sms_row is not None
     assert email_row is not None
     assert "http://localhost:5173/open-inbox.html" in email_row.message_body
-    assert "href=\"http://localhost:5173/open-inbox.html\"" in email_row.message_html
+    assert (
+        "href=\"http://localhost:5173/open-inbox.html\""
+        in email_row.payload["html_body"]
+    )
     expected_name = (advisor.name or "").strip() or "Advisor"
     assert sms_row.message_body == (
         f"{expected_name}, 2 leads purchased (2/2) delivered. Check your account for details"
